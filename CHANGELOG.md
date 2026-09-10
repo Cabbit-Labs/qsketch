@@ -2,6 +2,12 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- The hidden-layer eye icon is now much dimmer than the visible one on dark
+  themes (and lighter on light themes), so the two states are easy to tell
+  apart.
+
 ## 0.12.1 — 2026-09-10
 
 - Showing or hiding a layer no longer adds an undo step. Visibility is a

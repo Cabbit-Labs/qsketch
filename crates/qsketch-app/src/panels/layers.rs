@@ -343,12 +343,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     });
 }
 
-/// Eye-slash glyph for hidden layers: a firm mid grey rather than the theme's
-/// weak text, which was too faint against the row background.
+/// Eye-slash glyph for hidden layers: pushed well away from the visible
+/// eye's text color (toward the row background) so the two states read at a
+/// glance.
 fn hidden_eye_color(ui: &Ui) -> Color32 {
     if ui.visuals().dark_mode {
-        Color32::from_gray(120)
+        Color32::from_gray(80)
     } else {
-        Color32::from_gray(85)
+        Color32::from_gray(165)
     }
 }
