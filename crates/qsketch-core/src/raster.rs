@@ -276,9 +276,7 @@ impl Raster {
     }
 
     pub fn clear(&mut self) {
-        for t in &mut self.tiles {
-            *t = None;
-        }
+        self.tiles.fill(None);
     }
 
     /// Drop tiles that became fully transparent (e.g. after erasing).
