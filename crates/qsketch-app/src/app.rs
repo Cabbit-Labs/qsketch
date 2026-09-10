@@ -19,6 +19,8 @@ use crate::workspace::{PanelKind, Workspace};
 
 pub struct QSketchApp {
     state: AppState,
+    /// Single-instance listener; other launches hand their files here.
+    instance: crate::single_instance::Primary,
     workspace: Workspace,
     tablet: Option<crate::tablet::Tablet>,
     applied_theme: (crate::settings::UiSettings, f32),
@@ -40,7 +42,11 @@ pub struct QSketchApp {
 }
 
 impl QSketchApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, files: Vec<std::path::PathBuf>) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        files: Vec<std::path::PathBuf>,
+        instance: crate::single_instance::Primary,
+    ) -> Self {
         let mut settings = Settings::load();
         settings.sanitize();
         theme::install_fonts(&cc.egui_ctx, settings.ui.icon_set.filled());
@@ -71,6 +77,7 @@ impl QSketchApp {
 
         let mut app = Self {
             state,
+            instance,
             workspace,
             tablet,
             applied_theme,
@@ -107,6 +114,17 @@ impl QSketchApp {
     // Frame
 
     fn process_requests(&mut self, ctx: &Context) {
+        // Files forwarded by a second launch (file manager "Open with"): open
+        // them as tabs and bring this window to the front.
+        let mut forwarded = false;
+        while let Ok(paths) = self.instance.rx.try_recv() {
+            self.state.open_file_requests.extend(paths);
+            forwarded = true;
+        }
+        if forwarded {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
         // File opens (CLI, drag & drop, recent list).
         let reqs = std::mem::take(&mut self.state.open_file_requests);
         for p in reqs {

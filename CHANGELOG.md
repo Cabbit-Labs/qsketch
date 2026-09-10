@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- qSketch now runs as a single instance. Opening a file from a file manager
+  (or a second `qsketch file.qsk` launch) while it is already running opens
+  the file in a new tab of the existing window and brings it to the front
+  instead of starting another copy.
+
 ## 0.11.0 — 2026-09-10
 
 - The update manifest URL is no longer built in. New installs start with

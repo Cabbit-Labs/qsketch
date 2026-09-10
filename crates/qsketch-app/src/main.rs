@@ -11,6 +11,7 @@ mod files;
 mod fonts;
 mod panels;
 mod settings;
+mod single_instance;
 mod state;
 mod tablet;
 mod tools;
@@ -52,7 +53,33 @@ fn main() -> eframe::Result<()> {
     };
 
     let files: Vec<std::path::PathBuf> = std::env::args_os().skip(1).map(std::path::PathBuf::from).collect();
-    eframe::run_native("qsketch", options, Box::new(move |cc| Ok(Box::new(app::QSketchApp::new(cc, files)))))
+    // Hand the files to an already-running qsketch (they open as new tabs)
+    // instead of starting a second window.
+    let (wake_tx, wake_rx) = std::sync::mpsc::channel::<egui::Context>();
+    let wake = std::sync::Mutex::new(None::<egui::Context>);
+    let primary = match single_instance::acquire(&files, move || {
+        let mut g = wake.lock().unwrap_or_else(|e| e.into_inner());
+        if g.is_none() {
+            *g = wake_rx.try_recv().ok();
+        }
+        if let Some(ctx) = g.as_ref() {
+            ctx.request_repaint();
+        }
+    }) {
+        single_instance::Outcome::Forwarded => {
+            log::info!("forwarded {} file(s) to the running qsketch instance", files.len());
+            return Ok(());
+        }
+        single_instance::Outcome::Primary(p) => p,
+    };
+    eframe::run_native(
+        "qsketch",
+        options,
+        Box::new(move |cc| {
+            let _ = wake_tx.send(cc.egui_ctx.clone());
+            Ok(Box::new(app::QSketchApp::new(cc, files, primary)))
+        }),
+    )
 }
 
 fn load_icon() -> egui::IconData {
