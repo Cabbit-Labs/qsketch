@@ -5,8 +5,8 @@ use qsketch_core::Rgba8;
 
 use super::{CanvasEvent, ToolSession};
 use crate::settings::PickTarget;
-use crate::tools::CanvasInput;
 use crate::state::{AppState, DocId};
+use crate::tools::CanvasInput;
 use crate::ui::toasts::Level;
 
 /// Sample a color at a document pixel (merged or active layer).

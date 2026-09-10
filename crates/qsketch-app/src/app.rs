@@ -1114,11 +1114,8 @@ impl QSketchApp {
                     let s = d.doc.state_mut();
                     let n = s.layers.len();
                     // Wraps: above the top layer is the bottom one and vice versa.
-                    s.active = if action == Action::SelectLayerAbove {
-                        (s.active + 1) % n
-                    } else {
-                        (s.active + n - 1) % n
-                    };
+                    s.active =
+                        if action == Action::SelectLayerAbove { (s.active + 1) % n } else { (s.active + n - 1) % n };
                 }
             }
             Action::ToggleLayerVisibility => {

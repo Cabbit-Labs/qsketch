@@ -157,8 +157,7 @@ impl ToolKind {
     /// Tools that paint with the foreground/background color, so a pick
     /// chord over the canvas should grab a color for them.
     pub fn uses_color(self) -> bool {
-        self.uses_brush()
-            || matches!(self, ToolKind::Fill | ToolKind::Gradient | ToolKind::Text | ToolKind::Contour)
+        self.uses_brush() || matches!(self, ToolKind::Fill | ToolKind::Gradient | ToolKind::Text | ToolKind::Contour)
     }
 
     pub fn cursor(self) -> egui::CursorIcon {
