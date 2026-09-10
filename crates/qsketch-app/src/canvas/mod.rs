@@ -282,6 +282,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             })
         {
             egui::CursorIcon::Move
+        } else if tool == ToolKind::RotateView && hover_pos.is_some() {
+            // Drawn as a glyph at the pointer (see `draw_rotate_cursor`).
+            egui::CursorIcon::None
         } else {
             tool.cursor()
         };
@@ -361,6 +364,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     tools::draw_overlay(state, doc_id, &painter);
     if state.brush_popup.is_none() {
         draw_brush_cursor(&painter, state, doc_id, hover_pos, tool);
+        if tool == ToolKind::RotateView {
+            draw_rotate_cursor(&painter, hover_pos);
+        }
     }
     brush_popup(ui, state);
     tools::text::editor_ui(ui, state, doc_id);
@@ -497,6 +503,17 @@ fn draw_selection(painter: &egui::Painter, entry: &mut crate::state::DocEntry, c
             painter.line_segment([a, b], s);
         }
     }
+}
+
+/// Rotate View has no system cursor; draw the rotate glyph at the pointer.
+fn draw_rotate_cursor(painter: &egui::Painter, hover: Option<Pos2>) {
+    let Some(pos) = hover else { return };
+    let font = egui::FontId::new(22.0, crate::ui::iconset::family());
+    let glyph = crate::ui::icons::ARROWS_CLOCKWISE;
+    for d in [egui::vec2(1.0, 1.0), egui::vec2(-1.0, 1.0), egui::vec2(1.0, -1.0), egui::vec2(-1.0, -1.0)] {
+        painter.text(pos + d, egui::Align2::CENTER_CENTER, glyph, font.clone(), Color32::from_black_alpha(160));
+    }
+    painter.text(pos, egui::Align2::CENTER_CENTER, glyph, font, Color32::WHITE);
 }
 
 fn draw_brush_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, hover: Option<Pos2>, tool: ToolKind) {

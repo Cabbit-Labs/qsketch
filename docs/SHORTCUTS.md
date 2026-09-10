@@ -71,8 +71,8 @@ reachable from its menu until you assign one.
 | Move Layer Down | `Ctrl+[` |
 | Move Layer to Top | `Ctrl+Shift+]` |
 | Move Layer to Bottom | `Ctrl+Shift+[` |
-| Select Layer Above | `Alt+]` |
-| Select Layer Below | `Alt+[` |
+| Select Layer Above | `Shift+W` |
+| Select Layer Below | `Shift+S` |
 | Toggle Visibility | — |
 | Lock Transparent Pixels | `/` |
 | Lock Layer | — |
@@ -149,13 +149,13 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Paint Bucket | `G` |
 | Gradient | `Shift+G` |
 | Line | `U` |
-| Rectangle | `Shift+U` |
+| Rectangle | `R` |
 | Ellipse | `Alt+U` |
 | Contour | `P` |
 | Text | `T` |
 | Zoom | `Z` |
 | Hand | `H` |
-| Rotate View | `R` |
+| Rotate View | `Q` |
 
 ## Brush
 

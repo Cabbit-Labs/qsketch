@@ -213,6 +213,11 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
         group(ui, &theme, Section::Tools, |ui| {
             ui.checkbox(&mut state.tool_opts.shape_filled, "Filled");
         });
+        // A filled shape is a plain fill of the foreground color; the brush
+        // only matters for the outlined variant.
+        if state.tool_opts.shape_filled {
+            return;
+        }
     }
     let compact = state.settings.ui.compact_tool_options;
     let p = state.settings.ui.palette();

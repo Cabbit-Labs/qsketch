@@ -4,6 +4,15 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- New default shortcuts: `R` selects the Rectangle tool, `Q` selects Rotate
+  View, `Shift+W` / `Shift+S` select the layer above / below (wrapping
+  around at the top and bottom of the stack).
+- Ctrl+drag inside a selection moves the selected pixels with any tool; the
+  pointer switches to the Move cursor while Ctrl is held over the selection.
+- The Rotate View tool shows a rotate glyph as its cursor over the canvas.
+- Tool options bar hides the brush settings for filled Rectangle/Ellipse
+  shapes, which don't use them.
+- The app version is shown at the right end of the status bar.
 - Layers panel no longer overflows its dock tab: the blend/opacity header
   now fits the panel width and the layer list's scroll bar stays visible
   (the dock's own horizontal scroll area was pushing it off-screen).

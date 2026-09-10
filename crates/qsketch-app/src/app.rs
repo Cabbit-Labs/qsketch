@@ -260,7 +260,7 @@ impl QSketchApp {
                 self.state.temp_tool = Some((ToolKind::Eyedropper, TempReason::Alt));
             } else if ctrl
                 && !alt
-                && self.state.tool.is_paint()
+                && (self.state.tool.is_paint() || self.state.hovering_selection())
                 && !ctx.input(|i| i.keys_down.iter().any(|k| !matches!(k, Key::Space)))
             {
                 self.state.temp_tool = Some((ToolKind::Move, TempReason::Ctrl));
@@ -882,6 +882,7 @@ impl QSketchApp {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(RichText::new(format!("v{}", crate::update::CURRENT_VERSION)).weak().small());
                 let tool = self.state.effective_tool();
                 let hint = match tool {
                     ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => {
@@ -1110,10 +1111,11 @@ impl QSketchApp {
                 if let Some(d) = self.state.active_mut() {
                     let s = d.doc.state_mut();
                     let n = s.layers.len();
+                    // Wraps: above the top layer is the bottom one and vice versa.
                     s.active = if action == Action::SelectLayerAbove {
-                        (s.active + 1).min(n - 1)
+                        (s.active + 1) % n
                     } else {
-                        s.active.saturating_sub(1)
+                        (s.active + n - 1) % n
                     };
                 }
             }

@@ -213,6 +213,14 @@ impl AppState {
         self.temp_tool.map(|(t, _)| t).unwrap_or(self.tool)
     }
 
+    /// The pointer is over the canvas, inside the active document's selection.
+    /// Ctrl-dragging there moves the selected pixels with any tool.
+    pub fn hovering_selection(&self) -> bool {
+        let Some(p) = self.hover_doc_pos else { return false };
+        let Some(d) = self.active() else { return false };
+        d.doc.state().selection_mask().is_some_and(|m| m.get(p.x.floor() as i32, p.y.floor() as i32) > 0)
+    }
+
     pub fn set_tool(&mut self, tool: ToolKind) {
         if self.tool != tool {
             self.cancel_session();
