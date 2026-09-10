@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.12.4 — 2026-09-10
 
 - Stylus barrel buttons mapped to right-click now work with Windows Ink on,
   with or without the dedicated tablet API setting, so pressure and
