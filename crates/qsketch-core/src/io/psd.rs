@@ -620,6 +620,7 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
         let extra = o.len_slot();
         o.u32(0); // no layer mask
         o.u32(0); // no blending ranges
+
         // Pascal name (ASCII-safe, truncated), padded to 4.
         let ascii: String = layer.props.name.chars().map(|ch| if ch.is_ascii() { ch } else { '?' }).take(255).collect();
         let nb = ascii.as_bytes();

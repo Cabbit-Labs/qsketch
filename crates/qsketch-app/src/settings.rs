@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use qsketch_core::{BrushSettings, Rgba8};
 use serde::{Deserialize, Serialize};
 
-pub const APP_NAME: &str = "qsketch";
 /// Directory component of the per-user config path. Kept with the original
 /// capitalization so settings written by older versions are still found
 /// (`%APPDATA%\cabbit-labs\qSketch`, `dev.cabbit-labs.qSketch`; Linux
