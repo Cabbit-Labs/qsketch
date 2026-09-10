@@ -21,7 +21,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     };
     let ctx = ui.ctx().clone();
     let mut changed_props = false;
-    let mut toggled_vis = false;
+    let mut toggle_vis: Option<(qsketch_core::layer::LayerId, bool)> = None;
     let mut rename_target: Option<(usize, String)> = None;
     let mut activate: Option<usize> = None;
     let mut reorder: Option<(usize, usize)> = None;
@@ -152,12 +152,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 egui::Align2::CENTER_CENTER,
                 if vis { icons::EYE } else { icons::EYE_SLASH },
                 egui::FontId::new(14.0, ICON_FAMILY()),
-                if vis { ui.visuals().text_color() } else { ui.visuals().weak_text_color() },
+                if vis { ui.visuals().text_color() } else { hidden_eye_color(ui) },
             );
             if eye.on_hover_text("Toggle visibility").clicked() {
-                s.layers[i].props.visible = !vis;
-                changed_props = true;
-                toggled_vis = true;
+                toggle_vis = Some((layer_id, !vis));
             }
 
             // Thumbnail
@@ -302,9 +300,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         entry.doc.mark_all_dirty();
         // Coalesce slider drags: commit when the pointer is released.
         let dragging = ctx.input(|i| i.pointer.any_down());
-        if !dragging || toggled_vis {
+        if !dragging {
             entry.doc.commit("Layer Properties");
         }
+    }
+    // Visibility is a view toggle, not an undoable edit.
+    if let Some((id, visible)) = toggle_vis {
+        entry.doc.set_layer_visible(id, visible);
     }
 
     // --- footer --------------------------------------------------------------
@@ -339,4 +341,14 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             }
         });
     });
+}
+
+/// Eye-slash glyph for hidden layers: a firm mid grey rather than the theme's
+/// weak text, which was too faint against the row background.
+fn hidden_eye_color(ui: &Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        Color32::from_gray(120)
+    } else {
+        Color32::from_gray(85)
+    }
 }

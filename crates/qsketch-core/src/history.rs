@@ -33,6 +33,13 @@ impl History {
     pub fn entries(&self) -> &[HistoryEntry] {
         &self.entries
     }
+    /// Mutate every recorded state in place (for properties that live
+    /// outside the undo history, such as layer visibility).
+    pub fn for_each_state_mut(&mut self, mut f: impl FnMut(&mut DocState)) {
+        for e in &mut self.entries {
+            f(&mut e.state);
+        }
+    }
     pub fn len(&self) -> usize {
         self.entries.len()
     }

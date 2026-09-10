@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Showing or hiding a layer no longer adds an undo step. Visibility is a
+  view toggle: undo and redo leave it alone.
+- The hidden-layer eye icon in the Layers panel is a darker grey so it
+  stands out from the row.
+
 ## 0.12.0 — 2026-09-10
 
 - qSketch now runs as a single instance. Opening a file from a file manager

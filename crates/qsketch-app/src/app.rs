@@ -1116,7 +1116,13 @@ impl QSketchApp {
                     };
                 }
             }
-            Action::ToggleLayerVisibility => self.toggle_prop("Toggle Visibility", |p| p.visible = !p.visible),
+            Action::ToggleLayerVisibility => {
+                if let Some(d) = self.state.active_mut() {
+                    let l = &d.doc.state().layers[d.doc.state().active].props;
+                    let (id, vis) = (l.id, l.visible);
+                    d.doc.set_layer_visible(id, !vis);
+                }
+            }
             Action::ToggleAlphaLock => {
                 self.toggle_prop("Lock Transparent Pixels", |p| p.alpha_locked = !p.alpha_locked)
             }

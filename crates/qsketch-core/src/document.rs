@@ -314,6 +314,20 @@ impl Document {
         self.dirty.insert_all();
     }
 
+    /// Show or hide a layer without creating an undo step. Visibility is a
+    /// view toggle, not an edit: it is applied to every history state so
+    /// undo/redo never flips it back.
+    pub fn set_layer_visible(&mut self, layer_id: LayerId, visible: bool) {
+        let set = |s: &mut DocState| {
+            if let Some(l) = s.layers.iter_mut().find(|l| l.props.id == layer_id) {
+                l.props.visible = visible;
+            }
+        };
+        set(&mut self.working);
+        self.history.for_each_state_mut(set);
+        self.dirty.insert_all();
+    }
+
     /// Push the working state onto the history as a new undo step.
     pub fn commit(&mut self, label: impl Into<String>) {
         self.history.push(label, self.working.clone());
