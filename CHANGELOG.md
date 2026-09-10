@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.12.0 — 2026-09-10
 
 - qSketch now runs as a single instance. Opening a file from a file manager
   (or a second `qsketch file.qsk` launch) while it is already running opens
