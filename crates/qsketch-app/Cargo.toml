@@ -1,0 +1,55 @@
+[package]
+name = "qsketch"
+description = "qsketch — a fast, professional sketching and raster painting application"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+default-run = "qsketch"
+
+[[bin]]
+name = "qsketch"
+path = "src/main.rs"
+
+[dependencies]
+qsketch-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+image.workspace = true
+log.workspace = true
+env_logger.workspace = true
+directories.workspace = true
+arboard.workspace = true
+rfd.workspace = true
+eframe.workspace = true
+egui.workspace = true
+egui_dock.workspace = true
+egui-wgpu.workspace = true
+egui_extras.workspace = true
+wgpu.workspace = true
+bytemuck.workspace = true
+raw-window-handle.workspace = true
+octotablet.workspace = true
+parking_lot.workspace = true
+ureq.workspace = true
+minisign-verify.workspace = true
+data-encoding.workspace = true
+semver.workspace = true
+tempfile.workspace = true
+flate2.workspace = true
+tar.workspace = true
+fontdb.workspace = true
+ab_glyph.workspace = true
+epaint_default_fonts.workspace = true
+
+# NOTE: intentionally NOT target-gated (e.g. `[target.'cfg(windows)'.build-dependencies]`).
+# Cargo evaluates `cfg(...)` predicates on build-dependencies against the HOST platform
+# (build scripts always run on the host, even when cross-compiling), not the `--target`
+# triple. Since we cross-compile Windows builds from Linux (see scripts/build-windows.sh),
+# a `cfg(windows)` gate here would silently exclude winresource on every non-Windows host.
+# build.rs itself checks CARGO_CFG_TARGET_OS and no-ops on non-Windows targets instead.
+[build-dependencies]
+winresource = "0.1"

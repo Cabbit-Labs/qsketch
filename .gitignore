@@ -1,0 +1,6 @@
+/target/
+/dist/
+*.tmp
+.DS_Store
+Thumbs.db
+/.env

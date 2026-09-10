@@ -1,0 +1,62 @@
+[workspace]
+resolver = "2"
+members = ["crates/qsketch-core", "crates/qsketch-app"]
+
+[workspace.package]
+version = "0.10.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Cabbit-Labs/qsketch"
+rust-version = "1.85"
+
+[workspace.dependencies]
+qsketch-core = { path = "crates/qsketch-core" }
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "tga", "webp", "gif", "tiff"] }
+zip = { version = "4", default-features = false, features = ["deflate"] }
+rayon = "1"
+parking_lot = "0.12"
+log = "0.4"
+env_logger = "0.11"
+directories = "6"
+arboard = "3"
+rfd = "0.17"
+eframe = { version = "0.36", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland", "persistence"] }
+egui = "0.36"
+egui_dock = { version = "0.21", features = ["serde"] }
+egui-wgpu = "0.36"
+egui_extras = { version = "0.36", features = ["image"] }
+wgpu = "30"
+bytemuck = { version = "1", features = ["derive"] }
+raw-window-handle = "0.6"
+octotablet = "0.1"
+smallvec = "1"
+# Self-update: manifest + artifact download (rustls + ring, same stack Leyline cross-compiles to Windows)
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+minisign-verify = "0.2"
+data-encoding = "2"
+semver = "1"
+tempfile = "3"
+flate2 = "1"
+tar = "0.4"
+ab_glyph = "0.2"
+fontdb = "0.23"
+epaint_default_fonts = "0.36"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+debug = 0
+strip = "symbols"
+panic = "unwind"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

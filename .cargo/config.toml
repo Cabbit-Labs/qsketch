@@ -1,0 +1,17 @@
+# Cross-compilation config for building Windows binaries from Linux/CI via mingw-w64.
+#
+# Native builds (Linux host -> Linux target, or Windows host -> MSVC target) need nothing
+# here; this section only kicks in for `--target x86_64-pc-windows-gnu`.
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+
+# NOTE: we deliberately do NOT add `-C target-feature=+crt-static` here.
+#
+# Statically linking the C/C++ runtime against the *system* mingw-w64 toolchain (as opposed
+# to rustup's bundled "self-contained" mingw components) is not reliably sane for this
+# target: it has a history of hangs/deadlocks in DLL_PROCESS_DETACH when libwinpthread is
+# statically linked (rust-lang/rust#88576), behavior varies across mingw-w64/gcc versions,
+# and crt-static support for *-pc-windows-gnu is generally considered less mature than for
+# *-pc-windows-msvc. Dynamic linking is the well-trodden path for this target, so
+# scripts/build-windows.sh instead detects which MinGW runtime DLLs the built exe actually
+# imports (via objdump) and ships those alongside it.
