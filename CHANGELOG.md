@@ -2,6 +2,11 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Update check retries a dropped connection a few times before reporting
+  an "Update problem".
+
 ## 0.12.6 — 2026-09-10
 
 - Color picking is now a mouse chord that works with every tool that paints a

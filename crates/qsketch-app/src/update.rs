@@ -236,13 +236,27 @@ fn agent() -> ureq::Agent {
 /// Fetch and parse the manifest; `Some` if it advertises a newer version for
 /// this platform. Relative artifact URLs resolve against the manifest URL.
 pub fn check_manifest(manifest_url: &str) -> Result<Option<UpdateInfo>, String> {
-    let body = agent()
-        .get(manifest_url)
-        .call()
-        .map_err(|e| format!("manifest: {e}"))?
-        .body_mut()
-        .read_to_string()
-        .map_err(|e| format!("manifest body: {e}"))?;
+    // A relay can drop a TLS handshake now and then; retry transport errors
+    // a few times before surfacing them.
+    let mut body = None;
+    let mut last_err = String::new();
+    for attempt in 0..3 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(500 * attempt as u64));
+        }
+        match agent().get(manifest_url).call() {
+            Ok(mut resp) => match resp.body_mut().read_to_string() {
+                Ok(b) => {
+                    body = Some(b);
+                    break;
+                }
+                Err(e) => last_err = format!("manifest body: {e}"),
+            },
+            Err(ureq::Error::StatusCode(code)) => return Err(format!("manifest: HTTP {code}")),
+            Err(e) => last_err = format!("manifest: {e}"),
+        }
+    }
+    let Some(body) = body else { return Err(last_err) };
     let m: Manifest = serde_json::from_str(&body).map_err(|e| format!("manifest json: {e}"))?;
     newer_entry(&m, manifest_url, CURRENT_VERSION)
 }
