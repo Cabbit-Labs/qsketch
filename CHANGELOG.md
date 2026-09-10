@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.12.3 — 2026-09-10
 
 - A stylus barrel button mapped to right-click in the tablet driver now
   works as a right-click in qsketch (quick brush popup, color pick, and so
