@@ -42,6 +42,14 @@ pub struct Tablet {
     _handles: Arc<Handles>,
     in_proximity: bool,
     eraser: bool,
+    /// Stylus buttons currently held that were pressed while the tip was in
+    /// the air, i.e. barrel buttons rather than the tip itself.
+    barrel_buttons: Vec<octotablet::tool::ButtonID>,
+    /// Button IDs seen to press in the same frame the tip went down: the tip
+    /// switch itself, which must never count as a barrel button.
+    tip_buttons: Vec<octotablet::tool::ButtonID>,
+    /// Buttons pressed in the current pump batch, to correlate with `Down`.
+    pressed_this_pump: Vec<octotablet::tool::ButtonID>,
     /// Last known window scale so positions can be mapped to egui points.
     last_pos: Option<egui::Pos2>,
 }
@@ -55,7 +63,16 @@ impl Tablet {
         match octotablet::Builder::new().emulate_tool_from_mouse(false).build_shared(&handles) {
             Ok(manager) => {
                 log::info!("tablet backend: {:?}", manager.backed());
-                Some(Self { manager, _handles: handles, in_proximity: false, eraser: false, last_pos: None })
+                Some(Self {
+                    manager,
+                    _handles: handles,
+                    in_proximity: false,
+                    eraser: false,
+                    barrel_buttons: Vec::new(),
+                    tip_buttons: Vec::new(),
+                    pressed_this_pump: Vec::new(),
+                    last_pos: None,
+                })
             }
             Err(e) => {
                 log::info!("tablet backend unavailable: {e}");
@@ -75,6 +92,7 @@ impl Tablet {
             }
         };
         let switch_on_eraser = state.settings.tablet.eraser_tip_switches_tool;
+        self.pressed_this_pump.clear();
         for ev in events {
             let Event::Tool { tool, event } = ev else { continue };
             match event {
@@ -93,12 +111,36 @@ impl Tablet {
                     state.pen.pressure = None;
                     state.pen.in_contact = false;
                     state.pen.eraser = false;
+                    self.barrel_buttons.clear();
+                    state.pen.barrel_held = false;
                     if matches!(state.temp_tool, Some((_, TempReason::EraserTip))) {
                         state.temp_tool = None;
                     }
                 }
                 ToolEvent::Down => {
                     state.pen.in_contact = true;
+                    // Any button that pressed in this same batch is the tip switch
+                    // (Windows Ink reports the tip as a button too), not a barrel button.
+                    for id in self.pressed_this_pump.drain(..) {
+                        self.barrel_buttons.retain(|b| *b != id);
+                        if !self.tip_buttons.contains(&id) {
+                            self.tip_buttons.push(id);
+                        }
+                    }
+                    state.pen.barrel_held = !self.barrel_buttons.is_empty();
+                }
+                ToolEvent::Button { button_id, pressed } => {
+                    if pressed {
+                        if !state.pen.in_contact && !self.tip_buttons.contains(&button_id) {
+                            if !self.barrel_buttons.contains(&button_id) {
+                                self.barrel_buttons.push(button_id);
+                            }
+                            self.pressed_this_pump.push(button_id);
+                        }
+                    } else {
+                        self.barrel_buttons.retain(|b| *b != button_id);
+                    }
+                    state.pen.barrel_held = !self.barrel_buttons.is_empty();
                 }
                 ToolEvent::Up => {
                     state.pen.in_contact = false;
