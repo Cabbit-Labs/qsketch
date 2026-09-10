@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.12.5 — 2026-09-10
 
 - New default shortcuts: `R` selects the Rectangle tool, `Q` selects Rotate
   View, `Shift+W` / `Shift+S` select the layer above / below (wrapping
