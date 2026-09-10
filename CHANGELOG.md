@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.12.6 — 2026-09-10
 
 - Color picking is now a mouse chord that works with every tool that paints a
   color (brush, pencil, shapes, fill, gradient, text): Alt+click picks the
