@@ -104,7 +104,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             } else if row_resp.hovered() {
                 ui.visuals().widgets.hovered.bg_fill
             } else if i % 2 == 0 {
-                ui.visuals().faint_bg_color
+                // Zebra striping at a fraction of the theme's faint bg: enough
+                // to separate rows without competing with the eye icons.
+                ui.visuals().faint_bg_color.lerp_to_gamma(ui.visuals().panel_fill, 0.6)
             } else {
                 Color32::TRANSPARENT
             };
