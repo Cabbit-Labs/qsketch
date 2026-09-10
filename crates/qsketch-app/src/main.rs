@@ -17,6 +17,7 @@ mod tablet;
 mod tools;
 mod ui;
 mod update;
+mod win_pointer;
 mod workspace;
 
 fn main() -> eframe::Result<()> {

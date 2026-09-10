@@ -128,9 +128,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                 // even when a barrel button mapped to right-click is held. Recover the
                 // intended button from the tablet backend and keep the release matched.
                 let mut mapped = *raw_button;
-                if *raw_button == egui::PointerButton::Primary && state.pen.tablet_active {
+                if *raw_button == egui::PointerButton::Primary {
                     if *pressed {
-                        if state.pen.barrel_held {
+                        if state.pen.barrel_held || crate::win_pointer::barrel_held() {
                             mapped = egui::PointerButton::Secondary;
                         }
                         state.pen.tip_button = Some(mapped);

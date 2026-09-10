@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Stylus barrel buttons mapped to right-click now work with Windows Ink on,
+  with or without the dedicated tablet API setting, so pressure and
+  right-click no longer have to be traded against each other. qsketch reads
+  the pen button flags straight from the Windows pointer messages.
+
 ## 0.12.3 — 2026-09-10
 
 - A stylus barrel button mapped to right-click in the tablet driver now

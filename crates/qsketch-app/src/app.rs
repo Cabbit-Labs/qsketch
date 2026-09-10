@@ -74,6 +74,7 @@ impl QSketchApp {
 
         let workspace = state.settings.layout.as_deref().and_then(Workspace::from_json).unwrap_or_else(Workspace::new);
         let tablet = if state.settings.tablet.use_octotablet { crate::tablet::Tablet::new(cc) } else { None };
+        crate::win_pointer::install(cc);
 
         let mut app = Self {
             state,

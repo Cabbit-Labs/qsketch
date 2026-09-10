@@ -45,6 +45,14 @@ fontdb.workspace = true
 ab_glyph.workspace = true
 epaint_default_fonts.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_Input_Pointer",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 # NOTE: intentionally NOT target-gated (e.g. `[target.'cfg(windows)'.build-dependencies]`).
 # Cargo evaluates `cfg(...)` predicates on build-dependencies against the HOST platform
 # (build scripts always run on the host, even when cross-compiling), not the `--target`
