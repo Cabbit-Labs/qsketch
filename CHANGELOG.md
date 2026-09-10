@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.12.1 — 2026-09-10
 
 - Showing or hiding a layer no longer adds an undo step. Visibility is a
   view toggle: undo and redo leave it alone.
