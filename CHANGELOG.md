@@ -2,6 +2,12 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Layers panel no longer overflows its dock tab: the blend/opacity header
+  now fits the panel width and the layer list's scroll bar stays visible
+  (the dock's own horizontal scroll area was pushing it off-screen).
+
 ## 0.12.4 — 2026-09-10
 
 - Stylus barrel buttons mapped to right-click now work with Windows Ink on,

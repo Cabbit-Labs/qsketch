@@ -38,7 +38,12 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     ui.horizontal(|ui| {
         let layer = &mut s.layers[active];
         let mut blend = layer.props.blend;
-        egui::ComboBox::from_id_salt("blend_mode").selected_text(blend.label()).width(130.0).show_ui(ui, |ui| {
+        // Fit the row to the panel: combo takes ~40%, the slider the rest.
+        let total = ui.available_width();
+        let combo_w = (total * 0.4).clamp(90.0, 130.0);
+        let slider_w = (total - combo_w - 110.0).max(40.0);
+        ui.spacing_mut().slider_width = slider_w;
+        egui::ComboBox::from_id_salt("blend_mode").selected_text(blend.label()).width(combo_w).show_ui(ui, |ui| {
             for m in BlendMode::ALL {
                 if m.starts_group() {
                     ui.separator();

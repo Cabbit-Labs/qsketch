@@ -445,7 +445,11 @@ impl TabViewer for Viewer<'_> {
             | PanelKind::Home
             | PanelKind::Tools
             | PanelKind::BrushSettings
-            | PanelKind::History => [false, false],
+            | PanelKind::History
+            // Layers runs its own list scroll area too; a horizontal dock
+            // scroll let the header overflow and pushed the list's scroll
+            // bar off-screen.
+            | PanelKind::Layers => [false, false],
             _ => [false, true],
         }
     }
