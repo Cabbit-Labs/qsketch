@@ -4,6 +4,8 @@ use qsketch_core::ops;
 use qsketch_core::Rgba8;
 
 use super::{CanvasEvent, ToolSession};
+use crate::settings::PickTarget;
+use crate::tools::CanvasInput;
 use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
 
@@ -23,6 +25,23 @@ pub fn sample_color(state: &AppState, doc_id: DocId, x: i32, y: i32, merged: boo
         Some(Rgba8::new(un(p[0]), un(p[1]), un(p[2]), p[3]))
     } else {
         Some(entry.doc.state().active_layer().raster.get_pixel(x, y))
+    }
+}
+
+/// One-shot pick for a modifier-less chord (e.g. a bare right-click bound to
+/// pick), which can't put the temporary eyedropper up ahead of the press.
+pub fn pick_once(state: &mut AppState, doc_id: DocId, inp: CanvasInput, target: PickTarget) {
+    let merged = state.tool_opts.eyedropper_sample_merged;
+    let Some(mut c) = sample_color(state, doc_id, inp.doc.x.floor() as i32, inp.doc.y.floor() as i32, merged) else {
+        return;
+    };
+    if c.a == 0 {
+        return;
+    }
+    c.a = 255;
+    match target {
+        PickTarget::Foreground => state.fg = c,
+        PickTarget::Background => state.bg = c,
     }
 }
 
@@ -54,13 +73,12 @@ pub fn handle_eyedropper(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         return;
     }
     let secondary = inp.button == egui::PointerButton::Secondary;
-    if matches!(state.temp_tool, Some((_, crate::state::TempReason::Alt))) {
-        // Temporary Alt eyedropper: Alt is always held, so the button decides.
-        let m = &state.settings.mouse;
-        if secondary && m.alt_right_click_picks_background {
-            state.bg = c;
-        } else if !secondary && m.alt_click_picks_foreground {
-            state.fg = c;
+    if matches!(state.temp_tool, Some((_, crate::state::TempReason::Pick))) {
+        // Temporary eyedropper: the configured chord decides which color.
+        match state.settings.mouse.pick_target(inp.mods, inp.button) {
+            Some(PickTarget::Foreground) => state.fg = c,
+            Some(PickTarget::Background) => state.bg = c,
+            None => {}
         }
     } else if inp.mods.alt || secondary {
         state.bg = c;

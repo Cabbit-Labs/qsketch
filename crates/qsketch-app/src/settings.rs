@@ -415,6 +415,83 @@ impl Default for CanvasSettings {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+}
+
+impl MouseButton {
+    pub fn from_egui(b: egui::PointerButton) -> Option<Self> {
+        Some(match b {
+            egui::PointerButton::Primary => Self::Left,
+            egui::PointerButton::Secondary => Self::Right,
+            egui::PointerButton::Middle => Self::Middle,
+            _ => return None,
+        })
+    }
+}
+
+/// A mouse button plus the modifiers held with it: "Alt+Left click".
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MouseChord {
+    pub ctrl: bool,
+    pub shift: bool,
+    pub alt: bool,
+    pub button: MouseButton,
+}
+
+impl Default for MouseChord {
+    fn default() -> Self {
+        Self { ctrl: false, shift: false, alt: true, button: MouseButton::Left }
+    }
+}
+
+impl MouseChord {
+    pub fn from_egui(mods: egui::Modifiers, button: egui::PointerButton) -> Option<Self> {
+        Some(Self {
+            ctrl: mods.command || mods.ctrl || mods.mac_cmd,
+            shift: mods.shift,
+            alt: mods.alt,
+            button: MouseButton::from_egui(button)?,
+        })
+    }
+
+    pub fn has_modifiers(self) -> bool {
+        self.ctrl || self.shift || self.alt
+    }
+
+    /// The chord's modifiers (and only those) are currently held.
+    pub fn modifiers_held(self, mods: egui::Modifiers) -> bool {
+        self.ctrl == (mods.command || mods.ctrl || mods.mac_cmd) && self.shift == mods.shift && self.alt == mods.alt
+    }
+
+    pub fn matches(self, mods: egui::Modifiers, button: egui::PointerButton) -> bool {
+        self.modifiers_held(mods) && MouseButton::from_egui(button) == Some(self.button)
+    }
+
+    pub fn label(self) -> String {
+        let mut s = String::new();
+        if self.ctrl {
+            s.push_str(if cfg!(target_os = "macos") { "Cmd+" } else { "Ctrl+" });
+        }
+        if self.shift {
+            s.push_str("Shift+");
+        }
+        if self.alt {
+            s.push_str("Alt+");
+        }
+        s.push_str(match self.button {
+            MouseButton::Left => "Left click",
+            MouseButton::Right => "Right click",
+            MouseButton::Middle => "Middle click",
+        });
+        s
+    }
+}
+
 /// Mouse-button behaviors on the canvas (keyboard chords live in the keymap).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -423,10 +500,10 @@ pub struct MouseSettings {
     pub middle_drag_pans: bool,
     /// Right-click with a brush-based tool opens the quick brush settings popup.
     pub right_click_brush_popup: bool,
-    /// Alt+click with a brush-based tool picks the foreground color.
-    pub alt_click_picks_foreground: bool,
-    /// Alt+right-click with a brush-based tool picks the background color.
-    pub alt_right_click_picks_background: bool,
+    /// Chord that picks the foreground color with any color-using tool.
+    pub pick_foreground: Option<MouseChord>,
+    /// Chord that picks the background color with any color-using tool.
+    pub pick_background: Option<MouseChord>,
 }
 
 impl Default for MouseSettings {
@@ -434,10 +511,38 @@ impl Default for MouseSettings {
         Self {
             middle_drag_pans: true,
             right_click_brush_popup: true,
-            alt_click_picks_foreground: true,
-            alt_right_click_picks_background: true,
+            pick_foreground: Some(MouseChord { button: MouseButton::Left, ..MouseChord::default() }),
+            pick_background: Some(MouseChord { button: MouseButton::Right, ..MouseChord::default() }),
         }
     }
+}
+
+impl MouseSettings {
+    /// A pick chord's modifiers are held (a chord without modifiers can't be
+    /// signalled ahead of the click, so it never puts the eyedropper up).
+    pub fn pick_modifiers_held(&self, mods: egui::Modifiers) -> bool {
+        [self.pick_foreground, self.pick_background]
+            .into_iter()
+            .flatten()
+            .any(|c| c.has_modifiers() && c.modifiers_held(mods))
+    }
+
+    /// Which color a press with these modifiers + button picks, if any.
+    pub fn pick_target(&self, mods: egui::Modifiers, button: egui::PointerButton) -> Option<PickTarget> {
+        if self.pick_foreground.is_some_and(|c| c.matches(mods, button)) {
+            Some(PickTarget::Foreground)
+        } else if self.pick_background.is_some_and(|c| c.matches(mods, button)) {
+            Some(PickTarget::Background)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PickTarget {
+    Foreground,
+    Background,
 }
 
 /// In-app self-update.

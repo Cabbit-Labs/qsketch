@@ -244,20 +244,22 @@ impl QSketchApp {
         let ctrl = ctx.input(|i| i.modifiers.command);
         let in_stroke = self.state.session.is_some();
         let middle_down = ctx.input(|i| i.pointer.middle_down());
+        let pick_held = {
+            let mods = ctx.input(|i| i.modifiers);
+            self.state.settings.mouse.pick_modifiers_held(mods) && self.state.tool.uses_color()
+        };
         match self.state.temp_tool {
             Some((_, TempReason::Space)) if !space => self.state.temp_tool = None,
-            Some((_, TempReason::Alt)) if !alt => self.state.temp_tool = None,
+            Some((_, TempReason::Pick)) if !pick_held => self.state.temp_tool = None,
             Some((_, TempReason::Ctrl)) if !ctrl => self.state.temp_tool = None,
             Some((_, TempReason::Middle)) if !middle_down && !in_stroke => self.state.temp_tool = None,
             _ => {}
         }
-        let m = &self.state.settings.mouse;
-        let alt_picks = m.alt_click_picks_foreground || m.alt_right_click_picks_background;
         if !wants_text && !dialog_open && !in_stroke && self.state.temp_tool.is_none() {
             if space {
                 self.state.temp_tool = Some((ToolKind::Hand, TempReason::Space));
-            } else if alt && !ctrl && alt_picks && self.state.tool.uses_brush() {
-                self.state.temp_tool = Some((ToolKind::Eyedropper, TempReason::Alt));
+            } else if pick_held {
+                self.state.temp_tool = Some((ToolKind::Eyedropper, TempReason::Pick));
             } else if ctrl
                 && !alt
                 && (self.state.tool.is_paint() || self.state.hovering_selection())

@@ -5,7 +5,7 @@ use egui::{Context, RichText, Ui};
 
 use crate::actions::{Action, Category, Shortcut};
 use crate::settings::{
-    BrushCursor, ChromeTexture, CustomPalette, IconSet, NewDocBackground, Settings, Theme, WheelBehavior,
+    BrushCursor, ChromeTexture, CustomPalette, IconSet, MouseChord, NewDocBackground, Settings, Theme, WheelBehavior,
 };
 use crate::state::AppState;
 use crate::tools::ToolKind;
@@ -627,20 +627,70 @@ fn mouse(ui: &mut Ui, state: &mut AppState) {
         ui.label("Right-click opens quick brush settings");
         ui.checkbox(&mut m.right_click_brush_popup, "");
         ui.end_row();
-        ui.label("Alt+click picks the foreground color");
-        ui.checkbox(&mut m.alt_click_picks_foreground, "");
+        ui.label("Pick foreground color");
+        chord_binder(ui, "pick_fg", &mut m.pick_foreground);
         ui.end_row();
-        ui.label("Alt+right-click picks the background color");
-        ui.checkbox(&mut m.alt_right_click_picks_background, "");
+        ui.label("Pick background color");
+        chord_binder(ui, "pick_bg", &mut m.pick_background);
         ui.end_row();
     });
     ui.add_space(8.0);
     ui.label(
         RichText::new(
-            "These apply while a brush-based tool is selected. Keyboard chords (marquee on G, Ctrl+R rotate, Shift+X flip, Ctrl+V paste…) are edited under Keyboard Shortcuts.",
+            "Pick chords work with every tool that paints a color (brush, pencil, shapes, fill, gradient, text); holding the chord's modifiers shows the eyedropper. Keyboard chords (marquee on G, Ctrl+R rotate, Shift+X flip, Ctrl+V paste…) are edited under Keyboard Shortcuts.",
         )
         .weak(),
     );
+}
+
+/// A button showing a mouse chord. Click to arm, then press the new chord on
+/// it (a mouse button with whatever modifiers are held). Backspace/Delete
+/// clears, Escape cancels. A bare left click can't be bound: it's how every
+/// tool draws, so it just disarms.
+fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>) {
+    let armed_id = ui.id().with(("chord_armed", id));
+    let mut armed = ui.data(|d| d.get_temp::<bool>(armed_id)).unwrap_or(false);
+    let label = if armed {
+        "Press a chord…".to_string()
+    } else {
+        chord.map(|c| c.label()).unwrap_or_else(|| "—".to_string())
+    };
+    let btn = ui.add(egui::Button::new(label).selected(armed).min_size(egui::vec2(150.0, 0.0)));
+    let mut captured = false;
+    if armed {
+        let hovered = btn.hovered();
+        let events = ui.input(|i| i.events.clone());
+        for ev in events {
+            match ev {
+                egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } => {
+                    armed = false;
+                    captured = true;
+                }
+                egui::Event::Key { key: egui::Key::Backspace | egui::Key::Delete, pressed: true, .. } => {
+                    *chord = None;
+                    armed = false;
+                    captured = true;
+                }
+                egui::Event::PointerButton { pressed: true, button, modifiers, .. } if hovered => {
+                    if let Some(c) = MouseChord::from_egui(modifiers, button) {
+                        if c.has_modifiers() || c.button != crate::settings::MouseButton::Left {
+                            *chord = Some(c);
+                        }
+                    }
+                    armed = false;
+                    captured = true;
+                }
+                _ => {}
+            }
+        }
+    }
+    if !captured && (btn.clicked() || btn.secondary_clicked() || btn.middle_clicked()) {
+        armed = !armed;
+    }
+    ui.data_mut(|d| d.insert_temp(armed_id, armed));
+    if ui.small_button("Clear").clicked() {
+        *chord = None;
+    }
 }
 
 fn tablet(ui: &mut Ui, state: &mut AppState) {

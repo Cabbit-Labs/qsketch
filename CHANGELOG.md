@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Color picking is now a mouse chord that works with every tool that paints a
+  color (brush, pencil, shapes, fill, gradient, text): Alt+click picks the
+  foreground, Alt+right-click the background. Holding the chord's modifiers
+  shows the eyedropper. Both chords are rebindable under Preferences ▸ Mouse
+  (e.g. Ctrl+Shift+click or a bare right-click).
+
 ## 0.12.5 — 2026-09-10
 
 - New default shortcuts: `R` selects the Rectangle tool, `Q` selects Rotate

@@ -60,7 +60,8 @@ pub struct PenState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TempReason {
     Space,
-    Alt,
+    /// A color-pick chord's modifiers are held (see `MouseSettings`).
+    Pick,
     Ctrl,
     EraserTip,
     /// Middle-button drag pans (see `MouseSettings::middle_drag_pans`).

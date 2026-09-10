@@ -149,6 +149,15 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                         state.brush_popup = None;
                     }
                     if hovered && rect.contains(*pos) && state.session.is_none() {
+                        // A pick chord without modifiers (bare right-click, say)
+                        // can't arm the temporary eyedropper, so pick here.
+                        if state.temp_tool.is_none() && state.tool.uses_color() {
+                            if let Some(t) = state.settings.mouse.pick_target(*modifiers, *button) {
+                                let inp = make_input(state, *pos, *button, *modifiers);
+                                tools::fill::pick_once(state, doc_id, inp, t);
+                                continue;
+                            }
+                        }
                         match *button {
                             // Middle-drag: temporary Hand with any tool.
                             egui::PointerButton::Middle if mouse.middle_drag_pans => {

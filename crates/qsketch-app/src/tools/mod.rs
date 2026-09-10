@@ -1,7 +1,7 @@
 //! Tools: kinds, per-tool options, in-progress sessions and event dispatch.
 
 mod contour;
-mod fill;
+pub mod fill;
 pub mod floating;
 mod paint;
 mod select;
@@ -152,6 +152,13 @@ impl ToolKind {
             self,
             ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse
         )
+    }
+
+    /// Tools that paint with the foreground/background color, so a pick
+    /// chord over the canvas should grab a color for them.
+    pub fn uses_color(self) -> bool {
+        self.uses_brush()
+            || matches!(self, ToolKind::Fill | ToolKind::Gradient | ToolKind::Text | ToolKind::Contour)
     }
 
     pub fn cursor(self) -> egui::CursorIcon {
