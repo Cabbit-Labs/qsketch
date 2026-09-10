@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.12.2 — 2026-09-10
 
 - The hidden-layer eye icon is now much dimmer than the visible one on dark
   themes (and lighter on light themes), so the two states are easy to tell
