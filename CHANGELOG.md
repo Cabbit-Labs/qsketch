@@ -6,8 +6,8 @@ All notable changes to qSketch are documented in this file.
 
 - A stylus barrel button mapped to right-click in the tablet driver now
   works as a right-click in qsketch (quick brush popup, color pick, and so
-  on) instead of starting a stroke. Requires the dedicated tablet API
-  (Windows Ink) setting, which is on by default.
+  on) instead of starting a stroke. Requires "Use dedicated tablet API
+  (Windows Ink)" in Settings → Tablet.
 
 ## 0.12.2 — 2026-09-10
 
