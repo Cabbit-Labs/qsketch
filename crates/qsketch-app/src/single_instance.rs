@@ -17,6 +17,9 @@ use std::time::Duration;
 use crate::settings::Settings;
 
 const LOCK_FILE: &str = "instance.lock";
+/// Set on the process the updater relaunches: the old instance is on its way
+/// out, so never try to hand files to it.
+pub const NO_FORWARD_ENV: &str = "QSKETCH_NO_FORWARD";
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -48,7 +51,8 @@ pub enum Outcome {
 /// queued (used to wake the UI thread).
 pub fn acquire(files: &[PathBuf], on_message: impl Fn() + Send + 'static) -> Outcome {
     let lock_path = Settings::config_dir().map(|d| d.join(LOCK_FILE));
-    if let Some(lp) = &lock_path {
+    let skip_forward = std::env::var_os(NO_FORWARD_ENV).is_some();
+    if let Some(lp) = lock_path.as_ref().filter(|_| !skip_forward) {
         if let Some((port, token)) = read_lock(lp) {
             if forward(port, &token, files) {
                 return Outcome::Forwarded;

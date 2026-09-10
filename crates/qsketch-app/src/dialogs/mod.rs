@@ -347,7 +347,7 @@ fn show_update(ctx: &Context, state: &mut AppState) {
     if state.updater.auto_install {
         if let Status::Ready(p) = &status {
             state.updater.auto_install = false;
-            if let Err(e) = crate::update::install_and_relaunch(p) {
+            if let Err(e) = install_and_reopen(state, p) {
                 state.updater.status = Status::Failed(e);
             }
         }
@@ -369,7 +369,7 @@ fn show_update(ctx: &Context, state: &mut AppState) {
         }
         Some("install") => {
             if let Status::Ready(p) = &status {
-                if let Err(e) = crate::update::install_and_relaunch(p) {
+                if let Err(e) = install_and_reopen(state, p) {
                     state.updater.status = Status::Failed(e);
                 }
             }
@@ -795,4 +795,13 @@ fn show_about(ctx: &Context, state: &mut AppState) {
     if closed {
         state.dialogs.about = false;
     }
+}
+
+/// Snapshot unsaved work (recovered on next start) and relaunch the new build
+/// with every file-backed document as an argument, so the update lands the
+/// user back where they were.
+fn install_and_reopen(state: &mut AppState, artifact: &std::path::Path) -> Result<(), String> {
+    state.autosave.flush_all(&state.docs);
+    let reopen: Vec<std::path::PathBuf> = state.docs.iter().filter_map(|d| d.doc.path.clone()).collect();
+    crate::update::install_and_relaunch(artifact, &reopen)
 }

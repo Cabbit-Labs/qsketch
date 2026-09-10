@@ -330,26 +330,28 @@ pub fn verify(sig_b64: &str, data: &[u8]) -> Result<(), String> {
     pk.verify(data, &sig, false).map_err(|_| "update signature does not verify".to_string())
 }
 
-/// Install a verified artifact and relaunch. On success this never returns
-/// (the process exits); errors are returned so the UI can show them.
-pub fn install_and_relaunch(artifact: &Path) -> Result<(), String> {
+/// Install a verified artifact and relaunch, passing `reopen` as file
+/// arguments so the new build comes back with the same documents. On success
+/// this never returns (the process exits); errors are returned so the UI can
+/// show them.
+pub fn install_and_relaunch(artifact: &Path, reopen: &[PathBuf]) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        install_windows(artifact)
+        install_windows(artifact, reopen)
     }
     #[cfg(target_os = "linux")]
     {
-        install_linux(artifact)
+        install_linux(artifact, reopen)
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
-        let _ = artifact;
+        let _ = (artifact, reopen);
         Err("self-update is not supported on this platform".into())
     }
 }
 
 #[cfg(target_os = "windows")]
-fn install_windows(artifact: &Path) -> Result<(), String> {
+fn install_windows(artifact: &Path, reopen: &[PathBuf]) -> Result<(), String> {
     // Run the NSIS installer silently, then start the installed executable.
     // The installer replaces this exe, so we must exit before it copies files;
     // `start /wait` in a detached cmd sequences that for us.
@@ -358,7 +360,16 @@ fn install_windows(artifact: &Path) -> Result<(), String> {
     let strip = |p: &Path| p.display().to_string().trim_start_matches(r"\\?\").to_string();
     let installer = strip(artifact);
     let exe = strip(&exe);
-    let script = format!("start \"\" /wait \"{installer}\" /S && start \"\" \"{exe}\"");
+    let mut script = format!(
+        "set {}=1 && start \"\" /wait \"{installer}\" /S && start \"\" \"{exe}\"",
+        crate::single_instance::NO_FORWARD_ENV
+    );
+    for f in reopen {
+        let f = strip(f);
+        if !f.contains('"') {
+            script.push_str(&format!(" \"{f}\""));
+        }
+    }
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
@@ -374,7 +385,7 @@ fn install_windows(artifact: &Path) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
-fn install_linux(artifact: &Path) -> Result<(), String> {
+fn install_linux(artifact: &Path, reopen: &[PathBuf]) -> Result<(), String> {
     // The tarball holds <pkg>/bin/qsketch; extract that binary next to the
     // running executable and rename it over (Linux allows replacing a running
     // binary), then re-exec.
@@ -405,7 +416,11 @@ fn install_linux(artifact: &Path) -> Result<(), String> {
     std::fs::rename(&tmp, &exe).map_err(|e| format!("replace executable: {e}"))?;
     let _ = std::fs::remove_file(artifact);
     // Relaunch the new binary and leave.
-    std::process::Command::new(&exe).spawn().map_err(|e| format!("relaunch: {e}"))?;
+    std::process::Command::new(&exe)
+        .args(reopen)
+        .env(crate::single_instance::NO_FORWARD_ENV, "1")
+        .spawn()
+        .map_err(|e| format!("relaunch: {e}"))?;
     std::process::exit(0);
 }
 

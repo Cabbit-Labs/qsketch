@@ -8,6 +8,9 @@ All notable changes to qSketch are documented in this file.
   (or a second `qsketch file.qsk` launch) while it is already running opens
   the file in a new tab of the existing window and brings it to the front
   instead of starting another copy.
+- Updating from inside the app now brings your work back: after the new
+  build relaunches, every open file is reopened, and documents with unsaved
+  changes (including untitled ones) are offered for recovery.
 
 ## 0.11.0 — 2026-09-10
 

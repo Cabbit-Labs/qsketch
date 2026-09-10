@@ -119,8 +119,17 @@ pub fn recover(state: &mut AppState, r: &Recoverable) -> Option<DocId> {
             // An untitled snapshot must not collide with this session's own Untitled-N.
             let taken = path.is_none() && state.docs.iter().any(|d| d.doc.title == r.meta.title);
             let title = if r.meta.title.is_empty() || taken { state.untitled_title() } else { r.meta.title.clone() };
-            let mut doc = Document::from_state(ds, title, path, "Recovered");
+            let mut doc = Document::from_state(ds, title, path.clone(), "Recovered");
             doc.mark_unsaved();
+            // The file may already be open (e.g. reopened after an update
+            // relaunch); the snapshot is newer, so it takes that tab's place.
+            if let Some(p) = &path {
+                let dup: Vec<DocId> =
+                    state.docs.iter().filter(|d| d.doc.path.as_deref() == Some(p.as_path())).map(|d| d.id).collect();
+                for id in dup {
+                    crate::files::force_close(state, id);
+                }
+            }
             let id = state.add_document(doc);
             remove_files(&r.qsk);
             Some(id)
@@ -211,6 +220,39 @@ impl Autosave {
                 })
                 .ok();
             break;
+        }
+    }
+
+    /// Snapshot every modified document right now, on this thread. Used before
+    /// the updater relaunches so unsaved work is offered for recovery.
+    pub fn flush_all(&mut self, docs: &[DocEntry]) {
+        let Some(d) = dir() else { return };
+        // Let an in-flight background snapshot finish first.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while self.busy.load(Ordering::Relaxed) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        for e in docs {
+            if !e.doc.is_modified() {
+                continue;
+            }
+            let Some((qsk, json)) = paths_for(e.id) else { continue };
+            let meta = Meta {
+                pid: std::process::id(),
+                title: e.doc.title.clone(),
+                path: e.doc.path.clone(),
+                written: now_secs(),
+            };
+            let res = std::fs::create_dir_all(&d)
+                .map_err(anyhow::Error::from)
+                .and_then(|_| io::qsk::save(&qsk, e.doc.state()))
+                .and_then(|_| Ok(std::fs::write(&json, serde_json::to_vec(&meta)?)?));
+            match res {
+                Ok(()) => {
+                    self.snapshotted.insert(e.id, e.doc.history.cursor());
+                }
+                Err(err) => log::warn!("autosave flush {}: {err:#}", qsk.display()),
+            }
         }
     }
 
