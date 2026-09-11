@@ -4,6 +4,21 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Free Transform (`Ctrl+T`, Edit menu): transforms the selected pixels, or
+  the whole active layer when nothing is selected. Drag inside to move, the
+  handles to scale (corners keep the aspect ratio, Shift frees it, Alt scales
+  from the center), and outside the box to rotate (Shift snaps to 15°). A
+  small panel beside the box picks the mode: **Freeform** (move / scale /
+  rotate), **Resize** (move / scale only), **Rotate** (drag anywhere to spin
+  about the center), **Deform** (drag the corners and edges freely,
+  perspective-style; Ctrl+drag a handle in Freeform jumps straight there) and
+  **Warp** (bend the pixels on a 2×2 to 6×6 control lattice). The options bar
+  adds X, Y, W%, H% and angle fields, the aspect lock, Smooth/Pixel
+  resampling and Reset. Enter, double-click or OK confirms; Esc or Cancel
+  restores the layer. The selection follows the transformed pixels. Pasted
+  images get the same transform box.
+- Color panel shows either the HSV or the RGB sliders (Sliders dropdown),
+  not both, so it takes up less space.
 - Update check retries a dropped connection a few times before reporting
   an "Update problem".
 

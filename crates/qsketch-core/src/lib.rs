@@ -32,6 +32,7 @@ pub mod ops;
 pub mod raster;
 pub mod text;
 pub mod tip;
+pub mod warp;
 
 pub use blend::BlendMode;
 pub use brush::{AngleControl, BrushSettings, PaintMode, StabilizerMode, StrokeEngine, StrokeSample, TextureMode};

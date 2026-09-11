@@ -105,6 +105,7 @@ actions! {
     Clear => (Edit, "Clear", ["Delete"]),
     FillForeground => (Edit, "Fill with Foreground", ["Alt+Backspace"]),
     FillBackground => (Edit, "Fill with Background", ["Ctrl+Backspace"]),
+    FreeTransform => (Edit, "Free Transform", ["Ctrl+T"]),
     Preferences => (Edit, "Preferences…", ["Ctrl+K"]),
     // Image
     ImageSize => (Image, "Image Size…", ["Ctrl+Alt+I"]),

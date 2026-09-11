@@ -379,6 +379,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     }
     brush_popup(ui, state);
     tools::text::editor_ui(ui, state, doc_id);
+    tools::floating::panel_ui(ui, state, doc_id);
 }
 
 /// Quick brush settings popup at the right-click position.

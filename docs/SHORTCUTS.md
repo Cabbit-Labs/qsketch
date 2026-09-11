@@ -38,6 +38,7 @@ reachable from its menu until you assign one.
 | Clear | `Delete` |
 | Fill with Foreground | `Alt+Backspace` |
 | Fill with Background | `Ctrl+Backspace` |
+| Free Transform | `Ctrl+T` |
 | Preferences… | `Ctrl+K` |
 
 ## Image

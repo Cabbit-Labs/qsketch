@@ -167,35 +167,92 @@ fn symmetry_group(ui: &mut Ui, state: &mut AppState) {
     group(ui, &theme, Section::Brush, |ui| symmetry_options(ui, state));
 }
 
-/// Options while a pasted image is floating: size, aspect lock, filter, apply/cancel.
+/// Options while pixels are floating (paste / Free Transform): mode, numbers,
+/// aspect lock, filter, apply/cancel.
 fn floating_options(ui: &mut Ui, state: &mut AppState) {
+    use crate::tools::floating::Mode;
     let theme = state.settings.ui.palette();
+    let is_paste = state.floating.as_ref().is_some_and(|f| f.is_paste());
     group(ui, &theme, Section::Tools, |ui| {
-        ui.label(icon(icons::SELECTION, 15.0));
-        ui.label(egui::RichText::new("Paste").strong());
+        ui.label(icon(if is_paste { icons::SELECTION } else { icons::ARROWS_OUT_CARDINAL }, 15.0));
+        ui.label(egui::RichText::new(if is_paste { "Paste" } else { "Free Transform" }).strong());
     });
     let mut apply = false;
     let mut cancel = false;
     let p = state.settings.ui.palette();
     if let Some(f) = state.floating.as_mut() {
         chip(ui, p.section(Section::Tools), p.section_tint(Section::Tools), |ui| {
-            let r = f.irect();
-            let (sw, sh) = (f.source.width(), f.source.height());
-            let pct = if sw > 0 { r.w as f32 / sw as f32 * 100.0 } else { 100.0 };
-            ui.label(format!("{} × {} px at ({}, {})  ·  {:.0}%", r.w, r.h, r.x, r.y, pct));
-            ui.checkbox(&mut f.keep_aspect, "Keep aspect")
-                .on_hover_text("Corner handles keep the aspect ratio (Shift toggles)");
+            let mut mode = f.mode;
+            egui::ComboBox::from_id_salt("float_mode").selected_text(mode.label()).width(80.0).show_ui(ui, |ui| {
+                for m in Mode::ALL {
+                    ui.selectable_value(&mut mode, m, m.label());
+                }
+            });
+            if mode != f.mode {
+                f.set_mode(mode);
+            }
+            match f.mode {
+                Mode::Freeform | Mode::Resize | Mode::Rotate => {
+                    let c = f.center;
+                    let (mut cx, mut cy) = (c.x, c.y);
+                    ui.label("X");
+                    let rx = ui.add(egui::DragValue::new(&mut cx).speed(1.0).fixed_decimals(0));
+                    ui.label("Y");
+                    let ry = ui.add(egui::DragValue::new(&mut cy).speed(1.0).fixed_decimals(0));
+                    if rx.changed() || ry.changed() {
+                        f.set_center(qsketch_core::Pt::new(cx, cy));
+                    }
+                    let (pw, ph) = f.scale_pct();
+                    let (mut w, mut h) = (pw, ph);
+                    ui.label("W");
+                    let rw = ui.add(egui::DragValue::new(&mut w).speed(0.5).suffix("%").range(1.0..=10000.0));
+                    ui.label("H");
+                    let rh = ui.add(egui::DragValue::new(&mut h).speed(0.5).suffix("%").range(1.0..=10000.0));
+                    if rw.changed() || rh.changed() {
+                        if f.keep_aspect {
+                            if rw.changed() {
+                                h = w;
+                            } else {
+                                w = h;
+                            }
+                        }
+                        let (sw, sh) = (f.source.width() as f32, f.source.height() as f32);
+                        f.set_size(sw * w / 100.0, sh * h / 100.0);
+                    }
+                    let mut deg = f.angle.to_degrees();
+                    ui.label(icon(icons::ARROWS_CLOCKWISE, 13.0)).on_hover_text("Rotation");
+                    if ui.add(egui::DragValue::new(&mut deg).speed(0.5).suffix("°").fixed_decimals(1)).changed() {
+                        f.set_angle(deg);
+                    }
+                    ui.checkbox(&mut f.keep_aspect, "Keep aspect")
+                        .on_hover_text("Corner handles keep the aspect ratio (Shift toggles)");
+                }
+                Mode::Deform => {
+                    ui.label(egui::RichText::new("Drag corners or edges").weak());
+                }
+                Mode::Warp => {
+                    ui.label("Grid");
+                    let mut div = f.warp_div;
+                    for d in [2u32, 3, 4, 6] {
+                        ui.selectable_value(&mut div, d, format!("{d}×{d}"));
+                    }
+                    if div != f.warp_div {
+                        f.set_warp_div(div);
+                    }
+                }
+            }
             let mut filter = f.filter;
             ui.selectable_value(&mut filter, qsketch_core::raster::ResizeFilter::Bilinear, "Smooth");
             ui.selectable_value(&mut filter, qsketch_core::raster::ResizeFilter::Nearest, "Pixel");
             if filter != f.filter {
                 f.filter = filter;
-                f.set_rect(r);
+                f.reset_filter();
             }
-            if f.is_scaled() && ui.small_button("1:1").on_hover_text("Reset to the original size").clicked() {
-                f.reset_size();
+            if !f.is_identity()
+                && ui.small_button("Reset").on_hover_text("Back to the original size and angle").clicked()
+            {
+                f.reset();
             }
-            let _ = (sw, sh);
             apply = ui.button(format!("{} Apply", icons::CHECK)).on_hover_text("Enter").clicked();
             cancel = ui.button(format!("{} Cancel", icons::X)).on_hover_text("Esc").clicked();
         });

@@ -605,6 +605,8 @@ impl QSketchApp {
                 self.menu_item(ui, Action::FillForeground, has_doc);
                 self.menu_item(ui, Action::FillBackground, has_doc);
                 ui.separator();
+                self.menu_item(ui, Action::FreeTransform, has_doc);
+                ui.separator();
                 self.menu_item(ui, Action::Preferences, true);
             });
             top_menu(ui, "Image", |ui| {
@@ -894,7 +896,19 @@ impl QSketchApp {
                         "Shift: add · Alt: subtract · click: deselect"
                     }
                     _ if self.state.floating.is_some() => {
-                        "drag: move · handles: scale (Shift toggles aspect) · Enter: apply · Esc: cancel"
+                        match self.state.floating.as_ref().map(|f| f.mode) {
+                            Some(crate::tools::floating::Mode::Deform) => {
+                                "drag corners/edges: deform · inside: move · Enter: OK · Esc: cancel"
+                            }
+                            Some(crate::tools::floating::Mode::Warp) => {
+                                "drag points: bend · inside: move · Enter: OK · Esc: cancel"
+                            }
+                            Some(crate::tools::floating::Mode::Rotate) => "drag: rotate (Shift: 15°) · Enter: OK · Esc: cancel",
+                            Some(crate::tools::floating::Mode::Resize) => {
+                                "handles: scale (Shift: free aspect, Alt: from center) · inside: move · Enter: OK · Esc: cancel"
+                            }
+                            _ => "drag: move · outside: rotate (Shift: 15°) · handles: scale (Shift: free aspect, Alt: from center, Ctrl: deform) · Enter: OK · Esc: cancel",
+                        }
                     }
                     ToolKind::Move => "Shift: constrain · arrows: nudge",
                     ToolKind::Zoom => "click: zoom in · Alt+click: zoom out · drag: scrub",
@@ -981,6 +995,11 @@ impl QSketchApp {
             Action::CopyMerged => {
                 if let Some(id) = active {
                     crate::clipboard::copy(&mut self.state, id, true);
+                }
+            }
+            Action::FreeTransform => {
+                if let Some(id) = active {
+                    crate::tools::floating::begin_transform(&mut self.state, id);
                 }
             }
             Action::Paste => {
