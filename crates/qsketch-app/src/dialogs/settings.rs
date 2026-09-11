@@ -163,6 +163,20 @@ fn general(ui: &mut Ui, state: &mut AppState) {
             "Unsaved documents are snapshotted to the settings folder and offered for recovery on the next start.",
         );
         ui.end_row();
+        ui.label("Keep previous versions of saved files");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut g.backups, "");
+            ui.add_enabled_ui(g.backups, |ui| {
+                ui.label("keep");
+                ui.add(egui::DragValue::new(&mut g.backup_versions).range(1..=20));
+                ui.label("versions");
+            });
+        })
+        .response
+        .on_hover_text(
+            "Saving over a file first copies the old one into the settings folder. File \u{25b8} Restore Previous Version opens one as a new document.",
+        );
+        ui.end_row();
     });
     ui.add_space(14.0);
     ui.heading("Updates");

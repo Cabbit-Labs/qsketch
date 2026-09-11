@@ -130,6 +130,8 @@ pub struct AppState {
     pub show_panel_requests: Vec<crate::workspace::PanelKind>,
     pub close_doc_requests: Vec<DocId>,
     pub open_file_requests: Vec<PathBuf>,
+    /// Backups picked from File ▸ Restore Previous Version: (original, backup).
+    pub restore_requests: Vec<(PathBuf, crate::backups::Backup)>,
 
     /// Pointer position over the active canvas (document coords), for the Info panel.
     pub hover_doc_pos: Option<Pt>,
@@ -197,6 +199,7 @@ impl AppState {
             show_panel_requests: Vec::new(),
             close_doc_requests: Vec::new(),
             open_file_requests: Vec::new(),
+            restore_requests: Vec::new(),
             hover_doc_pos: None,
             hover_screen_pos: None,
             hover_color: None,

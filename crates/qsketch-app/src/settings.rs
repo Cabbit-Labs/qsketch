@@ -212,6 +212,10 @@ pub struct GeneralSettings {
     /// Periodically snapshot unsaved documents for crash recovery.
     pub autosave: bool,
     pub autosave_interval_secs: u32,
+    /// Copy the previous version aside whenever a file is overwritten.
+    pub backups: bool,
+    /// How many previous versions to keep per file.
+    pub backup_versions: u32,
     /// Paste onto a new layer above the active one instead of onto it.
     pub paste_new_layer: bool,
 }
@@ -229,6 +233,8 @@ impl Default for GeneralSettings {
             open_last_files_on_start: false,
             autosave: true,
             autosave_interval_secs: 120,
+            backups: true,
+            backup_versions: 3,
             paste_new_layer: true,
         }
     }

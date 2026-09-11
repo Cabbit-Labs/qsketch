@@ -91,6 +91,9 @@ pub fn save_as(state: &mut AppState, doc_id: DocId) -> bool {
 }
 
 fn write_native(state: &mut AppState, doc_id: DocId, path: &Path) -> bool {
+    if state.settings.general.backups {
+        crate::backups::take(path, state.settings.general.backup_versions as usize);
+    }
     let Some(entry) = state.doc_mut(doc_id) else { return false };
     match io::save_document(path, entry.doc.state()) {
         Ok(()) => {

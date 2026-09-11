@@ -3,6 +3,7 @@
 mod actions;
 mod app;
 mod autosave;
+mod backups;
 mod brush_library;
 mod canvas;
 mod clipboard;

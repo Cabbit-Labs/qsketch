@@ -136,6 +136,11 @@ impl QSketchApp {
                 self.workspace.add_document(id);
             }
         }
+        for (orig, b) in std::mem::take(&mut self.state.restore_requests) {
+            if let Some(id) = crate::backups::restore(&mut self.state, &orig, &b) {
+                self.workspace.add_document(id);
+            }
+        }
         // Make sure each document has a tab, and drop tabs for closed docs.
         let ids: Vec<DocId> = self.state.docs.iter().map(|d| d.id).collect();
         for &id in &ids {
@@ -607,6 +612,27 @@ impl QSketchApp {
                         self.state.settings.general.recent_files.clear();
                         ui.close();
                     }
+                });
+                let doc_path = self.state.active().and_then(|d| d.doc.path.clone());
+                ui.add_enabled_ui(doc_path.is_some(), |ui| {
+                    ui.menu_button("Restore Previous Version", |ui| {
+                        let Some(orig) = doc_path.clone() else { return };
+                        let backups = crate::backups::list(&orig);
+                        if backups.is_empty() {
+                            ui.add_enabled(false, egui::Button::new("(no backups yet)"));
+                        }
+                        for b in backups {
+                            let label = format!("{}  ·  {} KB", b.age(), b.bytes / 1024);
+                            if ui.button(label).on_hover_text(b.file.display().to_string()).clicked() {
+                                self.state.restore_requests.push((orig.clone(), b));
+                                ui.close();
+                            }
+                        }
+                    })
+                    .response
+                    .on_hover_text(
+                        "Versions of this file that were overwritten by saving; opens one as a new document",
+                    );
                 });
                 ui.separator();
                 self.menu_item(ui, Action::Save, has_doc);
