@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.1 — 2026-09-11
 
 - Groups get Photoshop's **Pass Through** blend mode (the default for new
   groups): members blend directly with the layers below the group, so a
