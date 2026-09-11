@@ -52,24 +52,19 @@ impl Theme {
     }
 }
 
-/// Colors of the Custom theme, stored as sRGB triples so the TOML stays
-/// hand-editable.
+/// Colors of the Custom theme: a primary (chrome) color and a secondary
+/// (accent) color, stored as sRGB triples so the TOML stays hand-editable.
+/// Everything else (backgrounds, widget shades, borders, text) is derived
+/// from the primary's lightness.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CustomPalette {
-    pub dark: bool,
-    pub bg: [u8; 3],
-    pub panel: [u8; 3],
-    pub panel_alt: [u8; 3],
-    pub widget: [u8; 3],
-    pub widget_hover: [u8; 3],
-    pub widget_active: [u8; 3],
-    pub border: [u8; 3],
-    pub text: [u8; 3],
-    pub text_dim: [u8; 3],
-    pub accent: [u8; 3],
-    pub accent_dim: [u8; 3],
-    pub danger: [u8; 3],
+    /// Panel color; the whole chrome is shaded from it.
+    #[serde(alias = "panel")]
+    pub primary: [u8; 3],
+    /// Accent: selection, links, the active tool.
+    #[serde(alias = "accent")]
+    pub secondary: [u8; 3],
 }
 
 impl Default for CustomPalette {
@@ -81,59 +76,56 @@ impl Default for CustomPalette {
 impl CustomPalette {
     pub fn from_palette(p: &crate::ui::theme::Palette) -> Self {
         let c = |c: egui::Color32| [c.r(), c.g(), c.b()];
-        Self {
-            dark: p.dark,
-            bg: c(p.bg),
-            panel: c(p.panel),
-            panel_alt: c(p.panel_alt),
-            widget: c(p.widget),
-            widget_hover: c(p.widget_hover),
-            widget_active: c(p.widget_active),
-            border: c(p.border),
-            text: c(p.text),
-            text_dim: c(p.text_dim),
-            accent: c(p.accent),
-            accent_dim: c(p.accent_dim),
-            danger: c(p.danger),
-        }
+        Self { primary: c(p.panel), secondary: c(p.accent) }
+    }
+
+    pub fn is_dark(&self) -> bool {
+        luma(self.primary) < 0.5
     }
 
     pub fn to_palette(&self) -> crate::ui::theme::Palette {
+        let dark = self.is_dark();
         let c = |v: [u8; 3]| egui::Color32::from_rgb(v[0], v[1], v[2]);
+        // Positive = toward white, negative = toward black; dark themes get
+        // lighter widgets on the panel, light themes darker ones.
+        let sign = if dark { 1.0 } else { -1.0 };
+        let shade = |t: f32| c(mix(self.primary, t));
+        let text = if dark { [230, 233, 245] } else { [30, 30, 36] };
+        let text_dim = if dark { [150, 158, 190] } else { [100, 100, 115] };
+        let text_mix = |t: f32| c(mix_to(self.primary, text, t));
         crate::ui::theme::Palette {
-            bg: c(self.bg),
-            panel: c(self.panel),
-            panel_alt: c(self.panel_alt),
-            widget: c(self.widget),
-            widget_hover: c(self.widget_hover),
-            widget_active: c(self.widget_active),
-            border: c(self.border),
-            text: c(self.text),
-            text_dim: c(self.text_dim),
-            accent: c(self.accent),
-            accent_dim: c(self.accent_dim),
-            danger: c(self.danger),
-            dark: self.dark,
+            bg: shade(-0.30 * sign),
+            panel: c(self.primary),
+            panel_alt: shade(-0.14 * sign),
+            widget: shade(0.12 * sign),
+            widget_hover: shade(0.22 * sign),
+            widget_active: shade(0.34 * sign),
+            border: shade(if dark { -0.5 } else { -0.25 }),
+            text: text_mix(1.0),
+            text_dim: c(text_dim),
+            accent: c(self.secondary),
+            accent_dim: c(mix(self.secondary, -0.3)),
+            danger: egui::Color32::from_rgb(255, 92, 92),
+            dark,
         }
     }
+}
 
-    /// Named slots for the preferences editor.
-    pub fn slots(&mut self) -> [(&'static str, &'static str, &mut [u8; 3]); 12] {
-        [
-            ("Background", "Area behind the canvas and between panels", &mut self.bg),
-            ("Panel", "Panel and window bodies", &mut self.panel),
-            ("Panel (alt)", "Tab bars, menu bar, status bar, chips", &mut self.panel_alt),
-            ("Widget", "Buttons and fields", &mut self.widget),
-            ("Widget hover", "Hovered buttons", &mut self.widget_hover),
-            ("Widget active", "Pressed / open widgets", &mut self.widget_active),
-            ("Border", "Outlines and dividers", &mut self.border),
-            ("Text", "Primary text", &mut self.text),
-            ("Text (dim)", "Secondary text and hints", &mut self.text_dim),
-            ("Accent", "Selection, links, active tool", &mut self.accent),
-            ("Accent (dim)", "Selected rows and fills", &mut self.accent_dim),
-            ("Danger", "Errors and destructive actions", &mut self.danger),
-        ]
-    }
+/// Relative luminance (0..1) of an sRGB triple.
+fn luma(v: [u8; 3]) -> f32 {
+    (0.2126 * v[0] as f32 + 0.7152 * v[1] as f32 + 0.0722 * v[2] as f32) / 255.0
+}
+
+/// Mix toward white (`t` > 0) or black (`t` < 0) by |t|.
+fn mix(v: [u8; 3], t: f32) -> [u8; 3] {
+    let target = if t >= 0.0 { [255u8; 3] } else { [0u8; 3] };
+    mix_to(v, target, t.abs())
+}
+
+fn mix_to(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
+    let t = t.clamp(0.0, 1.0);
+    let f = |i: usize| (a[i] as f32 + (b[i] as f32 - a[i] as f32) * t).round() as u8;
+    [f(0), f(1), f(2)]
 }
 
 /// Which glyphs draw the tools and panel chrome.

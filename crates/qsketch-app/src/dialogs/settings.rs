@@ -401,7 +401,7 @@ fn texture_editor(ui: &mut Ui, t: &mut crate::settings::TextureSettings) {
     );
 }
 
-/// Color pickers for every slot of the Custom theme, plus "start from" presets.
+/// Primary + secondary color pickers for the Custom theme, plus "start from" presets.
 fn custom_palette_editor(ui: &mut Ui, c: &mut CustomPalette) {
     use crate::ui::theme::Palette;
     ui.horizontal(|ui| {
@@ -416,23 +416,29 @@ fn custom_palette_editor(ui: &mut Ui, c: &mut CustomPalette) {
                 *c = CustomPalette::from_palette(&p);
             }
         }
-        ui.separator();
-        ui.checkbox(&mut c.dark, "Dark base").on_hover_text("Affects default widget shading and the update dialog");
     });
     ui.add_space(4.0);
-    egui::Grid::new("custom_palette").num_columns(6).spacing([10.0, 6.0]).show(ui, |ui| {
-        for (i, (name, tip, rgb)) in c.slots().into_iter().enumerate() {
+    ui.horizontal(|ui| {
+        for (name, tip, rgb) in [
+            ("Primary", "Panels and chrome; backgrounds, widgets, borders and text are shaded from it", &mut c.primary),
+            ("Secondary", "Accent: selection, links, the active tool", &mut c.secondary),
+        ] {
             let mut col = egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
             if egui::color_picker::color_edit_button_srgba(ui, &mut col, egui::color_picker::Alpha::Opaque).changed() {
                 *rgb = [col.r(), col.g(), col.b()];
             }
             ui.label(name).on_hover_text(tip);
-            if i % 3 == 2 {
-                ui.end_row();
-            }
+            ui.add_space(12.0);
         }
     });
-    ui.label(RichText::new("Changes apply live. The Custom theme is saved with your settings.").weak().small());
+    ui.label(
+        RichText::new(format!(
+            "Changes apply live. The chrome is shaded {} from the primary color.",
+            if c.is_dark() { "as a dark theme" } else { "as a light theme" }
+        ))
+        .weak()
+        .small(),
+    );
 }
 
 /// Icon set cards and the per-tool override editor.
