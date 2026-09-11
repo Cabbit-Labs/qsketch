@@ -139,6 +139,14 @@ fn general(ui: &mut Ui, state: &mut AppState) {
         ui.label("Reopen last files on start");
         ui.checkbox(&mut g.open_last_files_on_start, "");
         ui.end_row();
+        ui.label("Paste images onto");
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut g.paste_new_layer, true, "A new layer above");
+            ui.selectable_value(&mut g.paste_new_layer, false, "The current layer");
+        })
+        .response
+        .on_hover_text("Where Ctrl+V puts pasted pixels. Either way they float for placement until Enter.");
+        ui.end_row();
         ui.label("Autosave for crash recovery");
         ui.horizontal(|ui| {
             ui.checkbox(&mut g.autosave, "");

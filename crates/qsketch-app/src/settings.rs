@@ -220,6 +220,8 @@ pub struct GeneralSettings {
     /// Periodically snapshot unsaved documents for crash recovery.
     pub autosave: bool,
     pub autosave_interval_secs: u32,
+    /// Paste onto a new layer above the active one instead of onto it.
+    pub paste_new_layer: bool,
 }
 
 impl Default for GeneralSettings {
@@ -235,6 +237,7 @@ impl Default for GeneralSettings {
             open_last_files_on_start: false,
             autosave: true,
             autosave_interval_secs: 120,
+            paste_new_layer: true,
         }
     }
 }

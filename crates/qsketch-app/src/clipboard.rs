@@ -113,6 +113,19 @@ pub fn paste(state: &mut AppState, doc_id: DocId, in_place: bool) {
         let cy = c.y.clamp(0.0, dh as f32);
         ((cx - w as f32 / 2.0).round() as i32, (cy - h as f32 / 2.0).round() as i32)
     };
+    if state.settings.general.paste_new_layer {
+        // Finish any pending paste first, then add the target layer; it becomes
+        // part of the "Paste" history step (Esc reverts it along with the pixels).
+        crate::tools::floating::commit(state);
+        state.cancel_session();
+        if let Some(entry) = state.doc_mut(doc_id) {
+            let s = entry.doc.state_mut();
+            let name = s.unique_layer_name("Pasted Layer");
+            s.add_layer(name, None);
+            let r = entry.doc.state().rect();
+            entry.doc.mark_dirty_rect(r);
+        }
+    }
     if crate::tools::floating::begin(state, doc_id, clip.to_raster(), x, y, w, h) {
         state.toasts.push(Level::Info, "Drag to move, drag handles to scale. Enter applies, Esc cancels.");
     }
