@@ -14,11 +14,12 @@ All notable changes to qSketch are documented in this file.
   octotablet backend and no longer depends on the driver reporting an
   inverted cursor at proximity time. Can be turned off under
   Preferences ▸ Tablet as before.
-- Windows: new opt-in **WinTab** backend (Preferences ▸ Tablet ▸ "Use
-  WinTab") for Wacom tablets with "Use Windows Ink" turned off in the driver.
+- Windows: new **WinTab** backend, on by default (Preferences ▸ Tablet ▸ "Use
+  WinTab"), for Wacom tablets with "Use Windows Ink" turned off in the driver.
   Pressure, tilt, eraser end and barrel buttons come straight from the
-  driver; previously the pen was a plain mouse without Ink. Off by default
-  until proven on real hardware; takes effect after restart.
+  driver; previously the pen was a plain mouse without Ink. Falls back to the
+  Windows Ink path when no driver is running. Toggling it takes effect after
+  restart.
 
 ## 0.15.2 — 2026-09-11
 

@@ -671,7 +671,7 @@ impl Default for TabletSettings {
             pressure_gamma: 1.0,
             min_pressure: 0.0,
             use_octotablet: false,
-            use_wintab: false,
+            use_wintab: true,
             eraser_tip_switches_tool: true,
             mouse_pressure: 1.0,
         }
