@@ -412,6 +412,10 @@ pub struct CanvasSettings {
     pub zoom_to_cursor: bool,
     pub brush_cursor: BrushCursor,
     pub smooth_zoom_out: bool,
+    /// While `Q` is held the view follows the pointer (no click needed).
+    pub quick_rotate_follow_pointer: bool,
+    /// Tapping `Q` twice resets the view rotation.
+    pub quick_rotate_double_tap_reset: bool,
 }
 
 impl Default for CanvasSettings {
@@ -428,6 +432,8 @@ impl Default for CanvasSettings {
             zoom_to_cursor: true,
             brush_cursor: BrushCursor::Outline,
             smooth_zoom_out: true,
+            quick_rotate_follow_pointer: true,
+            quick_rotate_double_tap_reset: true,
         }
     }
 }

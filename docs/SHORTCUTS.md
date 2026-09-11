@@ -157,7 +157,8 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Zoom | `Z` |
 | Hand | `H` |
 | Rotate View | `Shift+R` |
-| Quick Rotate (while held) | `Q` |
+| Quick Rotate (while held; move the pointer) | `Q` |
+| Reset rotation | `Q` `Q` (double-tap) |
 
 ## Brush
 

@@ -81,6 +81,14 @@ pub fn handle_hand(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
 
 pub fn handle_rotate(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     match ev {
+        // Quick rotate (Q held): the view follows the pointer without a click.
+        CanvasEvent::Hover(inp)
+            if state.settings.canvas.quick_rotate_follow_pointer
+                && matches!(state.temp_tool, Some((_, crate::state::TempReason::QuickRotate)))
+                && state.session.is_none() =>
+        {
+            handle_rotate(state, doc_id, CanvasEvent::Press(inp));
+        }
         CanvasEvent::Press(inp) => {
             if state.session.is_none() {
                 let Some(entry) = state.doc(doc_id) else { return };

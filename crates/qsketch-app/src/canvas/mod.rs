@@ -9,7 +9,7 @@ use qsketch_core::{Pt, TILE, TILE_BYTES};
 
 use crate::settings::{BrushCursor, WheelBehavior};
 use crate::state::{AppState, BrushPopup, DocId, TempReason};
-use crate::tools::{self, CanvasEvent, CanvasInput, ToolKind};
+use crate::tools::{self, CanvasEvent, CanvasInput, ToolKind, ToolSession};
 use render::{CanvasCallback, TileUpload, Uniforms};
 
 pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
@@ -232,7 +232,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     }
     // Safety net: if the pointer button is no longer down but a session is
     // still active (e.g. release happened outside the window), finish it.
-    if state.session.is_some() && state.session_doc == Some(doc_id) {
+    let quick_rotating = matches!(state.temp_tool, Some((_, TempReason::QuickRotate)))
+        && matches!(state.session, Some(ToolSession::RotateDrag { .. }));
+    if state.session.is_some() && state.session_doc == Some(doc_id) && !quick_rotating {
         let any_down = ui.input(|i| i.pointer.any_down());
         if !any_down && !state.pen.tablet_active {
             if let Some(pos) = last_pos.or(ui.input(|i| i.pointer.latest_pos())) {

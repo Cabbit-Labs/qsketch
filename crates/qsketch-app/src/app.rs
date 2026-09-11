@@ -29,6 +29,8 @@ pub struct QSketchApp {
     /// App icon for the custom title strip.
     app_icon: egui::TextureHandle,
     last_settings_save: Instant,
+    /// Last plain `Q` press, for the double-tap view reset.
+    last_q_press: Option<Instant>,
     last_title: String,
     /// A text field had focus during the previous frame (shortcuts are suspended).
     text_editing: bool,
@@ -85,6 +87,7 @@ impl QSketchApp {
             applied_native_frame,
             app_icon,
             last_settings_save: Instant::now(),
+            last_q_press: None,
             last_title: String::new(),
             text_editing: false,
             clipboard_chord_fired: false,
@@ -252,7 +255,14 @@ impl QSketchApp {
         };
         match self.state.temp_tool {
             Some((_, TempReason::Space)) if !space => self.state.temp_tool = None,
-            Some((_, TempReason::QuickRotate)) if !quick_rotate => self.state.temp_tool = None,
+            Some((_, TempReason::QuickRotate)) if !quick_rotate => {
+                self.state.temp_tool = None;
+                // A pointer-following rotation has no button release to end it.
+                if matches!(self.state.session, Some(crate::tools::ToolSession::RotateDrag { .. })) {
+                    self.state.session = None;
+                    self.state.session_doc = None;
+                }
+            }
             Some((_, TempReason::Pick)) if !pick_held => self.state.temp_tool = None,
             Some((_, TempReason::Ctrl)) if !ctrl => self.state.temp_tool = None,
             Some((_, TempReason::Middle)) if !middle_down && !in_stroke => self.state.temp_tool = None,
@@ -279,6 +289,20 @@ impl QSketchApp {
             return;
         }
         for ev in events {
+            // Double-tap Q: reset the view rotation.
+            if let egui::Event::Key { key: Key::Q, pressed: true, repeat: false, modifiers, .. } = &ev {
+                if modifiers.is_none() && self.state.settings.canvas.quick_rotate_double_tap_reset {
+                    let now = Instant::now();
+                    let double = self.last_q_press.is_some_and(|t| now.duration_since(t) < Duration::from_millis(400));
+                    self.last_q_press = if double { None } else { Some(now) };
+                    if double {
+                        self.state.session = None;
+                        self.state.session_doc = None;
+                        self.with_view(|v, _, _| v.reset_rotation());
+                        continue;
+                    }
+                }
+            }
             // egui-winit turns Ctrl+C / Ctrl+X / Ctrl+V presses into these events
             // instead of key presses (and emits nothing for an image-only
             // clipboard), so they never reach the keymap.

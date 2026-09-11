@@ -582,6 +582,14 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
         ui.label("Smooth (bilinear) filtering when zoomed out");
         ui.checkbox(&mut c.smooth_zoom_out, "");
         ui.end_row();
+        ui.label("Quick rotate (hold Q) follows the pointer");
+        ui.checkbox(&mut c.quick_rotate_follow_pointer, "").on_hover_text(
+            "Rotate the view by moving the mouse while Q is held, no click needed. Off: drag to rotate.",
+        );
+        ui.end_row();
+        ui.label("Double-tap Q resets the rotation");
+        ui.checkbox(&mut c.quick_rotate_double_tap_reset, "");
+        ui.end_row();
         ui.label("Brush cursor");
         ui.horizontal(|ui| {
             ui.selectable_value(&mut c.brush_cursor, BrushCursor::Outline, "Outline");
