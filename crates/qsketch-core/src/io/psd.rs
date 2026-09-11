@@ -27,6 +27,7 @@ pub fn is_psd(path: &Path) -> bool {
 
 const BLEND_KEYS: &[(BlendMode, &[u8; 4])] = &[
     (BlendMode::Normal, b"norm"),
+    (BlendMode::PassThrough, b"pass"),
     (BlendMode::Darken, b"dark"),
     (BlendMode::Multiply, b"mul "),
     (BlendMode::ColorBurn, b"idiv"),

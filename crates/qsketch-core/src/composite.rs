@@ -296,6 +296,22 @@ pub fn composite_range(
         } else {
             None
         };
+        if layer.is_group() && mode == BlendMode::PassThrough {
+            // Members blend straight onto what is below the group; a partial
+            // opacity fades the members' effect back toward the backdrop.
+            if opacity >= 1.0 {
+                composite_range(doc, tx, ty, doc.members(li), Some(layer.props.id), out);
+            } else {
+                let mut buf = *out;
+                composite_range(doc, tx, ty, doc.members(li), Some(layer.props.id), &mut buf);
+                for (o, b) in out.iter_mut().zip(buf.iter()) {
+                    for c in 0..4 {
+                        o[c] += (b[c] - o[c]) * opacity;
+                    }
+                }
+            }
+            continue;
+        }
         if layer.is_group() {
             let mut buf = [[0f32; 4]; TILE_PX];
             composite_range(doc, tx, ty, doc.members(li), Some(layer.props.id), &mut buf);
@@ -428,5 +444,30 @@ mod tests {
         assert!((p.r as i32 - 255).abs() <= 1 && (p.g as i32 - 128).abs() <= 1, "{p:?}");
         doc.layers[gi].props.visible = false;
         assert_eq!(flatten(&doc).get_pixel(1, 1), Rgba8::WHITE);
+    }
+
+    #[test]
+    fn pass_through_group() {
+        // Gray background, group holding a Multiply layer of 50% gray.
+        let mut doc = DocState::new(64, 64, Some(Rgba8::new(128, 128, 128, 255)));
+        let a = doc.add_layer("a", None);
+        let ai = doc.index_of(a).unwrap();
+        doc.layers[ai].raster.set_pixel(0, 0, Rgba8::new(128, 128, 128, 255));
+        doc.layers[ai].props.blend = BlendMode::Multiply;
+        let g = doc.group_layers(&[a]).unwrap();
+        let gi = doc.index_of(g).unwrap();
+        assert_eq!(doc.layers[gi].props.blend, BlendMode::PassThrough);
+        // Pass through: multiply sees the background → 64.
+        let p = flatten(&doc).get_pixel(0, 0);
+        assert!((p.r as i32 - 64).abs() <= 1, "{p:?}");
+        // Normal group: multiply against transparent = plain 128 over the bg.
+        doc.layers[gi].props.blend = BlendMode::Normal;
+        let p = flatten(&doc).get_pixel(0, 0);
+        assert!((p.r as i32 - 128).abs() <= 1, "{p:?}");
+        // Pass through at 50%: halfway between 128 and 64.
+        doc.layers[gi].props.blend = BlendMode::PassThrough;
+        doc.layers[gi].props.opacity = 0.5;
+        let p = flatten(&doc).get_pixel(0, 0);
+        assert!((p.r as i32 - 96).abs() <= 1, "{p:?}");
     }
 }

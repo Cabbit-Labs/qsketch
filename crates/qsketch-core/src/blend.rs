@@ -26,6 +26,10 @@ pub enum BlendMode {
     Saturation,
     Color,
     Luminosity,
+    /// Groups only: members blend directly with the layers below the group
+    /// instead of being composited together first. Falls back to Normal
+    /// when set on a raster layer.
+    PassThrough,
 }
 
 impl BlendMode {
@@ -74,6 +78,7 @@ impl BlendMode {
             BlendMode::Saturation => "Saturation",
             BlendMode::Color => "Color",
             BlendMode::Luminosity => "Luminosity",
+            BlendMode::PassThrough => "Pass Through",
         }
     }
 
@@ -95,7 +100,7 @@ impl BlendMode {
 #[inline]
 pub fn blend_channel(mode: BlendMode, cb: f32, cs: f32) -> f32 {
     match mode {
-        BlendMode::Normal => cs,
+        BlendMode::Normal | BlendMode::PassThrough => cs,
         BlendMode::Darken => cb.min(cs),
         BlendMode::Multiply => cb * cs,
         BlendMode::ColorBurn => {

@@ -218,6 +218,7 @@ impl DocState {
         let gid = self.new_id();
         let mut group = Layer::new(gid, name, self.width, self.height);
         group.props.kind = LayerKind::Group;
+        group.props.blend = crate::blend::BlendMode::PassThrough;
         group.props.parent = parent;
 
         let mut insert_at = self.block(top).end;
@@ -273,6 +274,9 @@ impl DocState {
         let mut props = l.props.clone();
         props.kind = LayerKind::Raster;
         props.expanded = true;
+        if props.blend == crate::blend::BlendMode::PassThrough {
+            props.blend = crate::blend::BlendMode::Normal;
+        }
         let new = Layer { props, raster };
         let block = self.block(idx);
         let active_in = (block.start..block.end).contains(&self.active);

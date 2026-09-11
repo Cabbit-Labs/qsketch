@@ -57,7 +57,12 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         let combo_w = (total * 0.4).clamp(90.0, 130.0);
         let slider_w = (total - combo_w - 110.0).max(40.0);
         ui.spacing_mut().slider_width = slider_w;
+        let is_group = layer.is_group();
         egui::ComboBox::from_id_salt("blend_mode").selected_text(blend.label()).width(combo_w).show_ui(ui, |ui| {
+            if is_group {
+                ui.selectable_value(&mut blend, BlendMode::PassThrough, BlendMode::PassThrough.label());
+                ui.separator();
+            }
             for m in BlendMode::ALL {
                 if m.starts_group() {
                     ui.separator();

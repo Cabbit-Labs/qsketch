@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Groups get Photoshop's **Pass Through** blend mode (the default for new
+  groups): members blend directly with the layers below the group, so a
+  Multiply layer inside a group still darkens what is underneath. Group
+  opacity fades the members' effect. Pick Normal (or any other mode) to
+  composite the members together first, as before.
+
 ## 0.15.0 — 2026-09-11
 
 - Layer groups. Select several layers in the Layers panel (Ctrl+click adds
