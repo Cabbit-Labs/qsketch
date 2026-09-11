@@ -1,10 +1,11 @@
 //! Color panel: Photoshop-style saturation/value square with a hue strip,
-//! RGB/HSV sliders and hex entry, editing the foreground or background color.
+//! HSV or RGB sliders (one group at a time) and hex entry, editing the foreground or background color.
 
 use egui::{Color32, Mesh, Pos2, Rect, Sense, Ui, Vec2};
 use qsketch_core::{Hsv, Rgba8};
 
 use crate::dialogs::ColorTarget;
+use crate::settings::ColorSliders;
 use crate::state::AppState;
 use crate::ui::widgets::{rgba_to_color32, Swatch};
 
@@ -112,39 +113,46 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     // Sliders stretch to the panel width (label + slider + value box).
     let slider_w = (ui.available_width() - 8.0 - 16.0 - 58.0).max(40.0);
     ui.spacing_mut().slider_width = slider_w;
+    let mode = state.settings.ui.color_sliders;
     egui::Grid::new("color_sliders").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        let mut h = hsv.h;
-        let mut s = hsv.s * 100.0;
-        let mut v = hsv.v * 100.0;
-        ui.label("H");
-        if ui.add(egui::Slider::new(&mut h, 0.0..=360.0).suffix("°").fixed_decimals(0)).changed() {
-            hsv.h = h;
-            changed = true;
-        }
-        ui.end_row();
-        ui.label("S");
-        if ui.add(egui::Slider::new(&mut s, 0.0..=100.0).suffix("%").fixed_decimals(0)).changed() {
-            hsv.s = s / 100.0;
-            changed = true;
-        }
-        ui.end_row();
-        ui.label("V");
-        if ui.add(egui::Slider::new(&mut v, 0.0..=100.0).suffix("%").fixed_decimals(0)).changed() {
-            hsv.v = v / 100.0;
-            changed = true;
-        }
-        ui.end_row();
-        let mut rgb_changed = false;
-        for (label, ch) in [("R", &mut rgb.r), ("G", &mut rgb.g), ("B", &mut rgb.b)] {
-            ui.label(label);
-            if ui.add(egui::Slider::new(ch, 0..=255)).changed() {
-                rgb_changed = true;
+        match mode {
+            ColorSliders::Hsv => {
+                let mut h = hsv.h;
+                let mut s = hsv.s * 100.0;
+                let mut v = hsv.v * 100.0;
+                ui.label("H");
+                if ui.add(egui::Slider::new(&mut h, 0.0..=360.0).suffix("°").fixed_decimals(0)).changed() {
+                    hsv.h = h;
+                    changed = true;
+                }
+                ui.end_row();
+                ui.label("S");
+                if ui.add(egui::Slider::new(&mut s, 0.0..=100.0).suffix("%").fixed_decimals(0)).changed() {
+                    hsv.s = s / 100.0;
+                    changed = true;
+                }
+                ui.end_row();
+                ui.label("V");
+                if ui.add(egui::Slider::new(&mut v, 0.0..=100.0).suffix("%").fixed_decimals(0)).changed() {
+                    hsv.v = v / 100.0;
+                    changed = true;
+                }
+                ui.end_row();
             }
-            ui.end_row();
-        }
-        if rgb_changed {
-            hsv = rgb.to_hsv();
-            changed = true;
+            ColorSliders::Rgb => {
+                let mut rgb_changed = false;
+                for (label, ch) in [("R", &mut rgb.r), ("G", &mut rgb.g), ("B", &mut rgb.b)] {
+                    ui.label(label);
+                    if ui.add(egui::Slider::new(ch, 0..=255)).changed() {
+                        rgb_changed = true;
+                    }
+                    ui.end_row();
+                }
+                if rgb_changed {
+                    hsv = rgb.to_hsv();
+                    changed = true;
+                }
+            }
         }
         ui.label("Hex");
         let te = ui
@@ -158,6 +166,19 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         ui.end_row();
     });
     ui.data_mut(|d| d.insert_temp(ui.id().with("hex"), hex));
+    // Slider group picker: HSV or RGB, never both, to keep the panel short.
+    let mut mode = state.settings.ui.color_sliders;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Sliders").weak());
+        egui::ComboBox::from_id_salt("color_slider_mode").selected_text(mode.label()).show_ui(ui, |ui| {
+            for m in ColorSliders::ALL {
+                ui.selectable_value(&mut mode, m, m.label());
+            }
+        });
+    });
+    if mode != state.settings.ui.color_sliders {
+        state.settings.ui.color_sliders = mode;
+    }
 
     if changed {
         let new = hsv.to_rgba8(alpha);

@@ -260,6 +260,8 @@ pub struct UiSettings {
     pub tools_locked: bool,
     /// User order of the Tools strip; empty = default order.
     pub tool_order: Vec<crate::tools::ToolKind>,
+    /// Which slider group the Color panel shows (HSV or RGB, never both).
+    pub color_sliders: ColorSliders,
     /// Grain/texture over panels and bars.
     pub texture: TextureSettings,
 }
@@ -360,6 +362,25 @@ impl UiSettings {
     }
 }
 
+/// Slider group shown in the Color panel.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ColorSliders {
+    #[default]
+    Hsv,
+    Rgb,
+}
+
+impl ColorSliders {
+    pub const ALL: [ColorSliders; 2] = [ColorSliders::Hsv, ColorSliders::Rgb];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ColorSliders::Hsv => "HSV",
+            ColorSliders::Rgb => "RGB",
+        }
+    }
+}
+
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
@@ -375,6 +396,7 @@ impl Default for UiSettings {
             icon_overrides: Default::default(),
             tools_locked: true,
             tool_order: Vec::new(),
+            color_sliders: ColorSliders::default(),
             texture: TextureSettings::default(),
         }
     }
