@@ -533,6 +533,9 @@ pub struct MouseSettings {
     pub pick_foreground: Option<MouseChord>,
     /// Chord that picks the background color with any color-using tool.
     pub pick_background: Option<MouseChord>,
+    /// Chord that drags the layer (or the selected pixels) as the Move tool
+    /// with any tool active.
+    pub quick_move: Option<MouseChord>,
 }
 
 impl Default for MouseSettings {
@@ -542,6 +545,7 @@ impl Default for MouseSettings {
             right_click_brush_popup: true,
             pick_foreground: Some(MouseChord { button: MouseButton::Left, ..MouseChord::default() }),
             pick_background: Some(MouseChord { button: MouseButton::Right, ..MouseChord::default() }),
+            quick_move: Some(MouseChord { ctrl: true, shift: false, alt: false, button: MouseButton::Left }),
         }
     }
 }
@@ -554,6 +558,17 @@ impl MouseSettings {
             .into_iter()
             .flatten()
             .any(|c| c.has_modifiers() && c.modifiers_held(mods))
+    }
+
+    /// The quick-move chord's modifiers are held (a chord without modifiers
+    /// can't be signalled ahead of the press).
+    pub fn quick_move_modifiers_held(&self, mods: egui::Modifiers) -> bool {
+        self.quick_move.is_some_and(|c| c.has_modifiers() && c.modifiers_held(mods))
+    }
+
+    /// A press with these modifiers + button starts a quick move.
+    pub fn is_quick_move(&self, mods: egui::Modifiers, button: egui::PointerButton) -> bool {
+        self.quick_move.is_some_and(|c| c.matches(mods, button))
     }
 
     /// Which color a press with these modifiers + button picks, if any.

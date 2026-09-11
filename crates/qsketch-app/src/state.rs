@@ -106,7 +106,9 @@ pub enum TempReason {
     QuickRotate,
     /// A color-pick chord's modifiers are held (see `MouseSettings`).
     Pick,
-    Ctrl,
+    /// The quick-move chord's modifiers are held, or its drag is under way
+    /// (see `MouseSettings::quick_move`).
+    QuickMove,
     EraserTip,
     /// Middle-button drag pans (see `MouseSettings::middle_drag_pans`).
     Middle,
@@ -259,14 +261,6 @@ impl AppState {
 
     pub fn effective_tool(&self) -> ToolKind {
         self.temp_tool.map(|(t, _)| t).unwrap_or(self.tool)
-    }
-
-    /// The pointer is over the canvas, inside the active document's selection.
-    /// Ctrl-dragging there moves the selected pixels with any tool.
-    pub fn hovering_selection(&self) -> bool {
-        let Some(p) = self.hover_doc_pos else { return false };
-        let Some(d) = self.active() else { return false };
-        d.doc.state().selection_mask().is_some_and(|m| m.get(p.x.floor() as i32, p.y.floor() as i32) > 0)
     }
 
     pub fn set_tool(&mut self, tool: ToolKind) {

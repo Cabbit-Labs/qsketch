@@ -250,8 +250,11 @@ impl QSketchApp {
         let space = ctx.input(|i| i.key_down(Key::Space));
         // Q alone (no modifiers, so Ctrl+Q still quits) quick-rotates the view.
         let quick_rotate = ctx.input(|i| i.key_down(Key::Q) && i.modifiers.is_none());
-        let alt = ctx.input(|i| i.modifiers.alt);
-        let ctrl = ctx.input(|i| i.modifiers.command);
+        let quick_move_held = {
+            let mods = ctx.input(|i| i.modifiers);
+            self.state.settings.mouse.quick_move_modifiers_held(mods)
+                && !matches!(self.state.tool, ToolKind::Move | ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)
+        };
         let in_stroke = self.state.session.is_some();
         let middle_down = ctx.input(|i| i.pointer.middle_down());
         let pick_held = {
@@ -269,7 +272,7 @@ impl QSketchApp {
                 }
             }
             Some((_, TempReason::Pick)) if !pick_held => self.state.temp_tool = None,
-            Some((_, TempReason::Ctrl)) if !ctrl => self.state.temp_tool = None,
+            Some((_, TempReason::QuickMove)) if !quick_move_held && !in_stroke => self.state.temp_tool = None,
             Some((_, TempReason::Middle)) if !middle_down && !in_stroke => self.state.temp_tool = None,
             _ => {}
         }
@@ -280,12 +283,8 @@ impl QSketchApp {
                 self.state.temp_tool = Some((ToolKind::RotateView, TempReason::QuickRotate));
             } else if pick_held {
                 self.state.temp_tool = Some((ToolKind::Eyedropper, TempReason::Pick));
-            } else if ctrl
-                && !alt
-                && (self.state.tool.is_paint() || self.state.hovering_selection())
-                && !ctx.input(|i| i.keys_down.iter().any(|k| !matches!(k, Key::Space)))
-            {
-                self.state.temp_tool = Some((ToolKind::Move, TempReason::Ctrl));
+            } else if quick_move_held && !ctx.input(|i| i.keys_down.iter().any(|k| !matches!(k, Key::Space))) {
+                self.state.temp_tool = Some((ToolKind::Move, TempReason::QuickMove));
             }
         }
 

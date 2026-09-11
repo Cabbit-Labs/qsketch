@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Quick move: hold `Ctrl` and drag with the left button to move the active
+  layer (or the selected pixels, when there is a selection) with any tool,
+  as the Move tool would; the Move cursor shows while the modifier is held.
+  The chord is rebindable under Preferences ▸ Mouse (e.g. a Ctrl+middle or
+  Alt+right drag), or can be cleared. Previously Ctrl+drag only moved with
+  brush tools or from inside a selection.
+
 ## 0.15.1 — 2026-09-11
 
 - Groups get Photoshop's **Pass Through** blend mode (the default for new

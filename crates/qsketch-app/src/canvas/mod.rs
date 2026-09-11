@@ -158,6 +158,25 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                                 continue;
                             }
                         }
+                        // Quick move: the chord drags the layer / selection as
+                        // the Move tool whatever tool is active (a chord
+                        // without modifiers arms the Move tool only now).
+                        if mouse.is_quick_move(*modifiers, *button)
+                            && !matches!(
+                                state.tool,
+                                ToolKind::Move | ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView
+                            )
+                            && state.floating.is_none()
+                        {
+                            if state.temp_tool.is_none() {
+                                state.temp_tool = Some((ToolKind::Move, TempReason::QuickMove));
+                            }
+                            if matches!(state.temp_tool, Some((ToolKind::Move, _))) {
+                                let inp = make_input(state, *pos, egui::PointerButton::Primary, *modifiers);
+                                tools::handle(state, doc_id, CanvasEvent::Press(inp));
+                                continue;
+                            }
+                        }
                         match *button {
                             // Middle-drag: temporary Hand with any tool.
                             egui::PointerButton::Middle if mouse.middle_drag_pans => {

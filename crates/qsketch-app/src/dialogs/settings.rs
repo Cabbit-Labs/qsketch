@@ -669,11 +669,14 @@ fn mouse(ui: &mut Ui, state: &mut AppState) {
         ui.label("Pick background color");
         chord_binder(ui, "pick_bg", &mut m.pick_background);
         ui.end_row();
+        ui.label("Quick move (drag as the Move tool)");
+        chord_binder(ui, "quick_move", &mut m.quick_move);
+        ui.end_row();
     });
     ui.add_space(8.0);
     ui.label(
         RichText::new(
-            "Pick chords work with every tool that paints a color (brush, pencil, shapes, fill, gradient, text); holding the chord's modifiers shows the eyedropper. Keyboard chords (marquee on G, Ctrl+R rotate, Shift+X flip, Ctrl+V paste…) are edited under Keyboard Shortcuts.",
+            "Pick chords work with every tool that paints a color (brush, pencil, shapes, fill, gradient, text); holding the chord's modifiers shows the eyedropper. Quick move drags the active layer, or the selected pixels when there is a selection, with any tool; holding its modifiers shows the Move cursor. Keyboard chords (marquee on G, Ctrl+R rotate, Shift+X flip, Ctrl+V paste…) are edited under Keyboard Shortcuts.",
         )
         .weak(),
     );
