@@ -9,8 +9,7 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle, WindowHandle,
 };
 
-use crate::state::{AppState, TempReason};
-use crate::tools::ToolKind;
+use crate::state::AppState;
 
 /// Holds raw handles copied from the eframe creation context so octotablet can
 /// keep them for its lifetime.
@@ -91,7 +90,6 @@ impl Tablet {
                 return;
             }
         };
-        let switch_on_eraser = state.settings.tablet.eraser_tip_switches_tool;
         self.pressed_this_pump.clear();
         for ev in events {
             let Event::Tool { tool, event } = ev else { continue };
@@ -100,10 +98,9 @@ impl Tablet {
                     self.in_proximity = true;
                     self.eraser = matches!(tool.tool_type, Some(octotablet::tool::Type::Eraser));
                     state.pen.tablet_active = true;
+                    // The temporary Eraser override is applied per frame from
+                    // `pen.eraser` in `QSketchApp::handle_keyboard`.
                     state.pen.eraser = self.eraser;
-                    if self.eraser && switch_on_eraser && state.temp_tool.is_none() && state.tool != ToolKind::Eraser {
-                        state.temp_tool = Some((ToolKind::Eraser, TempReason::EraserTip));
-                    }
                 }
                 ToolEvent::Out => {
                     self.in_proximity = false;
@@ -113,9 +110,6 @@ impl Tablet {
                     state.pen.eraser = false;
                     self.barrel_buttons.clear();
                     state.pen.barrel_held = false;
-                    if matches!(state.temp_tool, Some((_, TempReason::EraserTip))) {
-                        state.temp_tool = None;
-                    }
                 }
                 ToolEvent::Down => {
                     state.pen.in_contact = true;

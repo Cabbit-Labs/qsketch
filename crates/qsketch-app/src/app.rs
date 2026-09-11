@@ -257,6 +257,11 @@ impl QSketchApp {
         };
         let in_stroke = self.state.session.is_some();
         let middle_down = ctx.input(|i| i.pointer.middle_down());
+        // Eraser end of the stylus in range (tablet backend or the Windows
+        // pointer flags): temporarily erase, like any pen-aware paint app.
+        let eraser_end = self.state.settings.tablet.eraser_tip_switches_tool
+            && (self.state.pen.eraser || crate::win_pointer::eraser())
+            && self.state.tool != ToolKind::Eraser;
         let pick_held = {
             let mods = ctx.input(|i| i.modifiers);
             self.state.settings.mouse.pick_modifiers_held(mods) && self.state.tool.uses_color()
@@ -274,7 +279,11 @@ impl QSketchApp {
             Some((_, TempReason::Pick)) if !pick_held => self.state.temp_tool = None,
             Some((_, TempReason::QuickMove)) if !quick_move_held && !in_stroke => self.state.temp_tool = None,
             Some((_, TempReason::Middle)) if !middle_down && !in_stroke => self.state.temp_tool = None,
+            Some((_, TempReason::EraserTip)) if !eraser_end && !in_stroke => self.state.temp_tool = None,
             _ => {}
+        }
+        if !in_stroke && self.state.temp_tool.is_none() && eraser_end {
+            self.state.temp_tool = Some((ToolKind::Eraser, TempReason::EraserTip));
         }
         if !wants_text && !dialog_open && !in_stroke && self.state.temp_tool.is_none() {
             if space {
@@ -1459,6 +1468,29 @@ impl QSketchApp {
 }
 
 impl eframe::App for QSketchApp {
+    /// The windowing layer reports every pen-tip contact as a primary press
+    /// even when a barrel button mapped to right-click is held. Recover the
+    /// intended button from the tablet backend / Windows pointer flags before
+    /// egui sees the events, so context menus and `secondary_clicked()`
+    /// everywhere (Layers, Brushes, Swatches, ...) get it, not only the canvas.
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let barrel = self.state.pen.barrel_held || crate::win_pointer::barrel_held();
+        for ev in &mut raw_input.events {
+            let egui::Event::PointerButton { button, pressed, .. } = ev else { continue };
+            if *button != egui::PointerButton::Primary {
+                continue;
+            }
+            if *pressed {
+                if barrel {
+                    *button = egui::PointerButton::Secondary;
+                }
+                self.state.pen.tip_button = Some(*button);
+            } else if let Some(b) = self.state.pen.tip_button.take() {
+                *button = b;
+            }
+        }
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 

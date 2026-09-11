@@ -1,9 +1,10 @@
 //! Windows-only: watch the raw `WM_POINTER*` pen messages for the barrel
-//! (side) button state. winit folds every pen contact into a Touch event and
-//! drops the button flags, so a barrel button the tablet driver maps to
-//! right-click would otherwise arrive as a left press. A window subclass runs
-//! ahead of winit's procedure and records the flags; the canvas reads them
-//! through [`barrel_held`].
+//! (side) button and eraser-end state. winit folds every pen contact into a
+//! Touch event and drops the pen flags, so a barrel button the tablet driver
+//! maps to right-click would otherwise arrive as a left press and the eraser
+//! end would be indistinguishable from the tip. A window subclass runs ahead
+//! of winit's procedure and records the flags; the app reads them through
+//! [`barrel_held`] and [`eraser`].
 
 #[cfg(windows)]
 mod imp {
@@ -16,10 +17,12 @@ mod imp {
     };
     use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PEN_FLAG_BARREL, PT_PEN, WM_POINTERDOWN, WM_POINTERLEAVE, WM_POINTERUP, WM_POINTERUPDATE,
+        PEN_FLAG_BARREL, PEN_FLAG_ERASER, PEN_FLAG_INVERTED, PT_PEN, WM_POINTERDOWN, WM_POINTERLEAVE, WM_POINTERUP,
+        WM_POINTERUPDATE,
     };
 
     static BARREL: AtomicBool = AtomicBool::new(false);
+    static ERASER: AtomicBool = AtomicBool::new(false);
     const SUBCLASS_ID: usize = 0x71534b; // "qSk"
 
     pub fn install(cc: &eframe::CreationContext<'_>) {
@@ -40,6 +43,12 @@ mod imp {
         BARREL.load(Ordering::Relaxed)
     }
 
+    /// The pen is in range with its eraser end (inverted, or a dedicated
+    /// eraser tip) towards the tablet.
+    pub fn eraser() -> bool {
+        ERASER.load(Ordering::Relaxed)
+    }
+
     unsafe extern "system" fn proc(
         hwnd: HWND,
         msg: u32,
@@ -58,10 +67,15 @@ mod imp {
                         let held = info.penFlags & PEN_FLAG_BARREL != 0
                             || info.pointerInfo.pointerFlags & POINTER_FLAG_SECONDBUTTON != 0;
                         BARREL.store(held, Ordering::Relaxed);
+                        let eraser = info.penFlags & (PEN_FLAG_INVERTED | PEN_FLAG_ERASER) != 0;
+                        ERASER.store(eraser, Ordering::Relaxed);
                     }
                 }
             }
-            WM_POINTERLEAVE => BARREL.store(false, Ordering::Relaxed),
+            WM_POINTERLEAVE => {
+                BARREL.store(false, Ordering::Relaxed);
+                ERASER.store(false, Ordering::Relaxed);
+            }
             _ => {}
         }
         DefSubclassProc(hwnd, msg, wparam, lparam)
@@ -69,12 +83,17 @@ mod imp {
 }
 
 #[cfg(windows)]
-pub use imp::{barrel_held, install};
+pub use imp::{barrel_held, eraser, install};
 
 #[cfg(not(windows))]
 pub fn install(_cc: &eframe::CreationContext<'_>) {}
 
 #[cfg(not(windows))]
 pub fn barrel_held() -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+pub fn eraser() -> bool {
     false
 }

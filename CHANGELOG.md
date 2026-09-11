@@ -2,6 +2,19 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Pen barrel button mapped to right-click now right-clicks everywhere, not
+  only on the canvas: the Layers, Brushes and Swatches context menus open
+  with it. The remap happens before egui sees the input instead of inside the
+  canvas.
+- Pen eraser end: flipping the stylus temporarily switches to the Eraser and
+  flips back when the tip returns, with any tool. On Windows the eraser is
+  detected from the pointer messages directly, so it works without the
+  octotablet backend and no longer depends on the driver reporting an
+  inverted cursor at proximity time. Can be turned off under
+  Preferences ▸ Tablet as before.
+
 ## 0.15.2 — 2026-09-11
 
 - Quick move: hold `Ctrl` and drag with the left button to move the active

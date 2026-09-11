@@ -90,11 +90,11 @@ pub struct PenState {
     pub tablet_active: bool,
     /// A barrel (side) button on the stylus is currently held. The windowing
     /// layer turns every pen contact into a primary press regardless of the
-    /// barrel state, so the canvas uses this to recover a right-click.
+    /// barrel state, so `QSketchApp::raw_input_hook` uses this to recover a
+    /// right-click before egui processes the frame.
     pub barrel_held: bool,
-    /// The pen tip is currently down and its press was delivered to the
-    /// canvas as this button (after barrel remapping), so the release
-    /// can be matched to it.
+    /// The pen tip is currently down and its press was delivered to egui as
+    /// this button (after barrel remapping), so the release can be matched.
     pub tip_button: Option<egui::PointerButton>,
 }
 

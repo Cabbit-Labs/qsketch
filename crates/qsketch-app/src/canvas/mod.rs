@@ -122,23 +122,11 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                 }
                 last_pos = Some(*pos);
             }
-            egui::Event::PointerButton { pos, button: raw_button, pressed, modifiers } => {
+            // A pen-tip press with a barrel button held already arrives as a
+            // secondary press: `QSketchApp::raw_input_hook` remaps it before egui
+            // sees the frame's input.
+            egui::Event::PointerButton { pos, button, pressed, modifiers } => {
                 last_pos = Some(*pos);
-                // The windowing layer reports every pen-tip contact as a primary press
-                // even when a barrel button mapped to right-click is held. Recover the
-                // intended button from the tablet backend and keep the release matched.
-                let mut mapped = *raw_button;
-                if *raw_button == egui::PointerButton::Primary {
-                    if *pressed {
-                        if state.pen.barrel_held || crate::win_pointer::barrel_held() {
-                            mapped = egui::PointerButton::Secondary;
-                        }
-                        state.pen.tip_button = Some(mapped);
-                    } else if let Some(b) = state.pen.tip_button.take() {
-                        mapped = b;
-                    }
-                }
-                let button = &mapped;
                 let capturing_now = state.session.is_some() && state.session_doc == Some(doc_id);
                 if *pressed {
                     // Clicks on the quick brush popup belong to it, not the canvas.
