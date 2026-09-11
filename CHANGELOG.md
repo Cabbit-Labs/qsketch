@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.3 — 2026-09-11
 
 - Pen barrel button mapped to right-click now right-clicks everywhere, not
   only on the canvas: the Layers, Brushes and Swatches context menus open
