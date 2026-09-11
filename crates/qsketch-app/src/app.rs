@@ -23,6 +23,7 @@ pub struct QSketchApp {
     instance: crate::single_instance::Primary,
     workspace: Workspace,
     tablet: Option<crate::tablet::Tablet>,
+    wintab: Option<crate::wintab::WinTab>,
     applied_theme: (crate::settings::UiSettings, f32),
     /// Decorations state last sent to the OS (see `UiSettings::native_frame`).
     applied_native_frame: bool,
@@ -75,14 +76,20 @@ impl QSketchApp {
         }
 
         let workspace = state.settings.layout.as_deref().and_then(Workspace::from_json).unwrap_or_else(Workspace::new);
-        let tablet = if state.settings.tablet.use_octotablet { crate::tablet::Tablet::new(cc) } else { None };
         crate::win_pointer::install(cc);
+        let wintab = if state.settings.tablet.use_wintab { crate::wintab::WinTab::new(cc) } else { None };
+        let tablet = if wintab.is_none() && state.settings.tablet.use_octotablet {
+            crate::tablet::Tablet::new(cc)
+        } else {
+            None
+        };
 
         let mut app = Self {
             state,
             instance,
             workspace,
             tablet,
+            wintab,
             applied_theme,
             applied_native_frame,
             app_icon,
@@ -1525,7 +1532,9 @@ impl eframe::App for QSketchApp {
             }
         }
 
-        if let Some(t) = self.tablet.as_mut() {
+        if let Some(w) = self.wintab.as_mut() {
+            w.pump(&mut self.state, &ctx);
+        } else if let Some(t) = self.tablet.as_mut() {
             t.pump(&mut self.state);
         }
         self.handle_dropped_files(&ctx);

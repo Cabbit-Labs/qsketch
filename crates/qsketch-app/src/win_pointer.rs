@@ -23,6 +23,9 @@ mod imp {
 
     static BARREL: AtomicBool = AtomicBool::new(false);
     static ERASER: AtomicBool = AtomicBool::new(false);
+    /// WinTab `WT_PROXIMITY`: the pen is in range of the tablet.
+    static WINTAB_PROX: AtomicBool = AtomicBool::new(false);
+    const WT_PROXIMITY: u32 = crate::wintab::WT_DEFBASE + 5;
     const SUBCLASS_ID: usize = 0x71534b; // "qSk"
 
     pub fn install(cc: &eframe::CreationContext<'_>) {
@@ -47,6 +50,11 @@ mod imp {
     /// eraser tip) towards the tablet.
     pub fn eraser() -> bool {
         ERASER.load(Ordering::Relaxed)
+    }
+
+    /// Pen in proximity according to the WinTab context (see `wintab.rs`).
+    pub fn wintab_proximity() -> bool {
+        WINTAB_PROX.load(Ordering::Relaxed)
     }
 
     unsafe extern "system" fn proc(
@@ -76,6 +84,8 @@ mod imp {
                 BARREL.store(false, Ordering::Relaxed);
                 ERASER.store(false, Ordering::Relaxed);
             }
+            // lParam low word: nonzero entering, zero leaving.
+            WT_PROXIMITY => WINTAB_PROX.store(lparam & 0xffff != 0, Ordering::Relaxed),
             _ => {}
         }
         DefSubclassProc(hwnd, msg, wparam, lparam)
@@ -83,7 +93,7 @@ mod imp {
 }
 
 #[cfg(windows)]
-pub use imp::{barrel_held, eraser, install};
+pub use imp::{barrel_held, eraser, install, wintab_proximity};
 
 #[cfg(not(windows))]
 pub fn install(_cc: &eframe::CreationContext<'_>) {}
@@ -95,5 +105,11 @@ pub fn barrel_held() -> bool {
 
 #[cfg(not(windows))]
 pub fn eraser() -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+#[allow(dead_code)]
+pub fn wintab_proximity() -> bool {
     false
 }

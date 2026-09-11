@@ -656,7 +656,10 @@ pub struct TabletSettings {
     /// Use the octotablet backend (Windows Ink RealTimeStylus / Wayland tablet)
     /// for tilt and eraser detection. Off = native winit pen events.
     pub use_octotablet: bool,
-    /// Switch to the eraser when the stylus eraser tip is used (octotablet only).
+    /// Windows: use the WinTab driver API (works with "Use Windows Ink" off).
+    /// Takes precedence over `use_octotablet` when the driver provides it.
+    pub use_wintab: bool,
+    /// Switch to the eraser when the stylus eraser tip is used.
     pub eraser_tip_switches_tool: bool,
     /// Treat mouse input as full pressure.
     pub mouse_pressure: f32,
@@ -668,6 +671,7 @@ impl Default for TabletSettings {
             pressure_gamma: 1.0,
             min_pressure: 0.0,
             use_octotablet: false,
+            use_wintab: false,
             eraser_tip_switches_tool: true,
             mouse_pressure: 1.0,
         }

@@ -756,6 +756,10 @@ fn tablet(ui: &mut Ui, state: &mut AppState) {
         ui.vertical(|ui| {
             ui.checkbox(&mut t.use_octotablet, "Use dedicated tablet API (Windows Ink RealTimeStylus / Wayland tablet)");
             ui.label(RichText::new("Off: pen pressure comes from the windowing system (Windows Ink pointer events). On: adds tilt and eraser-tip detection. Takes effect after restart.").weak().small());
+            if cfg!(windows) {
+                ui.checkbox(&mut t.use_wintab, "Use WinTab (Wacom driver API)");
+                ui.label(RichText::new("For tablets with \"Use Windows Ink\" turned off in the driver: pressure, tilt, eraser and barrel buttons come straight from the driver. Ignored when the driver is not running. Takes effect after restart.").weak().small());
+            }
         });
         ui.end_row();
         ui.label("Eraser tip selects the Eraser tool");

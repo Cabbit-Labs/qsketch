@@ -19,6 +19,7 @@ mod tools;
 mod ui;
 mod update;
 mod win_pointer;
+mod wintab;
 mod workspace;
 
 fn main() -> eframe::Result<()> {
