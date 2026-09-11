@@ -240,6 +240,8 @@ impl QSketchApp {
 
         // Temporary tools while a key is held.
         let space = ctx.input(|i| i.key_down(Key::Space));
+        // Q alone (no modifiers, so Ctrl+Q still quits) quick-rotates the view.
+        let quick_rotate = ctx.input(|i| i.key_down(Key::Q) && i.modifiers.is_none());
         let alt = ctx.input(|i| i.modifiers.alt);
         let ctrl = ctx.input(|i| i.modifiers.command);
         let in_stroke = self.state.session.is_some();
@@ -250,6 +252,7 @@ impl QSketchApp {
         };
         match self.state.temp_tool {
             Some((_, TempReason::Space)) if !space => self.state.temp_tool = None,
+            Some((_, TempReason::QuickRotate)) if !quick_rotate => self.state.temp_tool = None,
             Some((_, TempReason::Pick)) if !pick_held => self.state.temp_tool = None,
             Some((_, TempReason::Ctrl)) if !ctrl => self.state.temp_tool = None,
             Some((_, TempReason::Middle)) if !middle_down && !in_stroke => self.state.temp_tool = None,
@@ -258,6 +261,8 @@ impl QSketchApp {
         if !wants_text && !dialog_open && !in_stroke && self.state.temp_tool.is_none() {
             if space {
                 self.state.temp_tool = Some((ToolKind::Hand, TempReason::Space));
+            } else if quick_rotate {
+                self.state.temp_tool = Some((ToolKind::RotateView, TempReason::QuickRotate));
             } else if pick_held {
                 self.state.temp_tool = Some((ToolKind::Eyedropper, TempReason::Pick));
             } else if ctrl

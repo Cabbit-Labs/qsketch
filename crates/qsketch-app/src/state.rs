@@ -60,6 +60,8 @@ pub struct PenState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TempReason {
     Space,
+    /// `Q` is held: quick-rotate the view.
+    QuickRotate,
     /// A color-pick chord's modifiers are held (see `MouseSettings`).
     Pick,
     Ctrl,

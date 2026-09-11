@@ -224,7 +224,7 @@ actions! {
     ToolText => (Tools, "Text", ["T"]),
     ToolZoom => (Tools, "Zoom", ["Z"]),
     ToolHand => (Tools, "Hand", ["H"]),
-    ToolRotateView => (Tools, "Rotate View", ["Q"]),
+    ToolRotateView => (Tools, "Rotate View", ["Shift+R"]),
     // Brush
     BrushSizeUp => (Brush, "Increase Brush Size", ["]"]),
     BrushSizeDown => (Brush, "Decrease Brush Size", ["["]),
