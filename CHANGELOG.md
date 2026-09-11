@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.13.0 — 2026-09-11
 
 - Free Transform (`Ctrl+T`, Edit menu): transforms the selected pixels, or
   the whole active layer when nothing is selected. Drag inside to move, the
