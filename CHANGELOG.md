@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.0 — 2026-09-11
 
 - Layer groups. Select several layers in the Layers panel (Ctrl+click adds
   one, Shift+click a range) and right-click ▸ **Group Selected** (`Ctrl+G`)
