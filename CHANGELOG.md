@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.2 — 2026-09-11
 
 - Quick move: hold `Ctrl` and drag with the left button to move the active
   layer (or the selected pixels, when there is a selection) with any tool,
