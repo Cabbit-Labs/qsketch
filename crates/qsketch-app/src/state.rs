@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use egui::Pos2;
-use qsketch_core::{BrushSettings, ClipImage, Document, Pt, Rgba8};
+use qsketch_core::{BrushSettings, ClipImage, Document, LayerId, Pt, Rgba8};
 
 use crate::actions::{Action, Keymap};
 use crate::canvas::view::CanvasView;
@@ -28,11 +28,53 @@ pub struct DocEntry {
     pub generation: u64,
     /// Whether the GPU texture must receive every tile this frame.
     pub needs_full_upload: bool,
+    /// Layers highlighted in the Layers panel besides the active one (ids,
+    /// not undoable). Only meaningful while it still contains the active
+    /// layer: changing the active layer elsewhere implicitly collapses the
+    /// selection back to that layer alone.
+    pub selected: Vec<LayerId>,
 }
 
 impl DocEntry {
     pub fn new(id: DocId, doc: Document) -> Self {
-        Self { id, doc, view: CanvasView::default(), sel_outline: None, generation: 1, needs_full_upload: true }
+        Self {
+            id,
+            doc,
+            view: CanvasView::default(),
+            sel_outline: None,
+            generation: 1,
+            needs_full_upload: true,
+            selected: Vec::new(),
+        }
+    }
+
+    /// Ids of the selected layers (always including the active one).
+    pub fn selected_ids(&self) -> Vec<LayerId> {
+        let s = self.doc.state();
+        let active = s.active_layer().props.id;
+        if self.selected.contains(&active) {
+            let mut ids: Vec<LayerId> = self.selected.iter().copied().filter(|id| s.index_of(*id).is_some()).collect();
+            if !ids.contains(&active) {
+                ids.push(active);
+            }
+            ids
+        } else {
+            vec![active]
+        }
+    }
+
+    /// Indices of the selected layers, bottom to top.
+    pub fn selected_indices(&self) -> Vec<usize> {
+        let s = self.doc.state();
+        let mut v: Vec<usize> = self.selected_ids().iter().filter_map(|id| s.index_of(*id)).collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// The editable raster layers an edit should touch: every selected
+    /// layer, with groups standing for their members.
+    pub fn target_layers(&self) -> Vec<usize> {
+        self.doc.state().raster_layers_in(&self.selected_ids())
     }
 }
 

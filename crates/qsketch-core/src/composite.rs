@@ -252,18 +252,34 @@ pub fn composite_tile_straight(doc: &DocState, tx: u32, ty: u32, out: &mut [[f32
     for p in out.iter_mut() {
         *p = [0.0; 4];
     }
+    composite_range(doc, tx, ty, 0..doc.layers.len(), None, out);
+}
+
+/// Composite the direct children of `parent` found in `range` onto `out`
+/// (bottom to top). A group child is rendered into its own buffer and then
+/// blended with the group's opacity and blend mode, so members composite
+/// against each other first, as in Photoshop's "Normal" group mode.
+pub fn composite_range(
+    doc: &DocState,
+    tx: u32,
+    ty: u32,
+    range: std::ops::Range<usize>,
+    parent: Option<crate::layer::LayerId>,
+    out: &mut [[f32; 4]; TILE_PX],
+) {
     // Index of the most recent non-clipped visible layer (clipping base).
     let mut base: Option<usize> = None;
-    for (li, layer) in doc.layers.iter().enumerate() {
+    for li in range {
+        let layer = &doc.layers[li];
+        if layer.props.parent != parent {
+            continue; // inside a nested group; drawn when its entry comes up
+        }
         if !layer.props.visible {
             continue;
         }
         if !layer.props.clipped {
             base = Some(li);
         }
-        let Some(tile) = layer.raster.tile(tx, ty) else {
-            continue;
-        };
         let opacity = layer.props.opacity;
         if opacity <= 0.0 {
             continue;
@@ -271,7 +287,7 @@ pub fn composite_tile_straight(doc: &DocState, tx: u32, ty: u32, out: &mut [[f32
         let mode = layer.props.blend;
         let clip_tile = if layer.props.clipped {
             match base {
-                Some(bi) if bi != li => match doc.layers[bi].raster.tile(tx, ty) {
+                Some(bi) if bi != li && !doc.layers[bi].is_group() => match doc.layers[bi].raster.tile(tx, ty) {
                     Some(t) => Some(t),
                     None => continue, // base is transparent here: nothing shows
                 },
@@ -279,6 +295,24 @@ pub fn composite_tile_straight(doc: &DocState, tx: u32, ty: u32, out: &mut [[f32
             }
         } else {
             None
+        };
+        if layer.is_group() {
+            let mut buf = [[0f32; 4]; TILE_PX];
+            composite_range(doc, tx, ty, doc.members(li), Some(layer.props.id), &mut buf);
+            for (i, (o, src)) in out.iter_mut().zip(buf.iter()).enumerate() {
+                if src[3] <= 0.0 {
+                    continue;
+                }
+                let mut src = *src;
+                if let Some(ct) = clip_tile {
+                    src[3] *= ct.px[i * 4 + 3] as f32 / 255.0;
+                }
+                *o = composite_pixel(mode, *o, src, opacity);
+            }
+            continue;
+        }
+        let Some(tile) = layer.raster.tile(tx, ty) else {
+            continue;
         };
         let fast_normal = mode == BlendMode::Normal && opacity >= 1.0 && clip_tile.is_none();
         for (i, o) in out.iter_mut().enumerate() {
@@ -302,11 +336,20 @@ pub fn composite_tile_straight(doc: &DocState, tx: u32, ty: u32, out: &mut [[f32
 
 /// Flatten all visible layers into a single straight-alpha raster.
 pub fn flatten(doc: &DocState) -> Raster {
+    flatten_range(doc, 0..doc.layers.len(), None)
+}
+
+/// Flatten the direct children of `parent` within `range` (a group's
+/// members, say) into one straight-alpha raster.
+pub fn flatten_range(doc: &DocState, range: std::ops::Range<usize>, parent: Option<crate::layer::LayerId>) -> Raster {
     let mut out = Raster::new(doc.width, doc.height);
     let mut buf = [[0f32; 4]; TILE_PX];
     for ty in 0..out.tiles_y() {
         for tx in 0..out.tiles_x() {
-            composite_tile_straight(doc, tx, ty, &mut buf);
+            for p in buf.iter_mut() {
+                *p = [0.0; 4];
+            }
+            composite_range(doc, tx, ty, range.clone(), parent, &mut buf);
             if buf.iter().all(|p| p[3] <= 0.0) {
                 continue;
             }
@@ -360,5 +403,30 @@ mod tests {
         assert_eq!(c.get_premul(0, 0), [255, 255, 255, 255]);
         let flat = flatten(&doc);
         assert_eq!(flat.get_pixel(0, 0), Rgba8::WHITE);
+    }
+
+    #[test]
+    fn composite_groups() {
+        // White background; a group at 50% holding an opaque black layer:
+        // the group's opacity applies to the members' composite.
+        let mut doc = DocState::new(64, 64, Some(Rgba8::WHITE));
+        let a = doc.add_layer("a", None);
+        let b = doc.add_layer("b", None);
+        let ai = doc.index_of(a).unwrap();
+        doc.layers[ai].raster.set_pixel(1, 1, Rgba8::BLACK);
+        doc.layers[ai].raster.set_pixel(2, 2, Rgba8::BLACK);
+        let bi = doc.index_of(b).unwrap();
+        doc.layers[bi].raster.set_pixel(2, 2, Rgba8::new(255, 0, 0, 255));
+        let g = doc.group_layers(&[a, b]).unwrap();
+        let gi = doc.index_of(g).unwrap();
+        doc.layers[gi].props.opacity = 0.5;
+        let flat = flatten(&doc);
+        let p = flat.get_pixel(1, 1);
+        assert!((p.r as i32 - 128).abs() <= 1, "{p:?}");
+        // b covers a inside the group, then the whole thing is 50% over white.
+        let p = flat.get_pixel(2, 2);
+        assert!((p.r as i32 - 255).abs() <= 1 && (p.g as i32 - 128).abs() <= 1, "{p:?}");
+        doc.layers[gi].props.visible = false;
+        assert_eq!(flatten(&doc).get_pixel(1, 1), Rgba8::WHITE);
     }
 }

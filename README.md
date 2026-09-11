@@ -27,7 +27,8 @@ keyboard.
   into the layer list on open).
 - **20 blend modes** (Normal through Luminosity, matching the W3C compositing
   spec / Photoshop semantics), per-layer opacity, clipping masks, alpha lock,
-  and merge-down/merge-visible/flatten.
+  layer groups (nested, with their own opacity/blend/visibility), and
+  merge-down/merge-visible/flatten.
 - **A real selection system.** Rectangle, ellipse, lasso and magic-wand
   selections with add/subtract/intersect modifiers, anti-aliased edges,
   marching-ants outlines, and move/lift/drop of floating selections.

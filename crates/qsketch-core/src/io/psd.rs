@@ -191,6 +191,9 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
                     opacity: rec.opacity as f32 / 255.0,
                     blend: rec.blend,
                     clipped: rec.clipped,
+                    kind: crate::layer::LayerKind::Raster,
+                    parent: None,
+                    expanded: true,
                 };
                 next_id += 1;
                 layers.push(Layer { props, raster });
@@ -561,6 +564,28 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
     if doc.width > 30_000 || doc.height > 30_000 {
         bail!("PSD is limited to 30000x30000 pixels");
     }
+    // Groups are written as their member layers (folder opacity/blend are
+    // not baked in); a member of a hidden group is written hidden.
+    let export = if doc.layers.iter().any(|l| l.is_group()) {
+        let mut flat = doc.clone();
+        flat.layers = (0..doc.layers.len())
+            .filter(|&i| !doc.layers[i].is_group())
+            .map(|i| {
+                let mut l = doc.layers[i].clone();
+                l.props.visible = doc.effectively_visible(i);
+                l.props.parent = None;
+                l
+            })
+            .collect();
+        if flat.layers.is_empty() {
+            flat.layers.push(Layer::new(1, "Background", doc.width, doc.height));
+        }
+        flat.active = 0;
+        Some(flat)
+    } else {
+        None
+    };
+    let doc = export.as_ref().unwrap_or(doc);
     let mut o = Out(Vec::new());
     // Header: RGB, 8-bit, 3 channels in the merged image.
     o.bytes(b"8BPS");

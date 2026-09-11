@@ -56,7 +56,7 @@ reachable from its menu until you assign one.
 | Invert | `Ctrl+I` |
 | Desaturate | `Ctrl+Shift+U` |
 | Brightness/Contrast… | — |
-| Hue/Saturation… | `Ctrl+U` |
+| Hue/Saturation… | `Ctrl+H` (also `Ctrl+U`) |
 
 ## Layer
 
@@ -68,6 +68,8 @@ reachable from its menu until you assign one.
 | Merge Down | `Ctrl+E` |
 | Merge Visible | `Ctrl+Shift+E` |
 | Flatten Image | — |
+| Group Selected | `Ctrl+G` |
+| Ungroup | `Ctrl+Shift+G` |
 | Move Layer Up | `Ctrl+]` |
 | Move Layer Down | `Ctrl+[` |
 | Move Layer to Top | `Ctrl+Shift+]` |

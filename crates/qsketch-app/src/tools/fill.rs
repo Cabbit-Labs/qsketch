@@ -98,7 +98,7 @@ pub fn handle_bucket(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     let merged = state.tool_opts.fill_sample_merged;
     let Some(entry) = state.doc_mut(doc_id) else { return };
     let li = entry.doc.state().active;
-    if !entry.doc.state().layers[li].editable() {
+    if !entry.doc.state().layer_editable(li) {
         state.toasts.push(Level::Info, "The active layer is locked or hidden.");
         return;
     }
@@ -143,7 +143,7 @@ pub fn handle_gradient(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             let kind = state.tool_opts.gradient_kind;
             let Some(entry) = state.doc_mut(doc_id) else { return };
             let li = entry.doc.state().active;
-            if !entry.doc.state().layers[li].editable() {
+            if !entry.doc.state().layer_editable(li) {
                 state.toasts.push(Level::Info, "The active layer is locked or hidden.");
                 return;
             }

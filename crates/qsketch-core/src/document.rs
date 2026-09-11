@@ -101,12 +101,25 @@ impl DocState {
         }
     }
 
-    /// Insert a new empty layer above `above` (default: above the active layer)
-    /// and make it active. Returns its id.
+    /// Insert a new empty layer above `above` (default: above the active
+    /// layer) and make it active. A layer inside a group stays in that
+    /// group; when `above` is a group the new layer goes inside it, on top.
+    /// Returns its id.
     pub fn add_layer(&mut self, name: impl Into<String>, above: Option<usize>) -> LayerId {
         let id = self.new_id();
-        let layer = Layer::new(id, name, self.width, self.height);
-        let at = above.unwrap_or(self.active).min(self.layers.len().saturating_sub(1)) + 1;
+        let mut layer = Layer::new(id, name, self.width, self.height);
+        let anchor = above.unwrap_or(self.active).min(self.layers.len().saturating_sub(1));
+        let at = match self.layers.get(anchor) {
+            Some(l) if l.is_group() => {
+                layer.props.parent = Some(l.props.id);
+                anchor
+            }
+            Some(l) => {
+                layer.props.parent = l.props.parent;
+                anchor + 1
+            }
+            None => 0,
+        };
         self.insert_layer(layer, at);
         id
     }
@@ -117,32 +130,46 @@ impl DocState {
         self.active = at;
     }
 
-    /// Remove a layer; refuses to remove the last one.
+    /// Remove a layer (a group together with its members); refuses to empty
+    /// the document. Returns the removed entry.
     pub fn remove_layer(&mut self, idx: usize) -> Option<Layer> {
-        if self.layers.len() <= 1 || idx >= self.layers.len() {
+        if idx >= self.layers.len() {
             return None;
         }
-        let l = self.layers.remove(idx);
-        self.active = self.active.min(self.layers.len() - 1);
-        if idx < self.active {
-            self.active -= 1;
+        let block = self.block(idx);
+        if block.len() >= self.layers.len() {
+            return None;
         }
-        Some(l)
+        let removed: Vec<Layer> = self.layers.drain(block.clone()).collect();
+        if self.active >= block.end {
+            self.active -= block.len();
+        } else if self.active >= block.start {
+            self.active = block.start;
+        }
+        self.active = self.active.min(self.layers.len() - 1);
+        removed.into_iter().last()
     }
 
+    /// Duplicate a layer (a group with everything inside it) right above the
+    /// original and make the copy active.
     pub fn duplicate_layer(&mut self, idx: usize) -> Option<LayerId> {
-        let src = self.layers.get(idx)?.clone();
-        let id = self.new_id();
-        let mut dup = src;
-        dup.props.id = id;
-        dup.props.name = format!("{} copy", dup.props.name);
+        self.layers.get(idx)?;
+        let block = self.block(idx);
+        let mut dup = self.clone_block(block.clone());
+        let entry = dup.last_mut()?;
+        entry.props.name = format!("{} copy", entry.props.name);
         // A copy of the bottom (Background-style) layer is a regular layer:
         // it must not inherit the implicit alpha lock, or erasing on it would
         // paint the background color instead of revealing the layer below.
         if idx == 0 {
-            dup.props.alpha_locked = false;
+            entry.props.alpha_locked = false;
         }
-        self.insert_layer(dup, idx + 1);
+        let id = entry.props.id;
+        let n = dup.len();
+        for (k, l) in dup.into_iter().enumerate() {
+            self.layers.insert(block.end + k, l);
+        }
+        self.active = block.end + n - 1;
         Some(id)
     }
 
@@ -161,11 +188,24 @@ impl DocState {
         }
     }
 
-    /// Merge layer `idx` onto the one below it (respecting blend mode/opacity).
+    /// Merge layer `idx` onto the sibling below it (respecting blend
+    /// mode/opacity). A group merges into one raster layer; merging onto a
+    /// group rasterizes that group first.
     pub fn merge_down(&mut self, idx: usize) -> bool {
-        if idx == 0 || idx >= self.layers.len() {
+        if idx >= self.layers.len() {
             return false;
         }
+        if self.layers[idx].is_group() {
+            return self.rasterize_group(idx);
+        }
+        let Some(below) = self.sibling_below(idx) else { return false };
+        let idx = if self.layers[below].is_group() {
+            let shrink = self.block(below).len() - 1;
+            self.rasterize_group(below);
+            idx - shrink
+        } else {
+            idx
+        };
         let top = self.layers[idx].clone();
         let below = &mut self.layers[idx - 1];
         if top.props.visible {
@@ -184,13 +224,28 @@ impl DocState {
         self.active = 0;
     }
 
-    /// Merge all visible layers into the active one, leaving hidden layers alone.
+    /// Merge all visible layers into the active one, leaving hidden layers
+    /// (and hidden groups, intact) alone.
     pub fn merge_visible(&mut self) {
-        let mut base = Raster::new(self.width, self.height);
-        for l in self.layers.iter().filter(|l| l.props.visible) {
-            merge_raster(&mut base, &l.raster, l.props.blend, l.props.opacity);
+        let base = crate::composite::flatten(self);
+        // Keep every hidden block; hidden layers found inside visible groups
+        // move to the top level since their group goes away.
+        let mut hidden: Vec<Layer> = Vec::new();
+        let mut i = 0;
+        while i < self.layers.len() {
+            let l = &self.layers[i];
+            if !l.props.visible {
+                let block = self.block(i);
+                let mut chunk: Vec<Layer> = self.layers[block.clone()].to_vec();
+                if let Some(e) = chunk.last_mut() {
+                    e.props.parent = None;
+                }
+                hidden.extend(chunk);
+                i = block.end;
+            } else {
+                i += 1;
+            }
         }
-        let hidden: Vec<Layer> = self.layers.iter().filter(|l| !l.props.visible).cloned().collect();
         let id = self.new_id();
         let mut merged = Layer::new(id, "Merged", self.width, self.height).with_raster(base);
         merged.props.name = self.active_layer().props.name.clone();

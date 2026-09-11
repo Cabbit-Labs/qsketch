@@ -7,6 +7,7 @@
 //! **premultiplied** f32 RGBA so transparent pixels never bleed black into
 //! blurs, and they run row-parallel on rayon.
 
+pub mod adjust;
 pub mod blur;
 pub mod distort;
 pub mod fx;
@@ -393,6 +394,8 @@ pub enum DitherPattern {
 /// A filter with its parameters. Colors are straight-alpha 8-bit.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Filter {
+    // Adjustments (Image ▸ Adjustments; see `adjust`)
+    HueSaturation { hue: f32, saturation: f32, lightness: f32, colorize: bool },
     // Blur
     GaussianBlur { radius: f32 },
     BoxBlur { radius: u32 },
@@ -452,6 +455,7 @@ impl Filter {
     /// parameters per filter).
     pub fn id(&self) -> &'static str {
         match self {
+            Filter::HueSaturation { .. } => "hue_saturation",
             Filter::GaussianBlur { .. } => "gaussian_blur",
             Filter::BoxBlur { .. } => "box_blur",
             Filter::MotionBlur { .. } => "motion_blur",
@@ -501,6 +505,7 @@ impl Filter {
     /// Human-readable name (history label, dialog title).
     pub fn name(&self) -> &'static str {
         match self {
+            Filter::HueSaturation { .. } => "Hue/Saturation",
             Filter::GaussianBlur { .. } => "Gaussian Blur",
             Filter::BoxBlur { .. } => "Box Blur",
             Filter::MotionBlur { .. } => "Motion Blur",
@@ -556,6 +561,7 @@ impl Filter {
     pub fn margin(&self) -> i32 {
         let g = blur::gaussian_margin;
         match *self {
+            Filter::HueSaturation { .. } => 0,
             Filter::GaussianBlur { radius } => g(radius),
             Filter::BoxBlur { radius } => radius as i32,
             Filter::MotionBlur { distance, .. } => (distance * 0.5).ceil() as i32 + 1,
@@ -597,6 +603,9 @@ impl Filter {
     /// Run the kernel. The result is the size of the output rect.
     pub fn run(&self, src: &Src) -> Img {
         match self {
+            Filter::HueSaturation { hue, saturation, lightness, colorize } => {
+                adjust::hue_saturation(src, *hue, *saturation, *lightness, *colorize)
+            }
             Filter::GaussianBlur { radius } => blur::gaussian(src, *radius),
             Filter::BoxBlur { radius } => blur::box_blur(src, *radius),
             Filter::MotionBlur { angle, distance } => blur::motion(src, *angle, *distance),
@@ -737,6 +746,8 @@ mod tests {
         // Smoke-test the whole catalogue on a small document, with and without
         // a selection, and make sure the dirty rect is sane.
         let all = vec![
+            Filter::HueSaturation { hue: 90.0, saturation: 20.0, lightness: -10.0, colorize: false },
+            Filter::HueSaturation { hue: 200.0, saturation: 25.0, lightness: 0.0, colorize: true },
             Filter::GaussianBlur { radius: 3.0 },
             Filter::BoxBlur { radius: 2 },
             Filter::MotionBlur { angle: 30.0, distance: 10.0 },

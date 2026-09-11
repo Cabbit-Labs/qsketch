@@ -23,6 +23,27 @@ pub struct LayerProps {
     /// Clip this layer to the alpha of the layer below (clipping mask).
     #[serde(default)]
     pub clipped: bool,
+    /// Raster layer or a group folder (a group owns no pixels of its own).
+    #[serde(default)]
+    pub kind: LayerKind,
+    /// The group this layer sits in, if any. A group's members are the
+    /// contiguous run of layers immediately below its entry in the stack.
+    #[serde(default)]
+    pub parent: Option<LayerId>,
+    /// Groups only: whether the Layers panel shows the members.
+    #[serde(default = "default_true")]
+    pub expanded: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LayerKind {
+    #[default]
+    Raster,
+    Group,
 }
 
 #[derive(Clone)]
@@ -43,6 +64,9 @@ impl Layer {
                 opacity: 1.0,
                 blend: BlendMode::Normal,
                 clipped: false,
+                kind: LayerKind::Raster,
+                parent: None,
+                expanded: true,
             },
             raster: Raster::new(width, height),
         }
@@ -72,8 +96,15 @@ impl Layer {
         self.props.blend
     }
 
-    /// Can the user paint on this layer right now?
+    /// A group folder rather than a raster layer.
+    pub fn is_group(&self) -> bool {
+        self.props.kind == LayerKind::Group
+    }
+
+    /// Can the user paint on this layer right now? Groups own no pixels, so
+    /// they are never editable; ancestors' visibility is checked by
+    /// [`crate::DocState::layer_editable`].
     pub fn editable(&self) -> bool {
-        self.props.visible && !self.props.locked
+        self.props.visible && !self.props.locked && !self.is_group()
     }
 }

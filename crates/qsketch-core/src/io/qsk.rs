@@ -137,14 +137,16 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         None => None,
     };
     let next_layer_id = manifest.next_layer_id.max(layers.iter().map(|l| l.props.id).max().unwrap_or(0) + 1);
-    Ok(DocState {
+    let mut doc = DocState {
         width: w,
         height: h,
         active: manifest.active.min(layers.len() - 1),
         layers,
         selection,
         next_layer_id,
-    })
+    };
+    doc.repair_groups();
+    Ok(doc)
 }
 
 /// Read just the preview PNG bytes of a `.qsk` (for recent-file thumbnails).
@@ -185,6 +187,14 @@ mod tests {
         assert_eq!(back.selection.unwrap().bounds(), IRect::new(1, 1, 5, 5));
         assert_eq!(back.active, 1);
         assert!(read_preview(&p).is_ok());
+        // Groups round-trip with their membership.
+        let g = doc.group_layers(&[id]).unwrap();
+        save(&p, &doc).unwrap();
+        let back = load(&p).unwrap();
+        let gi = back.index_of(g).unwrap();
+        assert!(back.layers[gi].is_group());
+        assert_eq!(back.members(gi), 1..2);
+        assert_eq!(back.layers[1].props.parent, Some(g));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

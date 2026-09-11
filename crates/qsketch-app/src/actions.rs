@@ -119,7 +119,7 @@ actions! {
     InvertColors => (Image, "Invert", ["Ctrl+I"]),
     Desaturate => (Image, "Desaturate", ["Ctrl+Shift+U"]),
     BrightnessContrast => (Image, "Brightness/Contrast…", []),
-    HueSaturation => (Image, "Hue/Saturation…", ["Ctrl+U"]),
+    HueSaturation => (Image, "Hue/Saturation…", ["Ctrl+H", "Ctrl+U"]),
     // Layer
     NewLayer => (Layer, "New Layer", ["Ctrl+Shift+N"]),
     DuplicateLayer => (Layer, "Duplicate Layer", ["Ctrl+J"]),
@@ -127,6 +127,8 @@ actions! {
     MergeDown => (Layer, "Merge Down", ["Ctrl+E"]),
     MergeVisible => (Layer, "Merge Visible", ["Ctrl+Shift+E"]),
     Flatten => (Layer, "Flatten Image", []),
+    GroupLayers => (Layer, "Group Selected", ["Ctrl+G"]),
+    UngroupLayers => (Layer, "Ungroup", ["Ctrl+Shift+G"]),
     LayerUp => (Layer, "Move Layer Up", ["Ctrl+]"]),
     LayerDown => (Layer, "Move Layer Down", ["Ctrl+["]),
     LayerToTop => (Layer, "Move Layer to Top", ["Ctrl+Shift+]"]),

@@ -482,7 +482,7 @@ pub fn begin(state: &mut AppState, doc_id: DocId, source: Raster, x: i32, y: i32
     let Some(entry) = state.doc_mut(doc_id) else { return false };
     let s = entry.doc.state_mut();
     let li = s.active;
-    if !s.layers[li].editable() {
+    if !s.layer_editable(li) {
         state.toasts.push(Level::Info, "The active layer is locked or hidden.");
         return false;
     }
@@ -508,7 +508,7 @@ pub fn begin_transform(state: &mut AppState, doc_id: DocId) -> bool {
     let Some(entry) = state.doc_mut(doc_id) else { return false };
     let s = entry.doc.state_mut();
     let li = s.active;
-    if !s.layers[li].editable() {
+    if !s.layer_editable(li) {
         state.toasts.push(Level::Info, "The active layer is locked or hidden.");
         return false;
     }

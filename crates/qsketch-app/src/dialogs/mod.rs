@@ -54,7 +54,6 @@ pub struct ImageSizeDialog {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AdjustKind {
     BrightnessContrast,
-    HueSaturation,
 }
 
 pub struct AdjustDialog {
@@ -62,7 +61,6 @@ pub struct AdjustDialog {
     pub kind: AdjustKind,
     pub a: f32,
     pub b: f32,
-    pub c: f32,
 }
 
 pub struct LayerPropsDialog {
@@ -616,11 +614,10 @@ fn show_image_size(ctx: &Context, state: &mut AppState) {
 
 pub fn open_adjust(state: &mut AppState, kind: AdjustKind) {
     if let Some(e) = state.active() {
-        let (a, b, c) = match kind {
-            AdjustKind::BrightnessContrast => (0.0, 0.0, 0.0),
-            AdjustKind::HueSaturation => (0.0, 1.0, 1.0),
+        let (a, b) = match kind {
+            AdjustKind::BrightnessContrast => (0.0, 0.0),
         };
-        state.dialogs.adjust = Some(AdjustDialog { doc: e.id, kind, a, b, c });
+        state.dialogs.adjust = Some(AdjustDialog { doc: e.id, kind, a, b });
     }
 }
 
@@ -629,7 +626,6 @@ fn show_adjust(ctx: &Context, state: &mut AppState) {
     let mut apply = false;
     let title = match d.kind {
         AdjustKind::BrightnessContrast => "Brightness / Contrast",
-        AdjustKind::HueSaturation => "Hue / Saturation",
     };
     let (_, closed) = modal(ctx, "adjust", title, 340.0, |ui| {
         match d.kind {
@@ -637,13 +633,8 @@ fn show_adjust(ctx: &Context, state: &mut AppState) {
                 ui.add(egui::Slider::new(&mut d.a, -1.0..=1.0).text("Brightness"));
                 ui.add(egui::Slider::new(&mut d.b, -1.0..=1.0).text("Contrast"));
             }
-            AdjustKind::HueSaturation => {
-                ui.add(egui::Slider::new(&mut d.a, -180.0..=180.0).text("Hue").suffix("°"));
-                ui.add(egui::Slider::new(&mut d.b, 0.0..=2.0).text("Saturation"));
-                ui.add(egui::Slider::new(&mut d.c, 0.0..=2.0).text("Lightness"));
-            }
         }
-        ui.label(RichText::new("Applies to the active layer (within the selection).").weak().small());
+        ui.label(RichText::new("Applies to the selected layers (within the selection).").weak().small());
         ui.add_space(10.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -657,13 +648,17 @@ fn show_adjust(ctx: &Context, state: &mut AppState) {
     if apply {
         let d = state.dialogs.adjust.take().unwrap();
         if let Some(entry) = state.doc_mut(d.doc) {
-            let li = entry.doc.state().active;
-            let dirty = match d.kind {
-                AdjustKind::BrightnessContrast => ops::brightness_contrast(entry.doc.state_mut(), li, d.a, d.b),
-                AdjustKind::HueSaturation => ops::hue_saturation(entry.doc.state_mut(), li, d.a, d.b, d.c),
-            };
-            entry.doc.mark_dirty_rect(dirty);
-            entry.doc.commit(title);
+            let mut any = false;
+            for li in entry.target_layers() {
+                let dirty = match d.kind {
+                    AdjustKind::BrightnessContrast => ops::brightness_contrast(entry.doc.state_mut(), li, d.a, d.b),
+                };
+                entry.doc.mark_dirty_rect(dirty);
+                any = true;
+            }
+            if any {
+                entry.doc.commit(title);
+            }
         }
     } else if closed {
         state.dialogs.adjust = None;

@@ -18,7 +18,9 @@ use crate::ui::toasts::Level;
 
 pub struct FilterDialog {
     pub doc: DocId,
-    pub layer: usize,
+    /// Every layer the filter applies to (the selected layers, groups
+    /// expanded to their members).
+    pub layers: Vec<usize>,
     pub filter: Filter,
     /// The parameters currently rendered into the working state as a preview.
     pub applied: Option<Filter>,
@@ -33,6 +35,7 @@ pub struct FilterDialog {
 pub fn filter_for_action(state: &AppState, a: Action) -> Option<Filter> {
     let (fg, bg) = (state.fg, state.bg);
     Some(match a {
+        Action::HueSaturation => Filter::HueSaturation { hue: 0.0, saturation: 0.0, lightness: 0.0, colorize: false },
         Action::FilterGaussianBlur => Filter::GaussianBlur { radius: 5.0 },
         Action::FilterBoxBlur => Filter::BoxBlur { radius: 3 },
         Action::FilterMotionBlur => Filter::MotionBlur { angle: 0.0, distance: 20.0 },
@@ -114,16 +117,16 @@ pub fn open_with(state: &mut AppState, f: Filter) {
         revert(state, &prev);
     }
     state.dialogs.filter =
-        Some(FilterDialog { doc: target.0, layer: target.1, filter: f, applied: None, preview: true, last_ms: 0.0 });
+        Some(FilterDialog { doc: target.0, layers: target.1, filter: f, applied: None, preview: true, last_ms: 0.0 });
 }
 
-/// Apply `f` to the active layer and commit it as one history step.
+/// Apply `f` to the selected layers and commit it as one history step.
 pub fn apply_now(state: &mut AppState, f: Filter) {
     state.cancel_session();
     crate::tools::floating::commit(state);
-    let Some((id, li)) = target_layer(state) else { return };
+    let Some((id, layers)) = target_layer(state) else { return };
     if let Some(e) = state.doc_mut(id) {
-        let r = run(e, li, &f);
+        let r = run(e, &layers, &f);
         if !r.is_empty() {
             e.doc.commit(f.name());
         }
@@ -147,16 +150,21 @@ pub fn reopen_last(state: &mut AppState) {
     }
 }
 
-/// The active document and layer, if the layer can be edited.
-fn target_layer(state: &mut AppState) -> Option<(DocId, usize)> {
+/// The active document and the editable raster layers among the selected
+/// ones (groups expanded), if there are any.
+fn target_layer(state: &mut AppState) -> Option<(DocId, Vec<usize>)> {
     let e = state.active()?;
-    let li = e.doc.state().active;
-    let (id, editable) = (e.id, e.doc.state().layers[li].editable());
-    if !editable {
-        state.toasts.push(Level::Info, "The active layer is locked or hidden.");
+    let (id, layers) = (e.id, e.target_layers());
+    if layers.is_empty() {
+        let msg = if e.selected_ids().len() > 1 || e.doc.state().active_layer().is_group() {
+            "None of the selected layers can be edited (locked, hidden or empty groups)."
+        } else {
+            "The active layer is locked or hidden."
+        };
+        state.toasts.push(Level::Info, msg);
         return None;
     }
-    Some((id, li))
+    Some((id, layers))
 }
 
 fn remember(state: &mut AppState, f: Filter) {
@@ -164,11 +172,16 @@ fn remember(state: &mut AppState, f: Filter) {
     state.last_filter = Some(f);
 }
 
-/// Run a filter on the working state and mark the result dirty.
-fn run(e: &mut DocEntry, layer: usize, f: &Filter) -> qsketch_core::IRect {
-    let r = filter::apply_filter(e.doc.state_mut(), layer, f);
-    e.doc.mark_dirty_rect(r);
-    r
+/// Run a filter on every target layer of the working state and mark the
+/// result dirty. Returns the union of the dirty rects.
+fn run(e: &mut DocEntry, layers: &[usize], f: &Filter) -> qsketch_core::IRect {
+    let mut acc = qsketch_core::IRect::EMPTY;
+    for &li in layers {
+        let r = filter::apply_filter(e.doc.state_mut(), li, f);
+        e.doc.mark_dirty_rect(r);
+        acc = acc.union(&r);
+    }
+    acc
 }
 
 /// Throw away a rendered preview.
@@ -206,7 +219,11 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                     ui.label(RichText::new(format!("{:.0} ms", d.last_ms)).weak().small());
                 }
             });
-            ui.label(RichText::new("Applies to the active layer (within the selection).").weak().small());
+            let scope = match d.layers.len() {
+                1 => "Applies to the active layer (within the selection).".to_string(),
+                n => format!("Applies to {n} selected layers (within the selection)."),
+            };
+            ui.label(RichText::new(scope).weak().small());
             ui.add_space(8.0);
             // Inside `horizontal` so the right-aligned row keeps a one-row
             // height; on its own it would stretch the auto-sized window.
@@ -237,7 +254,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                     e.doc.revert_working();
                 }
                 let t = Instant::now();
-                run(e, d.layer, &d.filter);
+                run(e, &d.layers, &d.filter);
                 d.last_ms = t.elapsed().as_secs_f32() * 1000.0;
                 d.applied = Some(d.filter.clone());
             }
@@ -256,7 +273,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                 if d.applied.is_some() {
                     e.doc.revert_working();
                 }
-                run(e, d.layer, &d.filter);
+                run(e, &d.layers, &d.filter);
             }
             e.doc.commit(d.filter.name());
         }
@@ -310,6 +327,33 @@ fn color_ui(ui: &mut Ui, label: &str, c: &mut Rgba8) {
 
 fn params_ui(ui: &mut Ui, f: &mut Filter) {
     match f {
+        Filter::HueSaturation { hue, saturation, lightness, colorize } => {
+            if *colorize {
+                slider(ui, hue, 0.0..=360.0, "Hue", "°");
+                slider(ui, saturation, 0.0..=100.0, "Saturation", "");
+            } else {
+                slider(ui, hue, -180.0..=180.0, "Hue", "°");
+                slider(ui, saturation, -100.0..=100.0, "Saturation", "");
+            }
+            slider(ui, lightness, -100.0..=100.0, "Lightness", "");
+            ui.horizontal(|ui| {
+                if ui.checkbox(colorize, "Colorize").changed() {
+                    // Switch between shift and absolute ranges sensibly.
+                    if *colorize {
+                        *hue = hue.rem_euclid(360.0);
+                        *saturation = saturation.abs().max(25.0).min(100.0);
+                    } else {
+                        *hue = 0.0;
+                        *saturation = 0.0;
+                    }
+                }
+                if ui.small_button("Reset").clicked() {
+                    *hue = 0.0;
+                    *saturation = if *colorize { 25.0 } else { 0.0 };
+                    *lightness = 0.0;
+                }
+            });
+        }
         Filter::GaussianBlur { radius } => log_slider(ui, radius, 0.1..=250.0, "Radius", " px"),
         Filter::BoxBlur { radius } => slider(ui, radius, 1..=100, "Radius", " px"),
         Filter::MotionBlur { angle, distance } => {

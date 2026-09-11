@@ -16,7 +16,7 @@ pub fn handle_move(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             let Some(entry) = state.doc_mut(doc_id) else { return };
             let s = entry.doc.state_mut();
             let li = s.active;
-            if !s.layers[li].editable() {
+            if !s.layer_editable(li) {
                 state.toasts.push(Level::Info, "The active layer is locked or hidden.");
                 return;
             }
@@ -103,7 +103,7 @@ pub fn nudge(state: &mut AppState, doc_id: DocId, dx: i32, dy: i32) {
     let Some(entry) = state.doc_mut(doc_id) else { return };
     let s = entry.doc.state_mut();
     let li = s.active;
-    if !s.layers[li].editable() {
+    if !s.layer_editable(li) {
         return;
     }
     let Some(floating) = ops::lift(s, li) else { return };

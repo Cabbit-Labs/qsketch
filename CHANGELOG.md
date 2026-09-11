@@ -2,6 +2,26 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Layer groups. Select several layers in the Layers panel (Ctrl+click adds
+  one, Shift+click a range) and right-click ▸ **Group Selected** (`Ctrl+G`)
+  folds them into a group; **Ungroup** (`Ctrl+Shift+G`) dissolves it. Groups
+  nest, collapse with the caret, and carry their own opacity, blend mode,
+  visibility, lock and clipping (members composite against each other
+  first). Drag a layer onto the lower half of an open group to move it
+  inside; drag groups as a whole. Duplicate, delete, move, merge (`Ctrl+E`
+  on a group merges it into one layer) and the layer menus all understand
+  groups, `.qsk` files keep them, and `.psd` export writes the members.
+- Hue/Saturation (`Ctrl+H`, also `Ctrl+U`) is now a Photoshop-style dialog
+  with live preview: Hue, Saturation and Lightness sliders (−100…100), a
+  Colorize mode, and a Reset button. It applies only to the selected layers
+  (a group stands for its members) and, when there is one, only inside the
+  selection. Filters, Brightness/Contrast, Invert, Desaturate, Clear Layer
+  and the layer flips likewise now apply to every selected layer.
+- Layers panel: **Add Layer** at the top of the right-click menu, a group
+  button in the footer, and lock/visibility of a group dims its members.
+
 ## 0.13.0 — 2026-09-11
 
 - Free Transform (`Ctrl+T`, Edit menu): transforms the selected pixels, or

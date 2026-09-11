@@ -86,7 +86,7 @@ pub fn begin(state: &mut AppState, doc_id: DocId, anchor: Pt) -> bool {
     let Some(entry) = state.doc_mut(doc_id) else { return false };
     let s = entry.doc.state();
     let li = s.active;
-    if !s.layers[li].editable() {
+    if !s.layer_editable(li) {
         state.toasts.push(Level::Info, "The active layer is locked or hidden.");
         return false;
     }

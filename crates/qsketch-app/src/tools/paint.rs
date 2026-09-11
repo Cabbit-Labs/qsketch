@@ -368,7 +368,7 @@ fn commit_shape(
         let (w, h) = (entry.doc.width(), entry.doc.height());
         let s = entry.doc.state_mut();
         let li = s.active;
-        if !s.layers[li].editable() {
+        if !s.layer_editable(li) {
             state.toasts.push(Level::Info, "The active layer is locked or hidden.");
             return;
         }

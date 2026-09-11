@@ -577,17 +577,22 @@ impl QSketchApp {
 
     fn menu_bar(&mut self, ui: &mut Ui) {
         let has_doc = self.state.active_doc.is_some();
-        let (can_undo, can_redo, has_sel, layers, active, sel_or_content) = match self.state.active() {
-            Some(d) => (
-                d.doc.can_undo(),
-                d.doc.can_redo(),
-                d.doc.state().selection.is_some(),
-                d.doc.state().layers.len(),
-                d.doc.state().active,
-                true,
-            ),
-            None => (false, false, false, 0, 0, false),
-        };
+        let (can_undo, can_redo, has_sel, layers, can_merge_down, active_is_group, sel_or_content) =
+            match self.state.active() {
+                Some(d) => {
+                    let st = d.doc.state();
+                    (
+                        d.doc.can_undo(),
+                        d.doc.can_redo(),
+                        st.selection.is_some(),
+                        st.layers.len(),
+                        st.active_layer().is_group() || st.sibling_below(st.active).is_some(),
+                        st.active_layer().is_group(),
+                        true,
+                    )
+                }
+                None => (false, false, false, 0, false, false, false),
+            };
         // Menu buttons span the whole 24 px strip so their own hover
         // highlight (and click) reaches the top edge of the window.
         ui.spacing_mut().interact_size.y = 24.0;
@@ -692,7 +697,10 @@ impl QSketchApp {
                 self.menu_item(ui, Action::DeleteLayer, layers > 1);
                 self.menu_item(ui, Action::LayerProperties, has_doc);
                 ui.separator();
-                self.menu_item(ui, Action::MergeDown, active > 0);
+                self.menu_item(ui, Action::GroupLayers, has_doc);
+                self.menu_item(ui, Action::UngroupLayers, active_is_group);
+                ui.separator();
+                self.menu_item(ui, Action::MergeDown, can_merge_down);
                 self.menu_item(ui, Action::MergeVisible, layers > 1);
                 self.menu_item(ui, Action::Flatten, layers > 1);
                 ui.separator();
@@ -1070,12 +1078,14 @@ impl QSketchApp {
             Action::Clear => self.edit_layer("Clear", ops::clear),
             Action::ClearLayer => {
                 if let Some(d) = self.state.active_mut() {
-                    let li = d.doc.state().active;
-                    if d.doc.state().layers[li].editable() {
+                    let targets = d.target_layers();
+                    if !targets.is_empty() {
                         let saved = d.doc.state_mut().selection.take();
-                        let r = ops::clear(d.doc.state_mut(), li);
+                        for li in targets {
+                            let r = ops::clear(d.doc.state_mut(), li);
+                            d.doc.mark_dirty_rect(r);
+                        }
                         d.doc.state_mut().selection = saved;
-                        d.doc.mark_dirty_rect(r);
                         d.doc.commit("Clear Layer");
                     }
                 }
@@ -1120,7 +1130,7 @@ impl QSketchApp {
             Action::InvertColors => self.edit_layer("Invert", ops::invert_colors),
             Action::Desaturate => self.edit_layer("Desaturate", ops::desaturate),
             Action::BrightnessContrast => dialogs::open_adjust(&mut self.state, AdjustKind::BrightnessContrast),
-            Action::HueSaturation => dialogs::open_adjust(&mut self.state, AdjustKind::HueSaturation),
+            Action::HueSaturation => dialogs::filter::open(&mut self.state, Action::HueSaturation),
             Action::LastFilter => dialogs::filter::repeat_last(&mut self.state),
             Action::LastFilterDialog => dialogs::filter::reopen_last(&mut self.state),
             a if a.category() == Category::Filter => dialogs::filter::open(&mut self.state, a),
@@ -1143,13 +1153,45 @@ impl QSketchApp {
             }
             Action::DeleteLayer => {
                 if let Some(d) = self.state.active_mut() {
+                    // Top to bottom so earlier removals don't shift later indices.
+                    let mut targets = d.selected_indices();
+                    targets.reverse();
+                    let n = targets.len();
                     let s = d.doc.state_mut();
-                    let a = s.active;
-                    if s.remove_layer(a).is_some() {
+                    let mut removed = 0;
+                    for i in targets {
+                        if i < s.layers.len() && s.remove_layer(i).is_some() {
+                            removed += 1;
+                        }
+                    }
+                    if removed > 0 {
+                        d.selected.clear();
                         d.doc.mark_all_dirty();
-                        d.doc.commit("Delete Layer");
+                        d.doc.commit(if n > 1 { "Delete Layers" } else { "Delete Layer" });
                     } else {
                         self.state.toasts.push(Level::Info, "A document needs at least one layer.");
+                    }
+                }
+            }
+            Action::GroupLayers => {
+                if let Some(d) = self.state.active_mut() {
+                    let ids = d.selected_ids();
+                    if d.doc.state_mut().group_layers(&ids).is_some() {
+                        d.selected.clear();
+                        d.doc.mark_all_dirty();
+                        d.doc.commit("Group Layers");
+                    }
+                }
+            }
+            Action::UngroupLayers => {
+                if let Some(d) = self.state.active_mut() {
+                    let a = d.doc.state().active;
+                    if d.doc.state_mut().ungroup(a) {
+                        d.selected.clear();
+                        d.doc.mark_all_dirty();
+                        d.doc.commit("Ungroup");
+                    } else {
+                        self.state.toasts.push(Level::Info, "The active layer is not a group.");
                     }
                 }
             }
@@ -1157,9 +1199,10 @@ impl QSketchApp {
                 if let Some(d) = self.state.active_mut() {
                     let s = d.doc.state_mut();
                     let a = s.active;
+                    let label = if s.layers[a].is_group() { "Merge Group" } else { "Merge Down" };
                     if s.merge_down(a) {
                         d.doc.mark_all_dirty();
-                        d.doc.commit("Merge Down");
+                        d.doc.commit(label);
                     }
                 }
             }
@@ -1169,15 +1212,13 @@ impl QSketchApp {
                 if let Some(d) = self.state.active_mut() {
                     let s = d.doc.state_mut();
                     let a = s.active;
-                    let n = s.layers.len();
-                    let to = match action {
-                        Action::LayerUp => (a + 1).min(n - 1),
-                        Action::LayerDown => a.saturating_sub(1),
-                        Action::LayerToTop => n - 1,
-                        _ => 0,
+                    let moved = match action {
+                        Action::LayerUp => s.move_sibling(a, true),
+                        Action::LayerDown => s.move_sibling(a, false),
+                        Action::LayerToTop => s.move_to_end(a, true),
+                        _ => s.move_to_end(a, false),
                     };
-                    if to != a {
-                        s.move_layer(a, to);
+                    if moved {
                         d.doc.mark_all_dirty();
                         d.doc.commit("Reorder Layers");
                     }
@@ -1204,20 +1245,26 @@ impl QSketchApp {
             }
             Action::ToggleLayerLock => self.toggle_prop("Lock Layer", |p| p.locked = !p.locked),
             Action::LayerProperties => dialogs::open_layer_props(&mut self.state),
-            Action::FlipLayerHorizontal => {
+            Action::FlipLayerHorizontal | Action::FlipLayerVertical => {
                 if let Some(d) = self.state.active_mut() {
-                    let li = d.doc.state().active;
-                    ops::flip_layer_horizontal(d.doc.state_mut(), li);
-                    d.doc.mark_all_dirty();
-                    d.doc.commit("Flip Layer Horizontal");
-                }
-            }
-            Action::FlipLayerVertical => {
-                if let Some(d) = self.state.active_mut() {
-                    let li = d.doc.state().active;
-                    ops::flip_layer_vertical(d.doc.state_mut(), li);
-                    d.doc.mark_all_dirty();
-                    d.doc.commit("Flip Layer Vertical");
+                    let targets = d.target_layers();
+                    if targets.is_empty() {
+                        self.state.toasts.push(Level::Info, "The active layer is locked or hidden.");
+                    } else {
+                        for li in targets {
+                            if action == Action::FlipLayerHorizontal {
+                                ops::flip_layer_horizontal(d.doc.state_mut(), li);
+                            } else {
+                                ops::flip_layer_vertical(d.doc.state_mut(), li);
+                            }
+                        }
+                        d.doc.mark_all_dirty();
+                        d.doc.commit(if action == Action::FlipLayerHorizontal {
+                            "Flip Layer Horizontal"
+                        } else {
+                            "Flip Layer Vertical"
+                        });
+                    }
                 }
             }
             Action::SelectAll => {
@@ -1352,23 +1399,29 @@ impl QSketchApp {
         }
     }
 
-    /// Apply an operation to the active layer (respecting the selection) and commit.
-    fn edit_layer(&mut self, label: &str, f: impl FnOnce(&mut qsketch_core::DocState, usize) -> qsketch_core::IRect) {
+    /// Apply an operation to every selected layer (respecting the selection;
+    /// groups stand for their members) and commit once.
+    fn edit_layer(&mut self, label: &str, f: impl Fn(&mut qsketch_core::DocState, usize) -> qsketch_core::IRect) {
         self.state.cancel_session();
         crate::tools::floating::commit(&mut self.state);
         crate::tools::text::commit(&mut self.state);
         let Some(d) = self.state.active_mut() else { return };
-        let li = d.doc.state().active;
-        if !d.doc.state().layers[li].editable() {
+        let targets = d.target_layers();
+        if targets.is_empty() {
             self.state.toasts.push(Level::Info, "The active layer is locked or hidden.");
             return;
         }
-        let r = f(d.doc.state_mut(), li);
-        if r.is_empty() {
-            return;
+        let mut any = false;
+        for li in targets {
+            let r = f(d.doc.state_mut(), li);
+            if !r.is_empty() {
+                d.doc.mark_dirty_rect(r);
+                any = true;
+            }
         }
-        d.doc.mark_dirty_rect(r);
-        d.doc.commit(label);
+        if any {
+            d.doc.commit(label);
+        }
     }
 
     /// Apply a whole-document operation and commit.
