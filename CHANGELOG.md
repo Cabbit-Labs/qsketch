@@ -2,6 +2,11 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Undo/redo no longer switches the active layer: you stay on the layer you
+  are on, unless that layer itself is removed by the undo.
+
 ## 0.15.4 — 2026-09-12
 
 - Flash selected layer: when the active layer changes (Layers panel click,

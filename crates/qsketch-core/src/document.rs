@@ -398,7 +398,14 @@ impl Document {
     fn restore(&mut self, state: DocState) {
         let resized = state.width != self.working.width || state.height != self.working.height;
         let d = dirty_between(&self.working, &state);
+        // Undo/redo should not yank the user onto whichever layer was active
+        // when the snapshot was taken: stay on the current layer as long as
+        // it still exists in the restored state.
+        let keep = self.working.active_layer().props.id;
         self.working = state;
+        if let Some(i) = self.working.index_of(keep) {
+            self.working.active = i;
+        }
         if resized {
             self.resized();
         } else {
