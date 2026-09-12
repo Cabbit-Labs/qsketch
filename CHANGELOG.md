@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.4 — 2026-09-12
 
 - Flash selected layer: when the active layer changes (Layers panel click,
   keyboard, undo), its pixels light up on the canvas for half a second and
