@@ -422,6 +422,8 @@ pub struct CanvasSettings {
     pub quick_rotate_follow_pointer: bool,
     /// Tapping `Q` twice resets the view rotation.
     pub quick_rotate_double_tap_reset: bool,
+    /// A fast hand-tool (Space) drag keeps gliding briefly after release.
+    pub pan_inertia: bool,
 }
 
 impl Default for CanvasSettings {
@@ -440,6 +442,7 @@ impl Default for CanvasSettings {
             smooth_zoom_out: true,
             quick_rotate_follow_pointer: true,
             quick_rotate_double_tap_reset: true,
+            pan_inertia: true,
         }
     }
 }

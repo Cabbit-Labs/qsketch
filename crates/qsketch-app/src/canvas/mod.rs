@@ -275,6 +275,17 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         ctx.request_repaint();
     }
 
+    // Pan inertia: glide on after a hand-tool flick until it decays or a press.
+    if !capturing {
+        let dt = ctx.input(|i| i.stable_dt);
+        if let Some(entry) = state.doc_mut(doc_id) {
+            let (w, h) = (entry.doc.width(), entry.doc.height());
+            if entry.view.tick_inertia(dt, w, h) {
+                ctx.request_repaint();
+            }
+        }
+    }
+
     // Hover info for the Info panel + cursor.
     let hover_pos = ui.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p) && hovered);
     if hovered {

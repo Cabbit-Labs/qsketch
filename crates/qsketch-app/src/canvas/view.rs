@@ -23,6 +23,9 @@ pub struct CanvasView {
     /// Screen rect of the canvas widget (points).
     pub viewport: Rect,
     pub initialized: bool,
+    /// Leftover pan speed after a hand drag ends (screen points per second);
+    /// ticked down each frame by `tick_inertia`.
+    pub pan_velocity: Vec2,
 }
 
 impl Default for CanvasView {
@@ -34,6 +37,7 @@ impl Default for CanvasView {
             flip_h: false,
             viewport: Rect::ZERO,
             initialized: false,
+            pan_velocity: Vec2::ZERO,
         }
     }
 }
@@ -113,6 +117,27 @@ impl CanvasView {
     pub fn pan_by_screen(&mut self, delta: Vec2) {
         let d = self.screen_delta_to_doc(delta);
         self.center = Pt::new(self.center.x - d.x, self.center.y - d.y);
+    }
+
+    /// Advance the post-drag glide by `dt` seconds. Returns true while still moving.
+    pub fn tick_inertia(&mut self, dt: f32, doc_w: u32, doc_h: u32) -> bool {
+        if self.pan_velocity == Vec2::ZERO {
+            return false;
+        }
+        let dt = dt.clamp(0.0, 0.1);
+        // Exponential decay: ~85% of the speed gone after 1/3 s.
+        const DECAY_PER_SEC: f32 = 5.5;
+        let keep = (-DECAY_PER_SEC * dt).exp();
+        let before = self.center;
+        self.pan_by_screen(self.pan_velocity * dt);
+        self.clamp_to_document(doc_w, doc_h);
+        self.pan_velocity *= keep;
+        let moved = before.x != self.center.x || before.y != self.center.y;
+        // Stop once slow, or when the clamp pins the view.
+        if self.pan_velocity.length() < 20.0 || (!moved && dt > 0.0) {
+            self.pan_velocity = Vec2::ZERO;
+        }
+        self.pan_velocity != Vec2::ZERO
     }
 
     pub fn rotate_by(&mut self, radians: f32, anchor: Option<Pos2>) {

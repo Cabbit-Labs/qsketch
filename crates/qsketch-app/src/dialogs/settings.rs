@@ -604,6 +604,10 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
         ui.label("Double-tap Q resets the rotation");
         ui.checkbox(&mut c.quick_rotate_double_tap_reset, "");
         ui.end_row();
+        ui.label("Pan inertia");
+        ui.checkbox(&mut c.pan_inertia, "")
+            .on_hover_text("A fast hand-tool (Space) drag keeps gliding briefly after release instead of stopping dead.");
+        ui.end_row();
         ui.label("Brush cursor");
         ui.horizontal(|ui| {
             ui.selectable_value(&mut c.brush_cursor, BrushCursor::Outline, "Outline");

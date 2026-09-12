@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Pan inertia: a fast hand-tool drag (Space held, or middle-drag) keeps
+  gliding briefly after release and eases to a stop instead of halting dead.
+  Pausing before letting go, or any click, stops it. Off switch under
+  Preferences ▸ Canvas ▸ "Pan inertia".
+
 ## 0.15.3 — 2026-09-11
 
 - Pen barrel button mapped to right-click now right-clicks everywhere, not

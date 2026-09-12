@@ -49,14 +49,31 @@ pub fn handle_hand(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     match ev {
         CanvasEvent::Press(inp) => {
             if state.session.is_none() {
-                state.session = Some(ToolSession::Pan { last: inp.screen });
+                // Grabbing the canvas stops any glide from the previous drag.
+                if let Some(entry) = state.doc_mut(doc_id) {
+                    entry.view.pan_velocity = egui::Vec2::ZERO;
+                }
+                state.session = Some(ToolSession::Pan {
+                    last: inp.screen,
+                    last_at: std::time::Instant::now(),
+                    velocity: egui::Vec2::ZERO,
+                });
                 state.session_doc = Some(doc_id);
             }
         }
         CanvasEvent::Drag(inp) => {
-            let Some(ToolSession::Pan { last }) = &mut state.session else { return };
+            let Some(ToolSession::Pan { last, last_at, velocity }) = &mut state.session else { return };
+            let now = std::time::Instant::now();
+            let dt = now.duration_since(*last_at).as_secs_f32();
             let delta = inp.screen - *last;
             *last = inp.screen;
+            *last_at = now;
+            if dt > 0.0005 {
+                let sample = delta / dt;
+                // Weight recent samples more; a long gap (pointer at rest) resets.
+                let a = (dt / 0.05).clamp(0.3, 1.0);
+                *velocity = *velocity * (1.0 - a) + sample * a;
+            }
             if let Some(entry) = state.doc_mut(doc_id) {
                 entry.view.pan_by_screen(delta);
                 let (w, h) = (entry.doc.width(), entry.doc.height());
@@ -64,9 +81,18 @@ pub fn handle_hand(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             }
         }
         CanvasEvent::Release(_) => {
-            if matches!(state.session, Some(ToolSession::Pan { .. })) {
+            if let Some(ToolSession::Pan { last_at, velocity, .. }) = state.session {
                 state.session = None;
                 state.session_doc = None;
+                // Only glide when the pointer was still moving at release; a
+                // pause before letting go means "stop here". Slow drags don't
+                // glide, fast flicks do.
+                let fresh = last_at.elapsed().as_secs_f32() < 0.08;
+                if state.settings.canvas.pan_inertia && fresh && velocity.length() > 300.0 {
+                    if let Some(entry) = state.doc_mut(doc_id) {
+                        entry.view.pan_velocity = velocity;
+                    }
+                }
             }
         }
         CanvasEvent::DoubleClick(_) => {

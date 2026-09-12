@@ -269,6 +269,10 @@ pub enum ToolSession {
     },
     Pan {
         last: Pos2,
+        /// When `last` was sampled; used with `velocity` for pan inertia.
+        last_at: std::time::Instant,
+        /// Smoothed pointer speed, screen points per second.
+        velocity: egui::Vec2,
     },
     ZoomDrag {
         start: Pos2,
