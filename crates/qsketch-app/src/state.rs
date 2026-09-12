@@ -33,6 +33,9 @@ pub struct DocEntry {
     /// layer: changing the active layer elsewhere implicitly collapses the
     /// selection back to that layer alone.
     pub selected: Vec<LayerId>,
+    /// Active layer id as of the last canvas frame; a change starts a flash.
+    pub flash_seen_active: Option<LayerId>,
+    pub layer_flash: Option<crate::canvas::flash::LayerFlash>,
 }
 
 impl DocEntry {
@@ -45,6 +48,8 @@ impl DocEntry {
             generation: 1,
             needs_full_upload: true,
             selected: Vec::new(),
+            flash_seen_active: None,
+            layer_flash: None,
         }
     }
 

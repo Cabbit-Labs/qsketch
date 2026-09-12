@@ -424,6 +424,8 @@ pub struct CanvasSettings {
     pub quick_rotate_double_tap_reset: bool,
     /// A fast hand-tool (Space) drag keeps gliding briefly after release.
     pub pan_inertia: bool,
+    /// Briefly light up a layer's pixels on the canvas when it becomes active.
+    pub flash_selected_layer: bool,
 }
 
 impl Default for CanvasSettings {
@@ -443,6 +445,7 @@ impl Default for CanvasSettings {
             quick_rotate_follow_pointer: true,
             quick_rotate_double_tap_reset: true,
             pan_inertia: true,
+            flash_selected_layer: true,
         }
     }
 }

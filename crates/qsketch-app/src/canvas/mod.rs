@@ -1,6 +1,7 @@
 //! The document canvas widget: input routing to tools, GPU rendering of the
 //! composite, and screen-space overlays (selection ants, brush cursor).
 
+pub mod flash;
 pub mod render;
 pub mod view;
 
@@ -390,6 +391,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     painter.add(egui::Shape::closed_line(border_pts.to_vec(), Stroke::new(1.0, Color32::from_black_alpha(160))));
 
     draw_selection(&painter, entry, &ctx);
+    flash::update(state, doc_id, &ctx, &painter);
     tools::draw_overlay(state, doc_id, &painter);
     if state.brush_popup.is_none() {
         draw_brush_cursor(&painter, state, doc_id, hover_pos, tool);

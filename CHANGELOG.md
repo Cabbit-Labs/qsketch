@@ -4,6 +4,11 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Flash selected layer: when the active layer changes (Layers panel click,
+  keyboard, undo), its pixels light up on the canvas for half a second and
+  fade, so you can see which layer you just picked. Groups flash all their
+  members. Off switch under Preferences ▸ Canvas ▸ "Flash selected layer".
+
 - Pan inertia: a fast hand-tool drag (Space held, or middle-drag) keeps
   gliding briefly after release and eases to a stop instead of halting dead.
   Pausing before letting go, or any click, stops it. Off switch under
