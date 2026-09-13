@@ -609,8 +609,9 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             .on_hover_text("When the active layer changes, its pixels light up on the canvas for a moment.");
         ui.end_row();
         ui.label("Pan inertia");
-        ui.checkbox(&mut c.pan_inertia, "")
-            .on_hover_text("A fast hand-tool (Space) drag keeps gliding briefly after release instead of stopping dead.");
+        ui.checkbox(&mut c.pan_inertia, "").on_hover_text(
+            "A fast hand-tool (Space) drag keeps gliding briefly after release instead of stopping dead.",
+        );
         ui.end_row();
         ui.label("Brush cursor");
         ui.horizontal(|ui| {
