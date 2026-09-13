@@ -341,7 +341,7 @@ fn params_ui(ui: &mut Ui, f: &mut Filter) {
                     // Switch between shift and absolute ranges sensibly.
                     if *colorize {
                         *hue = hue.rem_euclid(360.0);
-                        *saturation = saturation.abs().max(25.0).min(100.0);
+                        *saturation = saturation.abs().clamp(25.0, 100.0);
                     } else {
                         *hue = 0.0;
                         *saturation = 0.0;
