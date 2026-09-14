@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Chrome texture shows through list rows: the zebra stripes, hover and
+  selection fills in the Layers, Brushes and History panels are translucent
+  tints now instead of flat rectangles that punched holes in the texture.
+- Chrome texture is visible on any theme color. The speckle pixels are now a
+  lighter / darker version of the panel color rather than plain white and
+  black at low alpha, which all but disappeared on mid-tone chrome such as
+  a pink custom theme. Near-white chrome keeps a slightly fainter grain.
+
 ## 0.15.8 — 2026-09-14
 
 - Exit safety net: right before the window closes, every document with

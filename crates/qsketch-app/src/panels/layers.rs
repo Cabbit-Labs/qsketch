@@ -138,15 +138,15 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             let dim = !s.effectively_visible(i);
             let (row_rect, row_resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_h), Sense::click());
             let fill = if is_active {
-                ui.visuals().selection.bg_fill
+                crate::ui::chrome::row_fill(ui.visuals().selection.bg_fill)
             } else if is_selected {
                 ui.visuals().selection.bg_fill.gamma_multiply(0.45)
             } else if row_resp.hovered() {
-                ui.visuals().widgets.hovered.bg_fill
+                crate::ui::chrome::row_fill(ui.visuals().widgets.hovered.bg_fill)
             } else if row_no % 2 == 0 {
-                // Zebra striping at a fraction of the theme's faint bg: enough
-                // to separate rows without competing with the eye icons.
-                ui.visuals().faint_bg_color.lerp_to_gamma(ui.visuals().panel_fill, 0.6)
+                // Translucent zebra striping: separates rows without hiding
+                // the chrome texture or competing with the eye icons.
+                crate::ui::chrome::zebra(ui)
             } else {
                 Color32::TRANSPARENT
             };

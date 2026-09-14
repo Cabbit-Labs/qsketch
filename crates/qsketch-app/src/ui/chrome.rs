@@ -36,15 +36,35 @@ fn value_noise(x: usize, y: usize, cells: usize, seed: u32) -> f32 {
     (a + (b - a) * sy) * 2.0 - 1.0
 }
 
-/// Signed intensity in -1..=1 → premultiplied light/dark speckle.
-fn speckle(n: f32) -> Color32 {
+/// Signed intensity in -1..=1 → premultiplied speckle that is a lighter /
+/// darker version of `fill`, the panel color it will be painted over.
+///
+/// Plain white / black at low alpha reads fine on near-black or near-white
+/// chrome but all but vanishes on a mid-tone (a pink theme, say): white over
+/// pink barely moves the color. Pushing the fill itself a fixed fraction
+/// toward white or black gives the same visible offset on any theme.
+fn speckle(n: f32, fill: Color32) -> Color32 {
     let n = n.clamp(-1.0, 1.0);
-    let a = (n.abs() * 90.0) as u8;
-    if n >= 0.0 {
-        Color32::from_white_alpha(a)
+    let target = if n >= 0.0 { Color32::WHITE } else { Color32::BLACK };
+    let c = fill.lerp_to_gamma(target, 0.55);
+    let a = (n.abs() * 0.55 * 255.0).round() as u8;
+    Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a)
+}
+
+/// Zebra-stripe fill for list rows: a translucent tint rather than an opaque
+/// color, so the chrome texture underneath stays visible.
+pub fn zebra(ui: &Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        Color32::from_white_alpha(7)
     } else {
-        Color32::from_black_alpha(a)
+        Color32::from_black_alpha(10)
     }
+}
+
+/// Selection / hover fills for list rows, slightly translucent so the chrome
+/// texture shows through instead of being punched out by a flat rectangle.
+pub fn row_fill(c: Color32) -> Color32 {
+    c.gamma_multiply(0.85)
 }
 
 /// Horizontal brush streaks plus fine grain.
@@ -190,18 +210,18 @@ fn argyle(x: usize, y: usize) -> f32 {
     fill + stitch + (hash(x as u32, y as u32, 51) - 0.5) * 0.1
 }
 
-fn make_tile(f: fn(usize, usize) -> f32) -> ColorImage {
+fn make_tile(f: fn(usize, usize) -> f32, fill: Color32) -> ColorImage {
     let mut px = vec![Color32::TRANSPARENT; TILE * TILE];
     for y in 0..TILE {
         for x in 0..TILE {
-            px[y * TILE + x] = speckle(f(x, y));
+            px[y * TILE + x] = speckle(f(x, y), fill);
         }
     }
     ColorImage::new([TILE, TILE], px)
 }
 
 /// Load a user image and turn it into neutral speckle around its mean luminance.
-fn custom_tile(path: &str) -> Option<ColorImage> {
+fn custom_tile(path: &str, fill: Color32) -> Option<ColorImage> {
     if path.is_empty() {
         return None;
     }
@@ -213,7 +233,7 @@ fn custom_tile(path: &str) -> Option<ColorImage> {
     let lum: Vec<f32> =
         img.pixels().map(|p| (0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32) / 255.0).collect();
     let mean = lum.iter().sum::<f32>() / lum.len() as f32;
-    let px = lum.iter().map(|l| speckle((l - mean) * 2.5)).collect();
+    let px = lum.iter().map(|l| speckle((l - mean) * 2.5, fill)).collect();
     Some(ColorImage::new([w, h], px))
 }
 
@@ -223,23 +243,23 @@ struct Cached {
     size: [usize; 2],
 }
 
-fn texture(ctx: &Context, t: &TextureSettings) -> Option<(TextureHandle, [usize; 2])> {
-    let id = egui::Id::new(("qsketch_chrome_tex", t.kind, &t.custom_path, t.smooth));
+fn texture(ctx: &Context, t: &TextureSettings, fill: Color32) -> Option<(TextureHandle, [usize; 2])> {
+    let id = egui::Id::new(("qsketch_chrome_tex", t.kind, &t.custom_path, t.smooth, fill));
     if let Some(c) = ctx.data(|d| d.get_temp::<Cached>(id)) {
         return c.handle.map(|h| (h, c.size));
     }
     let img = match t.kind {
         ChromeTexture::None => None,
-        ChromeTexture::BrushedMetal => Some(make_tile(brushed)),
-        ChromeTexture::Carbon => Some(make_tile(carbon)),
-        ChromeTexture::Paper => Some(make_tile(paper)),
-        ChromeTexture::Grain => Some(make_tile(grain)),
-        ChromeTexture::Grid => Some(make_tile(grid)),
-        ChromeTexture::Stars => Some(make_tile(stars)),
-        ChromeTexture::Dots => Some(make_tile(dots)),
-        ChromeTexture::Hearts => Some(make_tile(hearts)),
-        ChromeTexture::Argyle => Some(make_tile(argyle)),
-        ChromeTexture::Custom => custom_tile(&t.custom_path),
+        ChromeTexture::BrushedMetal => Some(make_tile(brushed, fill)),
+        ChromeTexture::Carbon => Some(make_tile(carbon, fill)),
+        ChromeTexture::Paper => Some(make_tile(paper, fill)),
+        ChromeTexture::Grain => Some(make_tile(grain, fill)),
+        ChromeTexture::Grid => Some(make_tile(grid, fill)),
+        ChromeTexture::Stars => Some(make_tile(stars, fill)),
+        ChromeTexture::Dots => Some(make_tile(dots, fill)),
+        ChromeTexture::Hearts => Some(make_tile(hearts, fill)),
+        ChromeTexture::Argyle => Some(make_tile(argyle, fill)),
+        ChromeTexture::Custom => custom_tile(&t.custom_path, fill),
     };
     let base = if t.smooth { TextureOptions::LINEAR } else { TextureOptions::NEAREST };
     let opts = TextureOptions { wrap_mode: egui::TextureWrapMode::Repeat, ..base };
@@ -260,15 +280,18 @@ pub fn paint(painter: &Painter, ctx: &Context, rect: Rect, p: &Palette, t: &Text
     if !t.enabled() || rect.width() <= 0.0 || rect.height() <= 0.0 {
         return;
     }
-    let Some((tex, size)) = texture(ctx, t) else { return };
+    let Some((tex, size)) = texture(ctx, t, p.panel) else { return };
     let scale = t.scale.clamp(0.25, 8.0);
     let (tw, th) = (size[0] as f32 * scale, size[1] as f32 * scale);
     let uv = Rect::from_min_max(
         egui::pos2(rect.left() / tw, rect.top() / th),
         egui::pos2(rect.right() / tw, rect.bottom() / th),
     );
-    // Light themes read the grain louder; keep it fainter there.
-    let k = if p.dark { t.strength } else { t.strength * 0.6 };
+    // The speckle is already relative to the panel color, so it reads at the
+    // same weight on any theme; only near-white chrome, where the dark
+    // speckle alone carries all the contrast, gets it a little fainter.
+    let lum = (0.299 * p.panel.r() as f32 + 0.587 * p.panel.g() as f32 + 0.114 * p.panel.b() as f32) / 255.0;
+    let k = if lum > 0.85 { t.strength * 0.7 } else { t.strength };
     painter.image(tex.id(), rect, uv, Color32::from_white_alpha((k * 255.0).round().clamp(0.0, 255.0) as u8));
     if !t.sheen {
         return;

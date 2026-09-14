@@ -53,11 +53,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), Sense::click());
             let selected = current_name.as_deref() == Some(p.name.as_str());
             let fill = if selected {
-                ui.visuals().selection.bg_fill
+                crate::ui::chrome::row_fill(ui.visuals().selection.bg_fill)
             } else if resp.hovered() {
-                ui.visuals().widgets.hovered.bg_fill
+                crate::ui::chrome::row_fill(ui.visuals().widgets.hovered.bg_fill)
             } else if i % 2 == 0 {
-                ui.visuals().faint_bg_color
+                crate::ui::chrome::zebra(ui)
             } else {
                 Color32::TRANSPARENT
             };

@@ -27,11 +27,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             let is_cur = i == cursor;
             let future = i > cursor;
             let fill = if is_cur {
-                ui.visuals().selection.bg_fill
+                crate::ui::chrome::row_fill(ui.visuals().selection.bg_fill)
             } else if resp.hovered() {
-                ui.visuals().widgets.hovered.bg_fill
+                crate::ui::chrome::row_fill(ui.visuals().widgets.hovered.bg_fill)
             } else if i % 2 == 0 {
-                ui.visuals().faint_bg_color
+                crate::ui::chrome::zebra(ui)
             } else {
                 Color32::TRANSPARENT
             };
