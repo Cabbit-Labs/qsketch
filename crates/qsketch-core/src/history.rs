@@ -7,17 +7,27 @@ use crate::document::DocState;
 pub struct HistoryEntry {
     pub label: String,
     pub state: DocState,
+    /// Monotonic per-history id. Unlike the index, it never changes when older
+    /// entries are dropped to enforce the limit, so it is safe to remember
+    /// (e.g. "the state that was last saved to disk").
+    pub id: u64,
 }
 
 pub struct History {
     entries: Vec<HistoryEntry>,
     cursor: usize,
     limit: usize,
+    next_id: u64,
 }
 
 impl History {
     pub fn new(initial: DocState, label: impl Into<String>) -> Self {
-        Self { entries: vec![HistoryEntry { label: label.into(), state: initial }], cursor: 0, limit: 200 }
+        Self {
+            entries: vec![HistoryEntry { label: label.into(), state: initial, id: 0 }],
+            cursor: 0,
+            limit: 200,
+            next_id: 1,
+        }
     }
 
     pub fn limit(&self) -> usize {
@@ -52,6 +62,10 @@ impl History {
     pub fn current(&self) -> &DocState {
         &self.entries[self.cursor].state
     }
+    /// Stable id of the current state (see `HistoryEntry::id`).
+    pub fn current_id(&self) -> u64 {
+        self.entries[self.cursor].id
+    }
     pub fn can_undo(&self) -> bool {
         self.cursor > 0
     }
@@ -68,7 +82,8 @@ impl History {
     /// Record a new state after the cursor, discarding any redo states.
     pub fn push(&mut self, label: impl Into<String>, state: DocState) {
         self.entries.truncate(self.cursor + 1);
-        self.entries.push(HistoryEntry { label: label.into(), state });
+        self.entries.push(HistoryEntry { label: label.into(), state, id: self.next_id });
+        self.next_id += 1;
         self.cursor = self.entries.len() - 1;
         self.enforce_limit();
     }
@@ -136,5 +151,24 @@ mod tests {
         h.set_limit(2);
         assert_eq!(h.len(), 2);
         assert_eq!(h.cursor(), 1);
+    }
+
+    /// Once the limit trims old entries the cursor stops moving, so an index
+    /// can no longer tell "saved here" apart from "edited since"; ids can.
+    #[test]
+    fn ids_survive_limit() {
+        let s = DocState::new(8, 8, None);
+        let mut h = History::new(s.clone(), "New");
+        h.set_limit(3);
+        for _ in 0..5 {
+            h.push("A", s.clone());
+        }
+        let saved = h.current_id();
+        let cursor = h.cursor();
+        h.push("B", s.clone());
+        assert_eq!(h.cursor(), cursor);
+        assert_ne!(h.current_id(), saved);
+        assert!(h.undo().is_some());
+        assert_eq!(h.current_id(), saved);
     }
 }

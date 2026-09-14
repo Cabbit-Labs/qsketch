@@ -149,8 +149,8 @@ pub fn discard(r: &Recoverable) {
 pub struct Autosave {
     last_run: Instant,
     busy: Arc<AtomicBool>,
-    /// History cursor each document had when last snapshotted.
-    snapshotted: std::collections::HashMap<DocId, usize>,
+    /// History state id each document had when last snapshotted.
+    snapshotted: std::collections::HashMap<DocId, u64>,
 }
 
 impl Default for Autosave {
@@ -182,7 +182,7 @@ impl Autosave {
         ctx.request_repaint_after(interval);
         let Some(d) = dir() else { return };
         for e in docs {
-            let cursor = e.doc.history.cursor();
+            let cursor = e.doc.history.current_id();
             if !e.doc.is_modified() {
                 if self.snapshotted.remove(&e.id).is_some() {
                     remove(e.id);
@@ -249,7 +249,7 @@ impl Autosave {
                 .and_then(|_| Ok(std::fs::write(&json, serde_json::to_vec(&meta)?)?));
             match res {
                 Ok(()) => {
-                    self.snapshotted.insert(e.id, e.doc.history.cursor());
+                    self.snapshotted.insert(e.id, e.doc.history.current_id());
                 }
                 Err(err) => log::warn!("autosave flush {}: {err:#}", qsk.display()),
             }

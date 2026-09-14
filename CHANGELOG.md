@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Unsaved work is no longer mistaken for saved after a long session. Once the
+  undo history reached its limit (200 steps) the "saved" marker compared
+  equal to every later state, so the title lost its `*`, closing the window
+  or the tab skipped the Unsaved Changes prompt, and crash-recovery snapshots
+  stopped being written. The saved state is now tracked by a stable id that
+  survives history trimming.
+
 ## 0.15.6 — 2026-09-14
 
 - Free Transform / paste handles respond to the mouse and pen again while a

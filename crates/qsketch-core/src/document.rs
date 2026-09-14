@@ -305,7 +305,8 @@ pub struct Document {
     working: DocState,
     pub path: Option<PathBuf>,
     pub title: String,
-    saved_at: Option<usize>,
+    /// `History` id of the state on disk; `None` when never saved.
+    saved_at: Option<u64>,
     pub composite: Composite,
     dirty: TileSet,
 }
@@ -469,11 +470,11 @@ impl Document {
     }
 
     pub fn is_modified(&self) -> bool {
-        self.saved_at != Some(self.history.cursor())
+        self.saved_at != Some(self.history.current_id())
     }
 
     pub fn mark_saved(&mut self) {
-        self.saved_at = Some(self.history.cursor());
+        self.saved_at = Some(self.history.current_id());
     }
 
     /// Treat the document as never saved (e.g. recovered from an autosave), so
