@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Exit safety net: right before the window closes, every document with
+  unsaved changes is snapshotted to the crash-recovery folder, and so is any
+  document whose `.qsk` on disk is missing or a different size from what is
+  open, even when the app believes it is saved. The snapshots are offered
+  under Recover Unsaved Work on the next start. This covers the "Confirm
+  before closing unsaved work" preference being off as well.
+
 ## 0.15.7 — 2026-09-14
 
 - Unsaved work is no longer mistaken for saved after a long session. Once the

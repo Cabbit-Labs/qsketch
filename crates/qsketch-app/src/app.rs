@@ -191,6 +191,10 @@ impl QSketchApp {
                 Some(id) => self.request_close(id, AfterClose::Quit),
                 None => {
                     self.persist();
+                    // Whatever the confirmation flow missed (confirm_close off,
+                    // or a file on disk that no longer matches) gets a
+                    // recovery snapshot before the process goes away.
+                    self.state.autosave.flush_for_exit(&self.state.docs);
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
@@ -1529,6 +1533,7 @@ impl eframe::App for QSketchApp {
                 self.state.quit_requested = true;
             } else {
                 self.persist();
+                self.state.autosave.flush_for_exit(&self.state.docs);
             }
         }
 

@@ -226,6 +226,19 @@ impl Autosave {
     /// Snapshot every modified document right now, on this thread. Used before
     /// the updater relaunches so unsaved work is offered for recovery.
     pub fn flush_all(&mut self, docs: &[DocEntry]) {
+        self.flush(docs, false);
+    }
+
+    /// Last line of defense before the process exits: snapshot every document
+    /// that is modified, and also any whose `.qsk` on disk no longer matches
+    /// what is open (missing, or a different size than the snapshot serializes
+    /// to), even if the document believes it is saved. Whatever is left in the
+    /// autosave folder is offered for recovery on the next start.
+    pub fn flush_for_exit(&mut self, docs: &[DocEntry]) {
+        self.flush(docs, true);
+    }
+
+    fn flush(&mut self, docs: &[DocEntry], for_exit: bool) {
         let Some(d) = dir() else { return };
         // Let an in-flight background snapshot finish first.
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -233,7 +246,12 @@ impl Autosave {
             std::thread::sleep(Duration::from_millis(20));
         }
         for e in docs {
-            if !e.doc.is_modified() {
+            let modified = e.doc.is_modified();
+            // A "saved" document can only be cross-checked against its own
+            // format; an exported PNG says nothing about the layers.
+            let verify_disk =
+                for_exit && !modified && e.doc.path.as_deref().is_some_and(|p| io::is_native(p) || !p.exists());
+            if !modified && !verify_disk {
                 continue;
             }
             let Some((qsk, json)) = paths_for(e.id) else { continue };
@@ -250,6 +268,17 @@ impl Autosave {
             match res {
                 Ok(()) => {
                     self.snapshotted.insert(e.id, e.doc.history.current_id());
+                    if verify_disk {
+                        let on_disk = e.doc.path.as_deref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len());
+                        let ours = std::fs::metadata(&qsk).ok().map(|m| m.len());
+                        if on_disk.is_some() && on_disk == ours {
+                            // Disk agrees with memory: nothing to recover.
+                            self.snapshotted.remove(&e.id);
+                            remove(e.id);
+                        } else {
+                            log::warn!("exit snapshot kept for {:?}: on-disk size {on_disk:?} != {ours:?}", e.doc.path);
+                        }
+                    }
                 }
                 Err(err) => log::warn!("autosave flush {}: {err:#}", qsk.display()),
             }
