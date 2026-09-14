@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.10 — 2026-09-14
 
 - Layers panel scrolls to the active layer whenever it changes from
   elsewhere (Shift+W / Shift+S, undo, a canvas pick), so the highlighted row
