@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.8 — 2026-09-14
 
 - Exit safety net: right before the window closes, every document with
   unsaved changes is snapshotted to the crash-recovery folder, and so is any
