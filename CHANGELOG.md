@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.6 — 2026-09-14
 
 - Free Transform / paste handles respond to the mouse and pen again while a
   tablet is in proximity. Tablet-sourced motion was only forwarded to paint
