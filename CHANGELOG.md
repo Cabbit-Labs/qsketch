@@ -2,6 +2,12 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Layers panel scrolls to the active layer whenever it changes from
+  elsewhere (Shift+W / Shift+S, undo, a canvas pick), so the highlighted row
+  is always in view.
+
 ## 0.15.9 — 2026-09-14
 
 - Chrome texture shows through list rows: the zebra stripes, hover and

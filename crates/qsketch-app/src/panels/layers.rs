@@ -128,6 +128,14 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let rename_id = ui.id().with("rename");
     let mut renaming = ui.data(|d| d.get_temp::<(usize, String)>(rename_id));
     let multi = selected_ids.len() > 1;
+    // When the active layer changes from anywhere (keyboard, canvas, undo),
+    // scroll the list so its row is in view. A click on a row is already
+    // visible, so the scroll is a no-op there.
+    let seen_id = ui.id().with("seen_active");
+    let active_layer_id = s.layers.get(active).map(|l| l.props.id);
+    let seen = ui.data(|d| d.get_temp::<Option<LayerId>>(seen_id)).flatten();
+    let jump_to_active = seen != active_layer_id;
+    ui.data_mut(|d| d.insert_temp(seen_id, active_layer_id));
     egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(list_h).id_salt("layer_list").show(ui, |ui| {
         for (row_no, &(i, depth)) in rows.iter().enumerate() {
             let layer_id = s.layers[i].props.id;
@@ -137,6 +145,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             let vis = s.layers[i].props.visible;
             let dim = !s.effectively_visible(i);
             let (row_rect, row_resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_h), Sense::click());
+            if is_active && jump_to_active {
+                ui.scroll_to_rect(row_rect, None);
+            }
             let fill = if is_active {
                 crate::ui::chrome::row_fill(ui.visuals().selection.bg_fill)
             } else if is_selected {
