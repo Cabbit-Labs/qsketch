@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Free Transform / paste handles respond to the mouse and pen again while a
+  tablet is in proximity. Tablet-sourced motion was only forwarded to paint
+  sessions, so dragging a corner, rotating, deforming or moving floating
+  pixels did nothing until the pointer left the tablet's range.
+
 ## 0.15.5 — 2026-09-12
 
 - Undo/redo no longer switches the active layer: you stay on the layer you

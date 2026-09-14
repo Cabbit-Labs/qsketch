@@ -225,7 +225,14 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             _ => {}
         }
     }
-    if use_tablet && state.session.is_some() && state.session_doc == Some(doc_id) {
+    // Tablet-sourced motion drives whatever is capturing the pointer: a tool
+    // session, a floating paste / Free Transform drag, or a text-box drag.
+    // (WinTab drivers deliver packets for the mouse too, so this path is the
+    // only one that moves a transform handle while a tablet is in proximity.)
+    let tablet_capturing = (state.session.is_some() && state.session_doc == Some(doc_id))
+        || state.floating.as_ref().is_some_and(|f| f.doc == doc_id && f.drag.is_some())
+        || tools::text::dragging(state, doc_id);
+    if use_tablet && tablet_capturing {
         for (pos, pressure) in &tablet_samples {
             state.pen.pressure = Some(*pressure);
             let inp = make_input(state, *pos, egui::PointerButton::Primary, mods);
