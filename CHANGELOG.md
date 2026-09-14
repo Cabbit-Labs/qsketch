@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.7 — 2026-09-14
 
 - Unsaved work is no longer mistaken for saved after a long session. Once the
   undo history reached its limit (200 steps) the "saved" marker compared
