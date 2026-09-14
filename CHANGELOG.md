@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.15.9 — 2026-09-14
 
 - Chrome texture shows through list rows: the zebra stripes, hover and
   selection fills in the Layers, Brushes and History panels are translucent
