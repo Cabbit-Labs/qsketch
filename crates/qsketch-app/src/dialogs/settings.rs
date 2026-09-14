@@ -810,7 +810,7 @@ fn pressure_curve_preview(ui: &mut Ui, gamma: f32, min: f32) {
         .collect();
     p.line_segment(
         [rect.left_bottom(), rect.right_top()],
-        egui::Stroke::new(1.0, ui.visuals().weak_text_color().gamma_multiply(0.4)),
+        egui::Stroke::new(1.0, crate::ui::theme::dim_text(ui.visuals()).gamma_multiply(0.4)),
     );
     p.add(egui::Shape::line(pts, egui::Stroke::new(2.0, ui.visuals().selection.stroke.color)));
 }

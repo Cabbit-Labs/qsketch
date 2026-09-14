@@ -184,7 +184,7 @@ pub fn color_pair(ui: &mut Ui, state: &mut AppState) {
         egui::Align2::CENTER_CENTER,
         crate::ui::icons::ARROWS_LEFT_RIGHT,
         egui::FontId::new(12.0, crate::ui::iconset::family()),
-        ui.visuals().weak_text_color(),
+        crate::ui::theme::dim_text(ui.visuals()),
     );
     let mini_fg = egui::Rect::from_min_size(reset_rect.min, egui::Vec2::splat(9.0));
     let mini_bg = egui::Rect::from_min_size(reset_rect.min + egui::vec2(4.0, 4.0), egui::Vec2::splat(9.0));

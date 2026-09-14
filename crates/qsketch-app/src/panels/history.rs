@@ -36,8 +36,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 Color32::TRANSPARENT
             };
             ui.painter().rect_filled(rect, 3, fill);
-            let color =
-                if future { ui.visuals().weak_text_color().gamma_multiply(0.6) } else { ui.visuals().text_color() };
+            let color = if future { crate::ui::theme::dim_text(ui.visuals()) } else { ui.visuals().text_color() };
             let glyph = if i == 0 { icons::FILE } else { icons::PAINT_BRUSH };
             ui.painter().text(
                 rect.left_center() + egui::vec2(8.0, 0.0),

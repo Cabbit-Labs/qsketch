@@ -259,7 +259,7 @@ fn section_list(ui: &mut Ui, b: &mut BrushSettings, page: &mut Page) {
             x += 0.0;
         }
         let color = if p.flag(b).is_some_and(|f| !*f) && !selected {
-            ui.visuals().weak_text_color()
+            crate::ui::theme::dim_text(ui.visuals())
         } else {
             ui.visuals().text_color()
         };
@@ -507,7 +507,7 @@ fn angle_widget(ui: &mut Ui, b: &mut BrushSettings) {
     let r = size * 0.42;
     let v = ui.visuals();
     ui.painter().rect_filled(rect, 4, v.extreme_bg_color);
-    ui.painter().circle_stroke(c, r, egui::Stroke::new(1.0, v.weak_text_color()));
+    ui.painter().circle_stroke(c, r, egui::Stroke::new(1.0, crate::ui::theme::dim_text(v)));
     if resp.dragged() || resp.clicked() {
         if let Some(p) = resp.interact_pointer_pos() {
             let d = p - c;
@@ -538,7 +538,7 @@ fn angle_widget(ui: &mut Ui, b: &mut BrushSettings) {
     ui.painter().add(egui::Shape::line(pts, egui::Stroke::new(1.5, v.text_color())));
     // Axis + direction arrow.
     let ax = egui::vec2(co, s) * r;
-    ui.painter().line_segment([c - ax, c + ax], egui::Stroke::new(1.0, v.weak_text_color()));
+    ui.painter().line_segment([c - ax, c + ax], egui::Stroke::new(1.0, crate::ui::theme::dim_text(v)));
     let tip = c + ax;
     let side = egui::vec2(-s, co) * 4.0;
     let back = egui::vec2(co, s) * 7.0;

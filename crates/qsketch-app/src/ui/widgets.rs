@@ -45,8 +45,11 @@ pub fn icon_toggle(
     size: f32,
 ) -> Response {
     let glyph = if *value { glyph_on } else { glyph_off };
-    let text =
-        icon(glyph, size * 0.7).color(if *value { ui.visuals().text_color() } else { ui.visuals().weak_text_color() });
+    let text = icon(glyph, size * 0.7).color(if *value {
+        ui.visuals().text_color()
+    } else {
+        crate::ui::theme::dim_text(ui.visuals())
+    });
     let r = ui.add(egui::Button::new(text).frame(true).frame_when_inactive(false).min_size(Vec2::splat(size)));
     if r.clicked() {
         *value = !*value;
@@ -225,7 +228,7 @@ pub fn chip<R>(ui: &mut Ui, color: Color32, tint: Color32, contents: impl FnOnce
 #[allow(dead_code)]
 pub fn section(ui: &mut Ui, title: &str) {
     ui.add_space(4.0);
-    ui.label(RichText::new(title).small().color(ui.visuals().weak_text_color()).strong());
+    ui.label(RichText::new(title).small().color(crate::ui::theme::dim_text(ui.visuals())).strong());
     ui.separator();
 }
 
@@ -233,7 +236,7 @@ pub fn section(ui: &mut Ui, title: &str) {
 pub fn keycap(ui: &mut Ui, text: &str) -> Response {
     let text = if text.is_empty() { "—" } else { text };
     ui.add(
-        egui::Label::new(RichText::new(text).monospace().small().color(ui.visuals().weak_text_color()))
+        egui::Label::new(RichText::new(text).monospace().small().color(crate::ui::theme::dim_text(ui.visuals())))
             .sense(Sense::hover()),
     )
 }

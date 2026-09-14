@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Readable secondary text on any Custom theme color. Dim text (hidden layer
+  names, history entries, panel tab titles, "Lock:", counts, hints) was a
+  fixed gray, or egui's text faded halfway into the panel, which all but
+  vanished on mid-tone chrome such as pink. It is now derived from the panel
+  color with a guaranteed contrast, and every dim label uses it. Whether the
+  Custom theme gets light or dark text is now decided by contrast too.
+
 ## 0.15.10 — 2026-09-14
 
 - Layers panel scrolls to the active layer whenever it changes from

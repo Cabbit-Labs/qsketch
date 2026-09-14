@@ -79,8 +79,10 @@ impl CustomPalette {
         Self { primary: c(p.panel), secondary: c(p.accent) }
     }
 
+    /// Whether the chrome wants light text: whichever of white / black
+    /// contrasts more with the primary color.
     pub fn is_dark(&self) -> bool {
-        luma(self.primary) < 0.5
+        contrast([255; 3], self.primary) >= contrast([0; 3], self.primary)
     }
 
     pub fn to_palette(&self) -> crate::ui::theme::Palette {
@@ -91,8 +93,17 @@ impl CustomPalette {
         let sign = if dark { 1.0 } else { -1.0 };
         let shade = |t: f32| c(mix(self.primary, t));
         let text = if dark { [230, 233, 245] } else { [30, 30, 36] };
-        let text_dim = if dark { [150, 158, 190] } else { [100, 100, 115] };
         let text_mix = |t: f32| c(mix_to(self.primary, text, t));
+        // Dim text is the panel color mixed toward the text color, pushed just
+        // far enough to keep a readable contrast (WCAG >= 4.5:1) against the
+        // panel. A fixed gray fails on mid-tone chrome such as a pink theme.
+        let text_dim = {
+            let mut t = 0.55;
+            while t < 1.0 && contrast(mix_to(self.primary, text, t), self.primary) < 4.5 {
+                t += 0.05;
+            }
+            c(mix_to(self.primary, text, t))
+        };
         crate::ui::theme::Palette {
             bg: shade(-0.30 * sign),
             panel: c(self.primary),
@@ -102,7 +113,7 @@ impl CustomPalette {
             widget_active: shade(0.34 * sign),
             border: shade(if dark { -0.5 } else { -0.25 }),
             text: text_mix(1.0),
-            text_dim: c(text_dim),
+            text_dim,
             accent: c(self.secondary),
             accent_dim: c(mix(self.secondary, -0.3)),
             danger: egui::Color32::from_rgb(255, 92, 92),
@@ -111,9 +122,36 @@ impl CustomPalette {
     }
 }
 
-/// Relative luminance (0..1) of an sRGB triple.
-fn luma(v: [u8; 3]) -> f32 {
-    (0.2126 * v[0] as f32 + 0.7152 * v[1] as f32 + 0.0722 * v[2] as f32) / 255.0
+/// WCAG contrast ratio (1..21) between two sRGB triples.
+fn contrast(a: [u8; 3], b: [u8; 3]) -> f32 {
+    fn lin(c: u8) -> f32 {
+        let c = c as f32 / 255.0;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    let rl = |v: [u8; 3]| 0.2126 * lin(v[0]) + 0.7152 * lin(v[1]) + 0.0722 * lin(v[2]);
+    let (x, y) = (rl(a), rl(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+#[cfg(test)]
+mod palette_tests {
+    use super::*;
+
+    #[test]
+    fn custom_dim_text_stays_readable() {
+        for primary in [[232u8, 150, 190], [40, 44, 70], [245, 245, 240], [120, 120, 120], [200, 60, 60]] {
+            let p = CustomPalette { primary, secondary: [90, 140, 220] }.to_palette();
+            let dim = [p.text_dim.r(), p.text_dim.g(), p.text_dim.b()];
+            let best = contrast([p.text.r(), p.text.g(), p.text.b()], primary);
+            // Mid-gray chrome can't reach 4.5:1 with any text; then dim text
+            // must at least match the primary text.
+            assert!(contrast(dim, primary) >= 4.4f32.min(best - 0.01), "{primary:?} -> {dim:?} (best {best})");
+        }
+    }
 }
 
 /// Mix toward white (`t` > 0) or black (`t` < 0) by |t|.

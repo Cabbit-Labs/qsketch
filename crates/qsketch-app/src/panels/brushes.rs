@@ -118,7 +118,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 egui::Align2::LEFT_CENTER,
                 desc,
                 egui::FontId::proportional(10.5),
-                ui.visuals().weak_text_color(),
+                crate::ui::theme::dim_text(ui.visuals()),
             );
             if resp.clicked() {
                 apply = Some(i);

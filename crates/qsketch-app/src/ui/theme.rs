@@ -169,6 +169,14 @@ pub fn install_fonts(ctx: &egui::Context, filled: bool) {
     ctx.set_fonts(fonts);
 }
 
+/// Secondary ("dim") text color: the palette's `text_dim`, which every theme
+/// keeps readable against its panel. Prefer this over egui's
+/// `weak_text_color()`, which fades the text halfway into the panel fill and
+/// becomes illegible on mid-tone chrome.
+pub fn dim_text(v: &Visuals) -> Color32 {
+    v.widgets.noninteractive.fg_stroke.color
+}
+
 pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32) {
     let mut visuals = if p.dark { Visuals::dark() } else { Visuals::light() };
     let r = CornerRadius::same(4);

@@ -232,7 +232,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     egui::Align2::CENTER_CENTER,
                     if expanded { icons::CARET_DOWN } else { icons::CARET_RIGHT },
                     egui::FontId::new(11.0, ICON_FAMILY()),
-                    ui.visuals().weak_text_color(),
+                    crate::ui::theme::dim_text(ui.visuals()),
                 );
                 if caret.on_hover_text(if expanded { "Collapse group" } else { "Expand group" }).clicked() {
                     toggle_expand = Some(i);
@@ -244,7 +244,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     egui::Align2::CENTER_CENTER,
                     if expanded { icons::FOLDER_OPEN } else { icons::FOLDER },
                     egui::FontId::new(22.0, ICON_FAMILY()),
-                    if dim { ui.visuals().weak_text_color() } else { ui.visuals().text_color() },
+                    if dim { crate::ui::theme::dim_text(ui.visuals()) } else { ui.visuals().text_color() },
                 );
                 x += 40.0;
             } else {
@@ -294,7 +294,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     egui::Align2::LEFT_CENTER,
                     &s.layers[i].props.name,
                     egui::FontId::proportional(13.0),
-                    if dim { ui.visuals().weak_text_color() } else { ui.visuals().text_color() },
+                    if dim { crate::ui::theme::dim_text(ui.visuals()) } else { ui.visuals().text_color() },
                 );
                 let p = &s.layers[i].props;
                 if p.locked || p.alpha_locked || p.clipped {
@@ -313,7 +313,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                         egui::Align2::RIGHT_CENTER,
                         glyphs,
                         egui::FontId::new(12.0, ICON_FAMILY()),
-                        ui.visuals().weak_text_color(),
+                        crate::ui::theme::dim_text(ui.visuals()),
                     );
                 }
             }
