@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.18.0 — 2026-09-16
 
 - `C` selects the Move tool and `V` the Contour tool. Crop gives up `C` and
   ships unbound; `P`, which Contour used to hold, is free for it.
