@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- The brush cursor follows the pointer while the quick brush settings popup is
+  open, instead of staying pinned where the popup was opened, and it draws
+  over the popup so a size or hardness change is visible even while the slider
+  is under the pointer.
+
 ## 0.17.0 — 2026-09-16
 
 - Pixel-perfect Rectangle and Ellipse tools. They paint hard pixels in the
