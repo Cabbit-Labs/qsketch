@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Right-click now picks a color on existing installs too. The new binding only
+  reached fresh settings files, so an upgrade kept the old Alt+click pick chord
+  and right-click went on opening the quick brush popup, doing nothing at all
+  with the Rectangle and Ellipse tools since those no longer use a brush.
+  Settings carry a schema number and migrate once on load; a pick chord you
+  bound yourself is left alone.
+
 ## 0.17.1 — 2026-09-16
 
 - The brush cursor follows the pointer while the quick brush settings popup is

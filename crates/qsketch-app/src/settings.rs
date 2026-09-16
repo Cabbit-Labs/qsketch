@@ -787,7 +787,13 @@ pub struct Settings {
     /// Serialized egui_dock layout.
     pub layout: Option<String>,
     pub window_maximized: bool,
+    /// Bumped when a default changes in a way that has to reach settings files
+    /// written by an older version (see `migrate`). 0 = before any migration.
+    pub schema: u32,
 }
+
+/// Current settings schema. 1 = right-click picks a color.
+pub const SCHEMA: u32 = 1;
 
 impl Settings {
     pub fn config_dir() -> Option<PathBuf> {
@@ -805,6 +811,7 @@ impl Settings {
                 Ok(mut settings) => {
                     settings.sanitize();
                     settings.update.migrate_manifest_url();
+                    settings.migrate();
                     settings
                 }
                 Err(e) => {
@@ -826,6 +833,23 @@ impl Settings {
         std::fs::write(&tmp, s)?;
         std::fs::rename(&tmp, &path)?;
         Ok(())
+    }
+
+    /// Carry default changes into settings files written by older versions.
+    /// Only untouched bindings are moved: a chord the user chose stays put.
+    fn migrate(&mut self) {
+        if self.schema >= SCHEMA {
+            return;
+        }
+        // 0 → 1: right-click picks the foreground color, which takes the button
+        // from the quick brush popup.
+        let old_pick_fg = MouseChord { ctrl: false, shift: false, alt: true, button: MouseButton::Left };
+        if self.mouse.pick_foreground == Some(old_pick_fg) {
+            self.mouse.pick_foreground =
+                Some(MouseChord { ctrl: false, shift: false, alt: false, button: MouseButton::Right });
+            self.mouse.right_click_brush_popup = false;
+        }
+        self.schema = SCHEMA;
     }
 
     pub fn sanitize(&mut self) {
