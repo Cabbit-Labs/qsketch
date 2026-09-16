@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.4 — 2026-09-16
 
 - Transform handles stay reachable when the box is scaled past the window.
   Once a Free Transform or a selection grew beyond the visible canvas every
