@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.6 — 2026-09-16
 
 - Scaling past 10000% no longer fights itself. The width and height fields
   capped the box at 10000% and wrote that cap back on every frame, so a drag
