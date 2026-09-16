@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.0 — 2026-09-16
 
 - Pixel-perfect Rectangle and Ellipse tools. They paint hard pixels in the
   foreground color instead of stamping brush dabs, so edges are exact at any
