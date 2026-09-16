@@ -151,6 +151,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                         // the Move tool whatever tool is active (a chord
                         // without modifiers arms the Move tool only now).
                         if mouse.is_quick_move(*modifiers, *button)
+                            && !tools::floating::selection_hit(state, doc_id, *pos)
                             && !matches!(
                                 state.tool,
                                 ToolKind::Move | ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView
@@ -306,6 +307,10 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             egui::CursorIcon::Grabbing
         } else if let Some(c) = tools::floating::cursor(state, doc_id, hover_pos)
             .filter(|_| !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView))
+        {
+            c
+        } else if let Some(c) = tools::floating::selection_cursor(state, doc_id, hover_pos)
+            .filter(|_| tool == ToolKind::Move || tool.is_selection())
         {
             c
         } else if tool == ToolKind::Text

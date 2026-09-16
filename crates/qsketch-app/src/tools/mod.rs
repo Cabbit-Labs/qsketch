@@ -143,6 +143,11 @@ impl ToolKind {
         }
     }
 
+    /// Marquee / lasso / wand: the tools that edit the selection.
+    pub fn is_selection(self) -> bool {
+        matches!(self, ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso | ToolKind::MagicWand)
+    }
+
     pub fn is_paint(self) -> bool {
         matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser)
     }
@@ -330,12 +335,39 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             _ => return,
         }
     }
+    // A selection tool pressing well clear of the transform box drops it and
+    // starts a fresh marquee there, the way Aseprite does.
+    if let CanvasEvent::Press(inp) = ev {
+        if inp.button == PointerButton::Primary
+            && state.floating.is_some()
+            && (tool.is_selection() || tool == ToolKind::Move)
+            && floating::outside_box(state, doc_id, inp.screen)
+        {
+            floating::commit(state);
+        }
+    }
     // A floating paste captures the pointer unless a view tool is (temporarily) active.
     if state.floating.is_some()
         && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)
         && floating::handle(state, doc_id, ev)
     {
         return;
+    }
+    // Grabbing the box around a selection lifts the selected pixels into a
+    // transform box: drag to move (Ctrl duplicates), handles scale, the band
+    // just outside rotates.
+    if let CanvasEvent::Press(inp) = ev {
+        if inp.button == PointerButton::Primary
+            && state.session.is_none()
+            && (tool == ToolKind::Move || tool.is_selection())
+            // Shift / Alt with a selection tool mean add / subtract, so they
+            // keep editing the selection instead of grabbing it.
+            && !(tool.is_selection() && (inp.mods.shift || inp.mods.alt))
+            && floating::begin_selection_transform(state, doc_id, inp)
+        {
+            floating::handle(state, doc_id, ev);
+            return;
+        }
     }
     match tool {
         ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => paint::handle_stroke(state, doc_id, tool, ev),
@@ -411,6 +443,9 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     draw_symmetry_guides(state, doc_id, painter);
     contour::draw_overlay(state, doc_id, painter);
     floating::draw_overlay(state, doc_id, painter);
+    if state.floating.is_none() && (state.effective_tool() == ToolKind::Move || state.effective_tool().is_selection()) {
+        floating::draw_selection_handles(state, doc_id, painter);
+    }
     text::draw_overlay(state, doc_id, painter);
 
     // Crop overlay: darken outside the pending crop rect.

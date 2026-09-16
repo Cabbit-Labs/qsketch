@@ -181,6 +181,8 @@ pub enum Origin {
     Transform {
         mask: Option<Mask>,
         sel_before: Option<Arc<Mask>>,
+        /// History step name ("Free Transform", "Move", "Duplicate").
+        label: &'static str,
     },
 }
 
@@ -238,6 +240,12 @@ impl FloatingPaste {
             filter: ResizeFilter::Bilinear,
             dirty: true,
         }
+    }
+
+    /// A plain selection move / duplicate needs no mode panel: it would cover
+    /// the canvas on every drag. Ctrl+T and pastes still show it.
+    pub fn shows_panel(&self) -> bool {
+        !matches!(self.origin, Origin::Transform { label: "Move" | "Duplicate", .. })
     }
 
     pub fn is_paste(&self) -> bool {
@@ -499,6 +507,12 @@ pub fn begin(state: &mut AppState, doc_id: DocId, source: Raster, x: i32, y: i32
 /// is selected) and start transforming them. A paste already floating just
 /// keeps floating.
 pub fn begin_transform(state: &mut AppState, doc_id: DocId) -> bool {
+    begin_transform_with(state, doc_id, false, "Free Transform")
+}
+
+/// Lift the selection into a transform box. `duplicate` leaves the original
+/// pixels behind (Aseprite's Ctrl+drag), so the box carries a copy.
+pub fn begin_transform_with(state: &mut AppState, doc_id: DocId, duplicate: bool, label: &'static str) -> bool {
     if state.floating.as_ref().is_some_and(|f| f.doc == doc_id) {
         return true;
     }
@@ -513,20 +527,164 @@ pub fn begin_transform(state: &mut AppState, doc_id: DocId) -> bool {
         return false;
     }
     let sel_before = s.selection.clone();
+    let intact = duplicate.then(|| s.layers[li].raster.clone());
     let Some(lifted) = qsketch_core::ops::lift(s, li) else {
         state.toasts.push(Level::Info, "Nothing to transform: the layer is empty.");
         return false;
     };
-    let base = s.layers[li].raster.clone();
+    // A duplicate keeps the original pixels: put the layer back as it was and
+    // float the copy above it.
+    let base = match intact {
+        Some(r) => {
+            s.layers[li].raster = r.clone();
+            r
+        }
+        None => s.layers[li].raster.clone(),
+    };
     let place =
         IRect::new(lifted.origin.0, lifted.origin.1, lifted.raster.width() as i32, lifted.raster.height() as i32);
     // Hide the marching ants while transforming; the selection follows on commit.
     s.selection = None;
     entry.sel_outline = None;
-    let origin = Origin::Transform { mask: lifted.mask, sel_before };
+    let origin = Origin::Transform { mask: lifted.mask, sel_before, label };
     state.floating = Some(FloatingPaste::new(doc_id, li, lifted.raster, base, place, origin));
     refresh(state);
     true
+}
+
+/// Screen-space slack around the selection box that still counts as grabbing
+/// it: inside this band but outside the box starts a rotation, exactly as
+/// pressing outside a Freeform box does.
+const SELECTION_BAND: f32 = 20.0;
+
+/// The document-space corners of the box drawn around the current selection
+/// (its bounds), when there is one.
+pub fn selection_quad(state: &AppState, doc_id: DocId) -> Option<Quad> {
+    let entry = state.doc(doc_id)?;
+    let sel = entry.doc.state().selection.as_ref()?;
+    let b = sel.bounds();
+    if b.is_empty() {
+        return None;
+    }
+    let (l, t) = (b.x as f32, b.y as f32);
+    let (r, bo) = (b.right() as f32, b.bottom() as f32);
+    Some([Pt::new(l, t), Pt::new(r, t), Pt::new(r, bo), Pt::new(l, bo)])
+}
+
+/// The eight grab points of the idle selection box, in screen space.
+fn selection_grabs(state: &AppState, doc_id: DocId) -> Option<Vec<(Handle, Pos2)>> {
+    let q = selection_quad(state, doc_id)?;
+    let view = &state.doc(doc_id)?.view;
+    Some(
+        Handle::ALL
+            .iter()
+            .map(|hd| {
+                let (u, v) = hd.uv();
+                let top = q[0].lerp(q[1], u);
+                let bot = q[3].lerp(q[2], u);
+                (*hd, view.doc_to_screen(top.lerp(bot, v)))
+            })
+            .collect(),
+    )
+}
+
+fn selection_handle_at(state: &AppState, doc_id: DocId, pos: Pos2) -> Option<Handle> {
+    selection_grabs(state, doc_id)?
+        .into_iter()
+        .filter(|(_, p)| Rect::from_center_size(*p, Vec2::splat(14.0)).contains(pos))
+        .min_by(|a, b| a.1.distance(pos).total_cmp(&b.1.distance(pos)))
+        .map(|(h, _)| h)
+}
+
+/// True when `pos` grabs the idle selection box: a handle, the inside, or the
+/// rotation band just outside it.
+pub fn selection_hit(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
+    if state.floating.is_some() {
+        return false;
+    }
+    let Some(q) = selection_quad(state, doc_id) else { return false };
+    let Some(entry) = state.doc(doc_id) else { return false };
+    let view = &entry.view;
+    if selection_handle_at(state, doc_id, pos).is_some() {
+        return true;
+    }
+    if point_in_quad(q, view.screen_to_doc(pos)) {
+        return true;
+    }
+    // Outside: only the band hugging the box counts, so a press well clear of
+    // the selection still starts a new marquee.
+    let mut bb = Rect::NOTHING;
+    for p in q {
+        bb = bb.union(Rect::from_min_size(view.doc_to_screen(p), Vec2::ZERO));
+    }
+    bb.expand(SELECTION_BAND).contains(pos)
+}
+
+/// True when `pos` is clear of the floating box and its rotation band, so a
+/// selection tool should commit and start a fresh marquee there.
+pub fn outside_box(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
+    let Some(fp) = state.floating.as_ref() else { return true };
+    if fp.doc != doc_id {
+        return true;
+    }
+    let Some(entry) = state.doc(doc_id) else { return true };
+    let view = &entry.view;
+    if fp.grab_at(view, pos).is_some() || fp.contains(view.screen_to_doc(pos)) {
+        return false;
+    }
+    let mut bb = Rect::NOTHING;
+    for p in fp.corners() {
+        bb = bb.union(Rect::from_min_size(view.doc_to_screen(p), Vec2::ZERO));
+    }
+    !bb.expand(SELECTION_BAND).contains(pos)
+}
+
+/// Aseprite-style selection drag: grabbing the box around the selection lifts
+/// the selected pixels into a transform box. Ctrl duplicates them instead of
+/// moving them. Returns true when the transform started.
+pub fn begin_selection_transform(state: &mut AppState, doc_id: DocId, inp: super::CanvasInput) -> bool {
+    if !selection_hit(state, doc_id, inp.screen) {
+        return false;
+    }
+    let duplicate = inp.mods.command;
+    let label = if duplicate { "Duplicate" } else { "Move" };
+    begin_transform_with(state, doc_id, duplicate, label)
+}
+
+/// Cursor over the idle selection box.
+pub fn selection_cursor(state: &AppState, doc_id: DocId, pos: Option<Pos2>) -> Option<egui::CursorIcon> {
+    use egui::CursorIcon as C;
+    let pos = pos?;
+    if !selection_hit(state, doc_id, pos) {
+        return None;
+    }
+    if let Some(h) = selection_handle_at(state, doc_id, pos) {
+        return Some(handle_cursor(h));
+    }
+    let q = selection_quad(state, doc_id)?;
+    let view = &state.doc(doc_id)?.view;
+    Some(if point_in_quad(q, view.screen_to_doc(pos)) { C::Move } else { C::Alias })
+}
+
+fn handle_cursor(h: Handle) -> egui::CursorIcon {
+    use egui::CursorIcon as C;
+    match h {
+        Handle::TopLeft | Handle::BottomRight => C::ResizeNwSe,
+        Handle::TopRight | Handle::BottomLeft => C::ResizeNeSw,
+        Handle::Top | Handle::Bottom => C::ResizeVertical,
+        Handle::Left | Handle::Right => C::ResizeHorizontal,
+    }
+}
+
+/// The eight handles drawn around a selection that is not yet floating.
+pub fn draw_selection_handles(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
+    let Some(grabs) = selection_grabs(state, doc_id) else { return };
+    let accent = Color32::from_rgb(23, 227, 180);
+    for (_, p) in grabs {
+        let r = Rect::from_center_size(p, Vec2::splat(8.0));
+        painter.rect_filled(r, 1.0, Color32::from_black_alpha(160));
+        painter.rect_stroke(r.shrink(1.0), 1.0, Stroke::new(1.5, accent), egui::StrokeKind::Inside);
+    }
 }
 
 /// Commit the floating pixels as a history step. Returns true if there were any.
@@ -538,7 +696,7 @@ pub fn commit(state: &mut AppState) -> bool {
         fp.render_into(entry, fp.filter);
         match &fp.origin {
             Origin::Paste => entry.doc.commit("Paste"),
-            Origin::Transform { mask, sel_before } => {
+            Origin::Transform { mask, sel_before, label } => {
                 let s = entry.doc.state_mut();
                 let (w, h) = (s.width, s.height);
                 if fp.is_untouched() {
@@ -552,7 +710,10 @@ pub fn commit(state: &mut AppState) -> bool {
                     let nm = warp::warp_mask(m, &fp.render_mesh(), w, h);
                     s.selection = if nm.is_empty() { None } else { Some(Arc::new(nm)) };
                 }
-                entry.doc.commit("Free Transform");
+                // A box that started as a plain move but was scaled, rotated
+                // or bent deserves a truthful history label.
+                let label = if *label == "Move" && !fp.is_identity() { "Transform" } else { *label };
+                entry.doc.commit(label);
             }
         }
         entry.sel_outline = None;
@@ -755,12 +916,6 @@ pub fn cursor(state: &AppState, doc_id: DocId, pos: Option<Pos2>) -> Option<egui
     }
     let view = &state.doc(doc_id)?.view;
     use egui::CursorIcon as C;
-    let handle_cursor = |h: Handle| match h {
-        Handle::TopLeft | Handle::BottomRight => C::ResizeNwSe,
-        Handle::TopRight | Handle::BottomLeft => C::ResizeNeSw,
-        Handle::Top | Handle::Bottom => C::ResizeVertical,
-        Handle::Left | Handle::Right => C::ResizeHorizontal,
-    };
     Some(match &fp.drag {
         Some(FloatDrag::Scale { handle, .. }) => handle_cursor(*handle),
         Some(FloatDrag::Move { .. }) => C::Grabbing,
@@ -837,7 +992,7 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
 /// The small SAI-style panel beside the box: mode radios + OK / Cancel.
 pub fn panel_ui(ui: &mut egui::Ui, state: &mut AppState, doc_id: DocId) {
     let Some(fp) = state.floating.as_ref() else { return };
-    if fp.doc != doc_id {
+    if fp.doc != doc_id || !fp.shows_panel() {
         return;
     }
     let Some(entry) = state.doc(doc_id) else { return };

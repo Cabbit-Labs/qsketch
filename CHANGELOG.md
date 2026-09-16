@@ -4,6 +4,17 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Aseprite-style selection editing. A selection now carries the eight
+  transform handles: drag inside it to move the selected pixels (no Ctrl
+  needed), drag a handle to scale, drag just outside the box to rotate.
+  Ctrl+drag inside duplicates the selection into the current layer instead of
+  moving it, leaving the original behind. Handles and the move/scale/rotate
+  cursors show for the Move tool and every selection tool. A plain move no
+  longer pops the Freeform/Deform/Warp panel over the canvas (Ctrl+T and
+  pastes still show it), and pressing well clear of the box with a selection
+  tool applies it and starts a new selection there. History records these as
+  Move, Duplicate or Transform.
+
 - Readable secondary text on any Custom theme color. Dim text (hidden layer
   names, history entries, panel tab titles, "Lock:", counts, hints) was a
   fixed gray, or egui's text faded halfway into the panel, which all but
