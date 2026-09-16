@@ -2,6 +2,18 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Thin selections transform predictably. On a selection only a few pixels
+  across, the three handles along its short side pile up and a press meant
+  for the corner used to land on the edge handle, scaling one axis only; a
+  corner now wins over an edge handle it sits on. Corner scaling with the
+  aspect ratio kept projects the pointer onto the box diagonal instead of
+  taking the larger axis ratio, which let a hairline box jump to several
+  hundred percent from a few pixels of drag across its thin side.
+- Keep aspect is off by default for Free Transform and selection scaling;
+  Shift holds the ratio while dragging a corner.
+
 ## 0.17.4 — 2026-09-16
 
 - Transform handles stay reachable when the box is scaled past the window.

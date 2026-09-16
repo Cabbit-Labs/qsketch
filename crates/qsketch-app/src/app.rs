@@ -987,9 +987,9 @@ impl QSketchApp {
                             }
                             Some(crate::tools::floating::Mode::Rotate) => "drag: rotate (Shift: 15°) · Enter: OK · Esc: cancel",
                             Some(crate::tools::floating::Mode::Resize) => {
-                                "handles: scale (Shift: free aspect, Alt: from center) · inside: move · Enter: OK · Esc: cancel"
+                                "handles: scale (Shift: keep aspect, Alt: from center) · inside: move · Enter: OK · Esc: cancel"
                             }
-                            _ => "drag: move · outside: rotate (Shift: 15°) · handles: scale (Shift: free aspect, Alt: from center, Ctrl: deform) · Enter: OK · Esc: cancel",
+                            _ => "drag: move · outside: rotate (Shift: 15°) · handles: scale (Shift: keep aspect, Alt: from center, Ctrl: deform) · Enter: OK · Esc: cancel",
                         }
                     }
                     ToolKind::Move => "Shift: constrain · arrows: nudge",

@@ -101,7 +101,7 @@ A selection carries eight handles. With the Move tool or any selection tool:
 | --- | --- |
 | Move the selected pixels | drag inside the selection |
 | Duplicate them into the current layer | `Ctrl` + drag inside |
-| Scale | drag a handle (`Shift` frees the aspect ratio, `Alt` scales about the center) |
+| Scale | drag a handle (`Shift` keeps the aspect ratio, `Alt` scales about the center) |
 | Rotate | drag just outside the box (`Shift` snaps to 15°) |
 | Constrain the move to one axis | `Shift` while dragging |
 | Apply | `Enter`, or double-click inside the box |

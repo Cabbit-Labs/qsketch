@@ -236,7 +236,7 @@ impl FloatingPaste {
             home: center,
             drag: None,
             last_dirty: IRect::EMPTY,
-            keep_aspect: true,
+            keep_aspect: false,
             filter: ResizeFilter::Bilinear,
             dirty: true,
         }
@@ -419,11 +419,7 @@ impl FloatingPaste {
     }
 
     fn grab_at(&self, view: &crate::canvas::view::CanvasView, pos: Pos2) -> Option<Grab> {
-        self.grabs(view)
-            .into_iter()
-            .filter(|(_, p)| Rect::from_center_size(*p, Vec2::splat(14.0)).contains(pos))
-            .min_by(|a, b| a.1.distance(pos).total_cmp(&b.1.distance(pos)))
-            .map(|(g, _)| g)
+        nearest_grab(self.grabs(view), pos, |g| matches!(g, Grab::Box(h) if h.is_corner()))
     }
 
     fn contains(&self, p: Pt) -> bool {
@@ -594,6 +590,25 @@ fn selection_grabs(state: &AppState, doc_id: DocId) -> Option<Vec<(Handle, Pos2)
     )
 }
 
+/// The grab point under `pos`. Nearest wins, except that a corner beats an
+/// edge handle it practically sits on: on a box only a few pixels thin the
+/// three handles along a short side pile up, and grabbing "the corner" of a
+/// hairline selection must scale both ways, not just along it.
+fn nearest_grab<G: Copy>(grabs: Vec<(G, Pos2)>, pos: Pos2, is_corner: impl Fn(G) -> bool) -> Option<G> {
+    let hit: Vec<(G, f32)> = grabs
+        .into_iter()
+        .filter(|(_, p)| Rect::from_center_size(*p, Vec2::splat(14.0)).contains(pos))
+        .map(|(g, p)| (g, p.distance(pos)))
+        .collect();
+    let best = hit.iter().map(|(_, d)| *d).fold(f32::INFINITY, f32::min);
+    if !best.is_finite() {
+        return None;
+    }
+    // Anything within a few pixels of the nearest counts as a tie.
+    let tied = hit.iter().filter(|(_, d)| *d <= best + 4.0);
+    tied.clone().find(|(g, _)| is_corner(*g)).or_else(|| tied.min_by(|a, b| a.1.total_cmp(&b.1))).map(|(g, _)| *g)
+}
+
 /// Keep a grab point reachable: a transform box scaled past the window would
 /// otherwise put every handle off-screen, leaving nothing to drag but the box
 /// itself. Every drag is relative to where the pointer went down, so a parked
@@ -607,11 +622,7 @@ fn clamp_into_view(p: Pos2, vp: Rect) -> Pos2 {
 }
 
 fn selection_handle_at(state: &AppState, doc_id: DocId, pos: Pos2) -> Option<Handle> {
-    selection_grabs(state, doc_id)?
-        .into_iter()
-        .filter(|(_, p)| Rect::from_center_size(*p, Vec2::splat(14.0)).contains(pos))
-        .min_by(|a, b| a.1.distance(pos).total_cmp(&b.1.distance(pos)))
-        .map(|(h, _)| h)
+    nearest_grab(selection_grabs(state, doc_id)?, pos, Handle::is_corner)
 }
 
 /// True when `pos` grabs the idle selection box: a handle, the inside, or the
@@ -838,7 +849,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) -> bool {
                     // Anchor is the opposite edge/corner (Alt: the center).
                     let from_center = inp.mods.alt;
                     let (ax, ay) = if from_center { (0.0, 0.0) } else { (sx + sw * (1.0 - u), sy + sh * (1.0 - v)) };
-                    let (mx, my) = (sx + sw * u + dx, sy + sh * v + dy);
+                    let (mut mx, mut my) = (sx + sw * u + dx, sy + sh * v + dy);
                     let mut nw =
                         if handle.moves_x() { (mx - ax).abs() * if from_center { 2.0 } else { 1.0 } } else { sw };
                     let mut nh =
@@ -846,9 +857,22 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) -> bool {
                     // Corners keep the aspect ratio unless Shift is held; edges never do.
                     let keep = fp.keep_aspect != inp.mods.shift;
                     if handle.is_corner() && keep && sw > 0.0 && sh > 0.0 {
-                        let k = (nw / sw).max(nh / sh);
-                        nw = sw * k;
-                        nh = sh * k;
+                        // Project the dragged corner onto the anchor→corner
+                        // diagonal. Taking the larger of the two axis ratios
+                        // instead would let a thin box explode: a hairline
+                        // selection dragged a few pixels across its thin side
+                        // is a several-hundred-percent change on that axis.
+                        let (hx, hy) = (sx + sw * u, sy + sh * v);
+                        let (ddx, ddy) = (hx - ax, hy - ay);
+                        let k = ((mx - ax) * ddx + (my - ay) * ddy) / (ddx * ddx + ddy * ddy);
+                        let mult = if from_center { 2.0 } else { 1.0 };
+                        nw = ddx.abs() * k.abs() * mult;
+                        nh = ddy.abs() * k.abs() * mult;
+                        // Where the corner ends up on that diagonal, so the
+                        // placement below flips the box only when the pointer
+                        // crosses the anchor.
+                        mx = ax + ddx * k;
+                        my = ay + ddy * k;
                     }
                     let nw = nw.max(1.0);
                     let nh = nh.max(1.0);

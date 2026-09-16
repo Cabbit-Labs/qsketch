@@ -225,7 +225,7 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
                         f.set_angle(deg);
                     }
                     ui.checkbox(&mut f.keep_aspect, "Keep aspect")
-                        .on_hover_text("Corner handles keep the aspect ratio (Shift toggles)");
+                        .on_hover_text("Corner handles keep the aspect ratio (Shift toggles this while dragging)");
                 }
                 Mode::Deform => {
                     ui.label(egui::RichText::new("Drag corners or edges").weak());
