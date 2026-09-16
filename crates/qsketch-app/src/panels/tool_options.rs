@@ -169,6 +169,9 @@ fn symmetry_group(ui: &mut Ui, state: &mut AppState) {
 
 /// Options while pixels are floating (paste / Free Transform): mode, numbers,
 /// aspect lock, filter, apply/cancel.
+/// Widest the W / H fields go; the box itself is capped in `FloatingPaste`.
+const MAX_SCALE_PCT: f32 = 100_000.0;
+
 fn floating_options(ui: &mut Ui, state: &mut AppState) {
     use crate::tools::floating::Mode;
     let theme = state.settings.ui.palette();
@@ -204,11 +207,24 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
                     }
                     let (pw, ph) = f.scale_pct();
                     let (mut w, mut h) = (pw, ph);
+                    // `clamp_existing_to_range` must stay off: a box scaled
+                    // past the range by its handles would otherwise be written
+                    // back clamped every frame, fighting the drag (the shape
+                    // jittered and crept). The range still caps typing and
+                    // dragging the field itself.
+                    fn pct(v: &mut f32) -> egui::DragValue<'_> {
+                        egui::DragValue::new(v)
+                            .speed(0.5)
+                            .suffix("%")
+                            .range(0.1..=MAX_SCALE_PCT)
+                            .clamp_existing_to_range(false)
+                    }
                     ui.label("W");
-                    let rw = ui.add(egui::DragValue::new(&mut w).speed(0.5).suffix("%").range(1.0..=10000.0));
+                    let rw = ui.add(pct(&mut w));
                     ui.label("H");
-                    let rh = ui.add(egui::DragValue::new(&mut h).speed(0.5).suffix("%").range(1.0..=10000.0));
-                    if rw.changed() || rh.changed() {
+                    let rh = ui.add(pct(&mut h));
+                    // A handle drag owns the box while it lasts.
+                    if (rw.changed() || rh.changed()) && f.drag.is_none() {
                         if f.keep_aspect {
                             if rw.changed() {
                                 h = w;

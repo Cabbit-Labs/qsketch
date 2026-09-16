@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Scaling past 10000% no longer fights itself. The width and height fields
+  capped the box at 10000% and wrote that cap back on every frame, so a drag
+  beyond it was undone as fast as it was made: the shape sat at the cap while
+  its position kept sliding, which looked like jitter and drift. The fields
+  now report only what the user types or drags into them, they ignore edits
+  while a handle is being dragged, and they reach 100000%. A transform box is
+  capped at 100000 pixels on a side, where the numbers stop meaning anything.
+
 ## 0.17.5 — 2026-09-16
 
 - Thin selections transform predictably. On a selection only a few pixels

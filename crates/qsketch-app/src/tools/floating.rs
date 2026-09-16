@@ -19,6 +19,10 @@ use super::CanvasEvent;
 use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
 
+/// Widest or tallest a transform box may get, in document pixels. Past this
+/// the numbers stop being useful and float precision starts to show.
+pub const MAX_BOX_SIZE: f32 = 100_000.0;
+
 /// Handle positions around the box.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Handle {
@@ -333,7 +337,7 @@ impl FloatingPaste {
     }
 
     pub fn set_size(&mut self, w: f32, h: f32) {
-        self.size = (w.max(1.0), h.max(1.0));
+        self.size = (clamp_size(w), clamp_size(h));
         self.dirty = true;
     }
 
@@ -446,6 +450,15 @@ impl FloatingPaste {
         let dirty = r.union(&self.last_dirty).intersect(&doc_rect);
         entry.doc.mark_dirty_rect(dirty);
         self.last_dirty = r;
+    }
+}
+
+/// A box edge length that stays inside sane numeric territory.
+fn clamp_size(v: f32) -> f32 {
+    if v.is_finite() {
+        v.clamp(1.0, MAX_BOX_SIZE)
+    } else {
+        1.0
     }
 }
 
@@ -874,8 +887,8 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) -> bool {
                         mx = ax + ddx * k;
                         my = ay + ddy * k;
                     }
-                    let nw = nw.max(1.0);
-                    let nh = nh.max(1.0);
+                    let nw = clamp_size(nw);
+                    let nh = clamp_size(nh);
                     let (lcx, lcy) = if from_center {
                         (0.0, 0.0)
                     } else {
