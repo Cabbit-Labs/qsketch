@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.3 — 2026-09-16
 
 - The color picker loupe gained a precision crosshair on the pointer itself,
   so the pixel being sampled is marked on the canvas as well as shown in the
