@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.7 — 2026-09-16
 
 - One cursor while picking a color. The system cursor stayed under the loupe
   alongside the precision crosshair, which showed as two pointers once the
