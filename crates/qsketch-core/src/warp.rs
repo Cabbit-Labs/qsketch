@@ -176,6 +176,50 @@ fn sample(src: &[[f32; 4]], sw: usize, sh: usize, x: f32, y: f32, filter: Resize
     }
 }
 
+/// How far a control point may sit from its undistorted position and still
+/// count as "not moved" for the straight-copy fast path below. Well under the
+/// rounding a pixel could ever show.
+const TRANSLATE_EPS: f32 = 1e-3;
+
+/// The whole-pixel offset `mesh` translates the source by, when that is all it
+/// does: every control point still on its undistorted lattice and the top-left
+/// corner on integer coordinates.
+fn integer_translation(mesh: &Mesh, sw: u32, sh: u32) -> Option<(i32, i32)> {
+    let (x, y) = (mesh.point(0, 0).x, mesh.point(0, 0).y);
+    if (x - x.round()).abs() > TRANSLATE_EPS || (y - y.round()).abs() > TRANSLATE_EPS {
+        return None;
+    }
+    let (sw, sh) = (sw as f32, sh as f32);
+    for j in 0..=mesh.rows {
+        for i in 0..=mesh.cols {
+            let p = mesh.point(i, j);
+            let wx = x + sw * i as f32 / mesh.cols as f32;
+            let wy = y + sh * j as f32 / mesh.rows as f32;
+            if (p.x - wx).abs() > TRANSLATE_EPS || (p.y - wy).abs() > TRANSLATE_EPS {
+                return None;
+            }
+        }
+    }
+    Some((x.round() as i32, y.round() as i32))
+}
+
+/// Copy `src` to whole-pixel offset `(tx, ty)`, cropped to `clip`.
+fn translate_rgba(src: &[u8], sw: u32, sh: u32, tx: i32, ty: i32, clip: IRect) -> (Vec<u8>, IRect) {
+    let out_rect = IRect::new(tx, ty, sw as i32, sh as i32).intersect(&clip);
+    if out_rect.is_empty() {
+        return (Vec::new(), IRect::EMPTY);
+    }
+    let (ow, oh) = (out_rect.w as usize, out_rect.h as usize);
+    let sw_us = sw as usize;
+    let (skip_x, skip_y) = ((out_rect.x - tx) as usize, (out_rect.y - ty) as usize);
+    let mut out = vec![0u8; ow * oh * 4];
+    for (row, line) in out.chunks_exact_mut(ow * 4).enumerate() {
+        let start = ((skip_y + row) * sw_us + skip_x) * 4;
+        line.copy_from_slice(&src[start..start + ow * 4]);
+    }
+    (out, out_rect)
+}
+
 /// Render straight-alpha RGBA `src` (`sw`×`sh`) through `mesh`. Output covers
 /// the mesh bounds clipped to `clip`; returns the buffer and its rect.
 /// Edges are anti-aliased with a 2×2 supersample near cell borders.
@@ -183,6 +227,13 @@ pub fn warp_rgba(src: &[u8], sw: u32, sh: u32, mesh: &Mesh, filter: ResizeFilter
     let out_rect = mesh.bounds().expand(1).intersect(&clip);
     if out_rect.is_empty() || sw == 0 || sh == 0 {
         return (Vec::new(), IRect::EMPTY);
+    }
+    // A mesh that only shifts the pixels by whole pixels is a copy. Running it
+    // through the resampler instead would soften every pixel (each output
+    // pixel averages four bilinear taps) and feather the edges, so a moved or
+    // duplicated selection would come back blurrier every time.
+    if let Some((tx, ty)) = integer_translation(mesh, sw, sh) {
+        return translate_rgba(src, sw, sh, tx, ty, clip);
     }
     let (sw_us, sh_us) = (sw as usize, sh as usize);
     // Premultiply once.
@@ -334,6 +385,40 @@ mod tests {
             let p = h.apply(Pt::new(uv.0, uv.1));
             assert!((p.x - q[i].x).abs() < 1e-3 && (p.y - q[i].y).abs() < 1e-3, "corner {i}");
         }
+    }
+
+    /// A plain move / duplicate must copy the pixels verbatim: no softening
+    /// from the resampler, no feathered edge.
+    #[test]
+    fn integer_translation_is_a_verbatim_copy() {
+        let mut r = Raster::new(4, 4);
+        r.fill_rect(IRect::new(0, 0, 4, 4), Rgba8::rgb(200, 10, 10));
+        r.set_pixel(1, 1, Rgba8::rgb(0, 255, 0));
+        r.set_pixel(0, 0, Rgba8::TRANSPARENT);
+        let q = [Pt::new(7.0, 3.0), Pt::new(11.0, 3.0), Pt::new(11.0, 7.0), Pt::new(7.0, 7.0)];
+        for div in [1, 3] {
+            let mesh = Mesh::from_quad(q, div, div);
+            let (out, rect) = warp_raster(&r, &mesh, ResizeFilter::Bilinear, IRect::new(0, 0, 100, 100));
+            assert_eq!(rect, IRect::new(7, 3, 4, 4), "div {div}");
+            for y in 0..4 {
+                for x in 0..4 {
+                    assert_eq!(out.get_pixel(x, y), r.get_pixel(x, y), "div {div} at {x},{y}");
+                }
+            }
+            // The mask travels with it, still hard-edged.
+            let m = warp_mask(&Mask::full(4, 4), &mesh, 100, 100);
+            assert_eq!(m.bounds(), IRect::new(7, 3, 4, 4), "div {div}");
+            assert_eq!(m.get(7, 3), 255, "div {div}");
+            assert_eq!(m.get(6, 3), 0, "div {div}");
+        }
+    }
+
+    /// A half-pixel offset is a real resample, not a copy.
+    #[test]
+    fn subpixel_translation_still_resamples() {
+        let mesh =
+            Mesh::from_quad([Pt::new(7.5, 3.0), Pt::new(11.5, 3.0), Pt::new(11.5, 7.0), Pt::new(7.5, 7.0)], 1, 1);
+        assert_eq!(integer_translation(&mesh, 4, 4), None);
     }
 
     #[test]

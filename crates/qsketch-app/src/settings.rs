@@ -256,6 +256,9 @@ pub struct GeneralSettings {
     pub backup_versions: u32,
     /// Paste onto a new layer above the active one instead of onto it.
     pub paste_new_layer: bool,
+    /// Delete drops the selection after clearing it, instead of leaving the
+    /// marching ants around the hole it made.
+    pub deselect_after_delete: bool,
 }
 
 impl Default for GeneralSettings {
@@ -274,6 +277,7 @@ impl Default for GeneralSettings {
             backups: true,
             backup_versions: 3,
             paste_new_layer: true,
+            deselect_after_delete: true,
         }
     }
 }

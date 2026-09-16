@@ -148,6 +148,10 @@ fn general(ui: &mut Ui, state: &mut AppState) {
         .response
         .on_hover_text("Where Ctrl+V puts pasted pixels. Either way they float for placement until Enter.");
         ui.end_row();
+        ui.label("Delete also deselects");
+        ui.checkbox(&mut g.deselect_after_delete, "")
+            .on_hover_text("Delete clears the selected pixels and drops the selection. Off: the selection stays.");
+        ui.end_row();
         ui.label("Autosave for crash recovery");
         ui.horizontal(|ui| {
             ui.checkbox(&mut g.autosave, "");

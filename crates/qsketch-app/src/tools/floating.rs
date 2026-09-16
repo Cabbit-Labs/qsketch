@@ -249,7 +249,14 @@ impl FloatingPaste {
     /// A plain selection move / duplicate needs no mode panel: it would cover
     /// the canvas on every drag. Ctrl+T and pastes still show it.
     pub fn shows_panel(&self) -> bool {
-        !matches!(self.origin, Origin::Transform { label: "Move" | "Duplicate", .. })
+        !self.is_selection_drag()
+    }
+
+    /// Pixels lifted by dragging the selection box itself (as opposed to a
+    /// paste or an explicit Ctrl+T), so there is a selection to stamp the next
+    /// copy from.
+    fn is_selection_drag(&self) -> bool {
+        matches!(self.origin, Origin::Transform { mask: Some(_), label: "Move" | "Duplicate", .. })
     }
 
     pub fn is_paste(&self) -> bool {
@@ -691,6 +698,32 @@ pub fn begin_selection_transform(state: &mut AppState, doc_id: DocId, inp: super
     let duplicate = inp.mods.command;
     let label = if duplicate { "Duplicate" } else { "Move" };
     begin_transform_with(state, doc_id, duplicate, label)
+}
+
+/// Ctrl+drag *inside* a box that is already floating stamps another copy:
+/// the floating pixels are dropped where they are and a fresh duplicate is
+/// lifted from the selection they leave behind, so Ctrl+drag keeps duplicating
+/// for as long as the area stays selected. Returns true when a new duplicate
+/// started. Ctrl on a handle keeps its own meaning (jump into Deform).
+pub fn restamp_duplicate(state: &mut AppState, doc_id: DocId, inp: super::CanvasInput) -> bool {
+    let Some(fp) = state.floating.as_ref() else { return false };
+    // Only a selection drag stamps: a paste has no selection to lift the next
+    // copy from, and Ctrl+T keeps Ctrl for its own handle shortcuts.
+    if fp.doc != doc_id || !fp.is_selection_drag() {
+        return false;
+    }
+    let Some(entry) = state.doc(doc_id) else { return false };
+    let view = &entry.view;
+    if fp.grab_at(view, inp.screen).is_some() || !fp.contains(view.screen_to_doc(inp.screen)) {
+        return false;
+    }
+    commit(state);
+    // The stamped copy leaves its selection behind; without one the next lift
+    // would take the whole layer instead of the area the user is dragging.
+    if state.doc(doc_id).is_none_or(|e| e.doc.state().selection.is_none()) {
+        return false;
+    }
+    begin_transform_with(state, doc_id, true, "Duplicate")
 }
 
 /// Cursor over the idle selection box.

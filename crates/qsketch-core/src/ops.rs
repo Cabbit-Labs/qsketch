@@ -543,6 +543,44 @@ mod tests {
         assert_eq!(d.layers[0].raster.get_pixel(2, 2), Rgba8::WHITE);
     }
 
+    /// The whole Ctrl+drag-duplicate path: lift a selection, put the original
+    /// pixels back, shift the copy by whole pixels and drop it. Both the
+    /// original and the copy must come out bit-identical to what was drawn.
+    #[test]
+    fn duplicate_drag_is_pixel_perfect() {
+        use crate::warp::{self, Mesh};
+
+        let mut d = DocState::new(20, 20, None);
+        for y in 0..4 {
+            for x in 0..4 {
+                d.layers[0].raster.set_pixel(x, y, Rgba8::new(20 * x as u8, 30 * y as u8, 200, 255));
+            }
+        }
+        // A semi-transparent pixel: alpha must survive the round trip too.
+        d.layers[0].raster.set_pixel(2, 2, Rgba8::new(10, 250, 40, 128));
+        let before = d.layers[0].raster.clone();
+        d.selection = Some(Arc::new(Mask::from_rect(20, 20, IRect::new(0, 0, 4, 4))));
+
+        let intact = d.layers[0].raster.clone();
+        let lifted = lift(&mut d, 0).unwrap();
+        d.layers[0].raster = intact.clone();
+
+        let quad = [Pt::new(9.0, 7.0), Pt::new(13.0, 7.0), Pt::new(13.0, 11.0), Pt::new(9.0, 11.0)];
+        let (raster, r) =
+            warp::warp_raster(&lifted.raster, &Mesh::from_quad(quad, 1, 1), ResizeFilter::Bilinear, d.rect());
+        let out = drop_floating(&intact, &Floating { raster, origin: (r.x, r.y), mask: None }, 0, 0);
+
+        for y in 0..4 {
+            for x in 0..4 {
+                assert_eq!(out.get_pixel(x, y), before.get_pixel(x, y), "original at {x},{y}");
+                assert_eq!(out.get_pixel(x + 9, y + 7), before.get_pixel(x, y), "copy at {x},{y}");
+            }
+        }
+        // Nothing feathered outside the copy.
+        assert_eq!(out.get_pixel(8, 7).a, 0);
+        assert_eq!(out.get_pixel(13, 11).a, 0);
+    }
+
     #[test]
     fn fills() {
         let mut d = DocState::new(10, 10, None);

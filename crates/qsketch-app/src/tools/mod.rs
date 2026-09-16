@@ -361,6 +361,19 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             floating::commit(state);
         }
     }
+    // Ctrl+drag inside a box that is already floating stamps another copy
+    // instead of just moving the one in flight, so duplicates chain.
+    if let CanvasEvent::Press(inp) = ev {
+        if inp.button == PointerButton::Primary
+            && inp.mods.command
+            && state.session.is_none()
+            && (tool == ToolKind::Move || tool.is_selection())
+            && floating::restamp_duplicate(state, doc_id, inp)
+        {
+            floating::handle(state, doc_id, ev);
+            return;
+        }
+    }
     // A floating paste captures the pointer unless a view tool is (temporarily) active.
     if state.floating.is_some()
         && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)

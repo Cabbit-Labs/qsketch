@@ -1094,7 +1094,7 @@ impl QSketchApp {
                     crate::clipboard::paste(&mut self.state, id, true);
                 }
             }
-            Action::Clear => self.edit_layer("Clear", ops::clear),
+            Action::Clear => self.clear_selected(),
             Action::ClearLayer => {
                 if let Some(d) = self.state.active_mut() {
                     let targets = d.target_layers();
@@ -1440,6 +1440,37 @@ impl QSketchApp {
         }
         if any {
             d.doc.commit(label);
+        }
+    }
+
+    /// Delete: clear the selected pixels, and (unless the setting is off) drop
+    /// the selection in the same history step, so one undo puts both back.
+    fn clear_selected(&mut self) {
+        self.state.cancel_session();
+        crate::tools::floating::commit(&mut self.state);
+        crate::tools::text::commit(&mut self.state);
+        let deselect = self.state.settings.general.deselect_after_delete;
+        let Some(d) = self.state.active_mut() else { return };
+        let targets = d.target_layers();
+        if targets.is_empty() {
+            self.state.toasts.push(Level::Info, "The active layer is locked or hidden.");
+            return;
+        }
+        let mut any = false;
+        for li in targets {
+            let r = ops::clear(d.doc.state_mut(), li);
+            if !r.is_empty() {
+                d.doc.mark_dirty_rect(r);
+                any = true;
+            }
+        }
+        if deselect && d.doc.state().selection.is_some() {
+            d.doc.state_mut().selection = None;
+            d.sel_outline = None;
+            any = true;
+        }
+        if any {
+            d.doc.commit("Clear");
         }
     }
 

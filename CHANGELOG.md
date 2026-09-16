@@ -2,6 +2,24 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Ctrl+drag duplicates as often as you like. The first Ctrl+drag lifted a copy
+  of the selection, but every Ctrl+drag after that only moved the copy already
+  in flight: it was captured by the transform box instead of stamping a new
+  one. Ctrl+drag inside the box now drops the copy where it sits and lifts a
+  fresh one from the selection it leaves behind. Ctrl on a handle still means
+  Deform, and Ctrl+T keeps its own behavior.
+- Moving or duplicating a selection is pixel-perfect again. Even a whole-pixel
+  shift went through the resampler, where each output pixel averaged four
+  bilinear taps — every move softened the pixels and feathered the edges, and
+  it compounded on each repeat. A transform that only shifts the pixels by
+  whole pixels now copies them verbatim.
+- Delete drops the selection after clearing it, instead of leaving the
+  marching ants around the hole. Both happen in one history step, so a single
+  undo puts the pixels and the selection back. Preferences ▸ General ▸ "Delete
+  also deselects" turns it off.
+
 ## 0.18.0 — 2026-09-16
 
 - `C` selects the Move tool and `V` the Contour tool. Crop gives up `C` and
