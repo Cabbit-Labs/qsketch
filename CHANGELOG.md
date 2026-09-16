@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.1 — 2026-09-16
 
 - The brush cursor follows the pointer while the quick brush settings popup is
   open, instead of staying pinned where the popup was opened, and it draws
