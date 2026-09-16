@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.9 — 2026-09-16
 
 - Only one mouse chord can be armed at a time. Clicking a second chord button
   left the first waiting for input too, so several rows sat on "Press a
