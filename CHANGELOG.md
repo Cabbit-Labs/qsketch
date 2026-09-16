@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.8 — 2026-09-16
 
 - `Alt` picks a color again. Moving the pick chord to right-click left `Alt` +
   click bound to nothing, so the reflex every paint app shares stopped
