@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.19.0 — 2026-09-16
 
 - Ctrl+drag duplicates as often as you like. The first Ctrl+drag lifted a copy
   of the selection, but every Ctrl+drag after that only moved the copy already
