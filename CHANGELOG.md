@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.5 — 2026-09-16
 
 - Thin selections transform predictably. On a selection only a few pixels
   across, the three handles along its short side pile up and a press meant
