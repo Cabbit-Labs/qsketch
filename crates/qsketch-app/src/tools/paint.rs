@@ -3,6 +3,7 @@
 
 use std::collections::VecDeque;
 
+use qsketch_core::shape::Spans;
 use qsketch_core::{BrushSettings, IRect, PaintMode, Pt, Rgba8, StabilizerMode, StrokeEngine, StrokeSample};
 
 use super::symmetry::Transform;
@@ -311,19 +312,6 @@ pub fn constrain_line(start: Pt, cur: Pt, snap: bool) -> Pt {
     Pt::new(start.x + len * snapped.cos(), start.y + len * snapped.sin())
 }
 
-pub fn ellipse_points(r: IRect, n: usize) -> Vec<Pt> {
-    let cx = r.x as f32 + r.w as f32 / 2.0;
-    let cy = r.y as f32 + r.h as f32 / 2.0;
-    let rx = r.w as f32 / 2.0;
-    let ry = r.h as f32 / 2.0;
-    (0..n)
-        .map(|i| {
-            let t = i as f32 / n as f32 * std::f32::consts::TAU;
-            Pt::new(cx + rx * t.cos(), cy + ry * t.sin())
-        })
-        .collect()
-}
-
 pub fn handle_shape(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: CanvasEvent) {
     match ev {
         CanvasEvent::Press(inp) if inp.button == egui::PointerButton::Primary => {
@@ -357,13 +345,17 @@ fn commit_shape(
     mods: egui::Modifiers,
     inp: CanvasInput,
 ) {
-    let filled = state.tool_opts.shape_filled && tool != ToolKind::Line;
-    if filled {
+    let _ = inp;
+    // Rectangles and ellipses are pixel art: they paint discrete pixels in the
+    // foreground color, not brush dabs.
+    if matches!(tool, ToolKind::Rect | ToolKind::Ellipse) {
         let r = rect_from_drag(start, cur, mods.shift);
         if r.is_empty() {
             return;
         }
         let fg = state.fg;
+        let (outer, hole) = shape_spans_for(state, tool, r);
+        let sym = state.symmetry;
         let Some(entry) = state.doc_mut(doc_id) else { return };
         let (w, h) = (entry.doc.width(), entry.doc.height());
         let s = entry.doc.state_mut();
@@ -372,14 +364,15 @@ fn commit_shape(
             state.toasts.push(Level::Info, "The active layer is locked or hidden.");
             return;
         }
-        let shape_mask = match tool {
-            ToolKind::Rect => qsketch_core::Mask::from_rect(w, h, r),
-            _ => qsketch_core::Mask::from_ellipse(w, h, r),
-        };
+        let mut shape_mask = qsketch_core::shape::mask_from_spans(w, h, &outer, &hole);
+        shape_mask = super::symmetry::mirror_mask(&sym, &shape_mask, w, h);
         let mask = match &s.selection {
             Some(sel) => shape_mask.intersect(sel),
             None => shape_mask,
         };
+        if mask.is_empty() {
+            return;
+        }
         let saved = s.selection.take();
         s.selection = Some(std::sync::Arc::new(mask));
         let dirty = qsketch_core::ops::fill(s, li, fg);
@@ -391,34 +384,17 @@ fn commit_shape(
     let Some((engine, layer, extra)) = begin_engine_with(state, doc_id, ToolKind::Brush) else { return };
     state.session = Some(ToolSession::Stroke { engine, layer, extra });
     state.session_doc = Some(doc_id);
-    let _ = inp;
-    match tool {
-        ToolKind::Line => {
-            let end = constrain_line(start, cur, mods.shift);
-            feed_line(state, doc_id, start, end, 1.0);
-        }
-        ToolKind::Rect => {
-            let r = rect_from_drag(start, cur, mods.shift);
-            let pts = [
-                Pt::new(r.x as f32, r.y as f32),
-                Pt::new(r.right() as f32, r.y as f32),
-                Pt::new(r.right() as f32, r.bottom() as f32),
-                Pt::new(r.x as f32, r.bottom() as f32),
-                Pt::new(r.x as f32, r.y as f32),
-            ];
-            for w in pts.windows(2) {
-                feed_line(state, doc_id, w[0], w[1], 1.0);
-            }
-        }
-        _ => {
-            let r = rect_from_drag(start, cur, mods.shift);
-            let n = ((r.w.max(r.h) as f32 * 0.8).clamp(24.0, 512.0)) as usize;
-            let mut pts = ellipse_points(r, n);
-            pts.push(pts[0]);
-            for w in pts.windows(2) {
-                feed_line(state, doc_id, w[0], w[1], 1.0);
-            }
-        }
-    }
+    let end = constrain_line(start, cur, mods.shift);
+    feed_line(state, doc_id, start, end, 1.0);
     finish(state, doc_id, tool);
+}
+
+/// Outer and hole rows of the shape the current options describe.
+pub fn shape_spans_for(state: &AppState, tool: ToolKind, r: IRect) -> (Spans, Spans) {
+    qsketch_core::shape::shape_spans(
+        r,
+        tool == ToolKind::Ellipse,
+        state.tool_opts.shape_filled,
+        state.tool_opts.shape_thickness as i32,
+    )
 }

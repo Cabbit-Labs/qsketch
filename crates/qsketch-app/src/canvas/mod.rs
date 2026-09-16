@@ -143,7 +143,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                         if state.temp_tool.is_none() && state.tool.uses_color() {
                             if let Some(t) = state.settings.mouse.pick_target(*modifiers, *button) {
                                 let inp = make_input(state, *pos, *button, *modifiers);
-                                tools::fill::pick_once(state, doc_id, inp, t);
+                                tools::fill::begin_pick(state, doc_id, inp, t);
                                 continue;
                             }
                         }
@@ -405,9 +405,21 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     draw_selection(&painter, entry, &ctx);
     flash::update(state, doc_id, &ctx, &painter);
     tools::draw_overlay(state, doc_id, &painter);
-    if state.brush_popup.is_none() {
-        draw_brush_cursor(&painter, state, doc_id, hover_pos, tool);
-        if tool == ToolKind::RotateView {
+    {
+        // While the quick brush popup is open the pointer is off the canvas, so
+        // the size / hardness / roundness preview is drawn back at the point
+        // that opened it: edits show on the cursor as they are made.
+        let (cursor_pos, cursor_tool) = if state.pick_preview.is_some() {
+            // The loupe stands in for the cursor while picking.
+            (None, tool)
+        } else {
+            match state.brush_popup {
+                Some(p) => (Some(brush_preview_pos(state, doc_id, p)), p.tool),
+                None => (hover_pos, tool),
+            }
+        };
+        draw_brush_cursor(&painter, state, doc_id, cursor_pos, cursor_tool);
+        if tool == ToolKind::RotateView && state.brush_popup.is_none() {
             draw_rotate_cursor(&painter, hover_pos);
         }
     }
@@ -560,12 +572,29 @@ fn draw_rotate_cursor(painter: &egui::Painter, hover: Option<Pos2>) {
     painter.text(pos, egui::Align2::CENTER_CENTER, glyph, font, Color32::WHITE);
 }
 
+/// Where the live brush preview sits while the quick brush popup is open:
+/// the point that opened it, unless the popup itself would hide the whole
+/// circle, in which case just left of the popup.
+fn brush_preview_pos(state: &AppState, doc_id: DocId, popup: crate::state::BrushPopup) -> Pos2 {
+    let zoom = state.doc(doc_id).map_or(1.0, |d| d.view.zoom);
+    let r = state.brush_for_tool(popup.tool).map_or(0.0, |b| b.size / 2.0 * zoom).max(8.0);
+    let covered =
+        popup.rect.contains(popup.pos - egui::vec2(r, r)) && popup.rect.contains(popup.pos + egui::vec2(r, r));
+    if !covered {
+        return popup.pos;
+    }
+    let Some(view) = state.doc(doc_id).map(|d| d.view.viewport) else { return popup.pos };
+    let x = (popup.rect.left() - r - 14.0).max(view.left() + r + 4.0);
+    let y = (popup.rect.top() + r + 4.0).clamp(view.top() + r + 4.0, (view.bottom() - r - 4.0).max(view.top()));
+    egui::pos2(x, y)
+}
+
 fn draw_brush_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, hover: Option<Pos2>, tool: ToolKind) {
     let Some(pos) = hover else { return };
     if !tool.uses_brush() {
         return;
     }
-    let Some(brush) = state.current_brush() else { return };
+    let Some(brush) = state.brush_for_tool(tool) else { return };
     let Some(entry) = state.doc(doc_id) else { return };
     let mode = state.settings.canvas.brush_cursor;
     if mode == BrushCursor::Hidden {

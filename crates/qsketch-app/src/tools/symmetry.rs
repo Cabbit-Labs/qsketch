@@ -54,6 +54,25 @@ impl Transform {
         }
         Pt::new(self.center.x + dx, self.center.y + dy)
     }
+
+    /// Map a point back to the source: the copy is mirrored *then* rotated, so
+    /// undoing it means unrotating first.
+    pub fn apply_inverse(&self, p: Pt) -> Pt {
+        let (mut dx, mut dy) = (p.x - self.center.x, p.y - self.center.y);
+        if self.angle != 0.0 {
+            let (s, c) = (-self.angle).sin_cos();
+            let (rx, ry) = (dx * c - dy * s, dx * s + dy * c);
+            dx = rx;
+            dy = ry;
+        }
+        if self.mirror_x {
+            dx = -dx;
+        }
+        if self.mirror_y {
+            dy = -dy;
+        }
+        Pt::new(self.center.x + dx, self.center.y + dy)
+    }
 }
 
 impl Symmetry {
@@ -123,6 +142,47 @@ impl Symmetry {
         }
         angles.into_iter().map(|a| (a.cos(), a.sin())).collect()
     }
+}
+
+/// Union a mask with its mirrored / rotated copies, so a pixel-perfect shape
+/// obeys symmetry the way a brush stroke does. Sampling is nearest-neighbor:
+/// the copies stay hard-edged.
+pub fn mirror_mask(sym: &Symmetry, mask: &qsketch_core::Mask, width: u32, height: u32) -> qsketch_core::Mask {
+    let transforms = sym.transforms(width, height);
+    if transforms.is_empty() || mask.is_empty() {
+        return mask.clone();
+    }
+    let mut out = mask.clone();
+    let (w, h) = (width as i32, height as i32);
+    for t in transforms {
+        // Map the source bounds through the transform to find where to write.
+        let b = mask.bounds();
+        let corners = [
+            Pt::new(b.x as f32, b.y as f32),
+            Pt::new(b.right() as f32, b.y as f32),
+            Pt::new(b.right() as f32, b.bottom() as f32),
+            Pt::new(b.x as f32, b.bottom() as f32),
+        ];
+        let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for c in corners {
+            let p = t.apply(c);
+            x0 = x0.min(p.x);
+            y0 = y0.min(p.y);
+            x1 = x1.max(p.x);
+            y1 = y1.max(p.y);
+        }
+        for y in (y0.floor() as i32).max(0)..(y1.ceil() as i32 + 1).min(h) {
+            for x in (x0.floor() as i32).max(0)..(x1.ceil() as i32 + 1).min(w) {
+                let src = t.apply_inverse(Pt::new(x as f32 + 0.5, y as f32 + 0.5));
+                let v = mask.get(src.x.floor() as i32, src.y.floor() as i32);
+                if v > 0 && out.get(x, y) < v {
+                    out.set(x, y, v);
+                }
+            }
+        }
+    }
+    out.recompute_bounds();
+    out
 }
 
 #[cfg(test)]

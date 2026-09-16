@@ -152,17 +152,25 @@ impl ToolKind {
         matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser)
     }
 
+    /// Tools that lay down brush dabs. The Rectangle and Ellipse tools do not:
+    /// they paint hard pixels in the foreground color.
     pub fn uses_brush(self) -> bool {
-        matches!(
-            self,
-            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse
-        )
+        matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Line)
     }
 
     /// Tools that paint with the foreground/background color, so a pick
     /// chord over the canvas should grab a color for them.
     pub fn uses_color(self) -> bool {
-        self.uses_brush() || matches!(self, ToolKind::Fill | ToolKind::Gradient | ToolKind::Text | ToolKind::Contour)
+        self.uses_brush()
+            || matches!(
+                self,
+                ToolKind::Fill
+                    | ToolKind::Gradient
+                    | ToolKind::Text
+                    | ToolKind::Contour
+                    | ToolKind::Rect
+                    | ToolKind::Ellipse
+            )
     }
 
     pub fn cursor(self) -> egui::CursorIcon {
@@ -190,6 +198,8 @@ pub struct ToolOptions {
     pub fill_sample_merged: bool,
     pub gradient_kind: GradientKind,
     pub shape_filled: bool,
+    /// Outline width in pixels for the Rectangle / Ellipse tools.
+    pub shape_thickness: u32,
     pub eyedropper_sample_merged: bool,
     pub zoom_scrub: bool,
     /// Contour: stroke the edge with the current brush after filling.
@@ -215,6 +225,7 @@ impl Default for ToolOptions {
             fill_sample_merged: false,
             gradient_kind: GradientKind::Linear,
             shape_filled: false,
+            shape_thickness: 1,
             eyedropper_sample_merged: true,
             zoom_scrub: true,
             contour_outline: false,
@@ -320,6 +331,10 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             return;
         }
     }
+    // A pick in flight owns the pointer: the loupe tracks it until release.
+    if state.pick_preview.is_some() && !matches!(ev, CanvasEvent::Press(_)) && fill::handle_pick(state, doc_id, ev) {
+        return;
+    }
     let tool = state.effective_tool();
     // Symmetry "set center": the next canvas press places the axes.
     if state.symmetry_pick_center {
@@ -411,15 +426,18 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
                         painter.line_segment([to_s(*start), to_s(end)], shadow);
                         painter.line_segment([to_s(*start), to_s(end)], stroke);
                     }
-                    ToolKind::Rect => {
-                        let r = rect_from_drag(*start, *cur, mods.shift);
-                        draw_doc_rect(painter, view, r, shadow, stroke);
-                    }
+                    // Rectangles and ellipses preview the exact pixels they
+                    // will paint, hole included.
                     _ => {
                         let r = rect_from_drag(*start, *cur, mods.shift);
-                        let pts: Vec<Pos2> = paint::ellipse_points(r, 64).into_iter().map(to_s).collect();
-                        painter.add(egui::Shape::closed_line(pts.clone(), shadow));
-                        painter.add(egui::Shape::closed_line(pts, stroke));
+                        let (outer, hole) = paint::shape_spans_for(state, tool, r);
+                        for spans in [&outer, &hole] {
+                            for seg in qsketch_core::shape::spans_outline(spans) {
+                                let (a, b) = (to_s(seg[0]), to_s(seg[1]));
+                                painter.line_segment([a, b], shadow);
+                                painter.line_segment([a, b], stroke);
+                            }
+                        }
                     }
                 }
             }
@@ -447,6 +465,7 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
         floating::draw_selection_handles(state, doc_id, painter);
     }
     text::draw_overlay(state, doc_id, painter);
+    fill::draw_pick_loupe(state, doc_id, painter);
 
     // Crop overlay: darken outside the pending crop rect.
     if state.tool == ToolKind::Crop {

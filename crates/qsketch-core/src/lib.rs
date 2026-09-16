@@ -31,6 +31,7 @@ pub mod layer;
 pub mod mask;
 pub mod ops;
 pub mod raster;
+pub mod shape;
 pub mod text;
 pub mod tip;
 pub mod warp;

@@ -266,15 +266,22 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
 
 fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
     let theme = state.settings.ui.palette();
+    // The shape tools paint hard pixels in the foreground color, so they have
+    // no brush options at all.
     if matches!(tool, ToolKind::Rect | ToolKind::Ellipse) {
         group(ui, &theme, Section::Tools, |ui| {
             ui.checkbox(&mut state.tool_opts.shape_filled, "Filled");
+            if !state.tool_opts.shape_filled {
+                ui.add(
+                    egui::DragValue::new(&mut state.tool_opts.shape_thickness)
+                        .range(1..=64)
+                        .speed(0.2)
+                        .prefix("Thickness "),
+                )
+                .on_hover_text("Outline width in pixels");
+            }
         });
-        // A filled shape is a plain fill of the foreground color; the brush
-        // only matters for the outlined variant.
-        if state.tool_opts.shape_filled {
-            return;
-        }
+        return;
     }
     let compact = state.settings.ui.compact_tool_options;
     let p = state.settings.ui.palette();

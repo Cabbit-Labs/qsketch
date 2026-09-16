@@ -621,6 +621,19 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             ui.selectable_value(&mut c.brush_cursor, BrushCursor::Hidden, "Hidden");
         });
         ui.end_row();
+        ui.label("Color picker loupe");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut c.pick_loupe, "Show");
+            ui.add_enabled_ui(c.pick_loupe, |ui| {
+                ui.add(egui::DragValue::new(&mut c.pick_loupe_size).range(40.0..=260.0).speed(1.0).suffix(" pt"))
+                    .on_hover_text("Diameter of the magnifier");
+                ui.add(egui::DragValue::new(&mut c.pick_loupe_pixels).range(3..=41).speed(0.2).suffix(" px"))
+                    .on_hover_text("How many canvas pixels it spans");
+            });
+        })
+        .response
+        .on_hover_text("A zoomed circle of pixels while a color is being picked, so single pixels can be picked without zooming in.");
+        ui.end_row();
         ui.label("Pixel grid");
         ui.horizontal(|ui| {
             ui.checkbox(&mut c.show_pixel_grid, "Show");
@@ -685,7 +698,7 @@ fn mouse(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(8.0);
     ui.label(
         RichText::new(
-            "Pick chords work with every tool that paints a color (brush, pencil, shapes, fill, gradient, text); holding the chord's modifiers shows the eyedropper. Quick move drags the active layer, or the selected pixels when there is a selection, with any tool; holding its modifiers shows the Move cursor. Keyboard chords (marquee on G, Ctrl+R rotate, Shift+X flip, Ctrl+V paste…) are edited under Keyboard Shortcuts.",
+            "Pick chords work with every tool that paints a color (brush, pencil, shapes, fill, gradient, text); holding a chord's modifiers shows the eyedropper, and holding the button shows a zoomed loupe. Right-click picks the foreground color by default; binding a pick chord to a bare right-click takes that button away from the quick brush settings popup above, which is why the popup is off out of the box. Quick move drags the active layer, or the selected pixels when there is a selection, with any tool; holding its modifiers shows the Move cursor. Keyboard chords (marquee on G, Ctrl+R rotate, Shift+X flip, Ctrl+V paste…) are edited under Keyboard Shortcuts.",
         )
         .weak(),
     );

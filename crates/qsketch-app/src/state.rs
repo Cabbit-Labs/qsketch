@@ -129,6 +129,18 @@ pub struct BrushPopup {
     pub just_opened: bool,
 }
 
+/// A color pick in flight (the Eyedropper tool, or a pick chord held down).
+/// The loupe follows the pointer until the button is released.
+#[derive(Clone, Copy, Debug)]
+pub struct PickPreview {
+    pub doc: DocId,
+    pub screen: egui::Pos2,
+    pub doc_pos: qsketch_core::Pt,
+    pub target: crate::settings::PickTarget,
+    /// The color under the pointer right now.
+    pub color: Rgba8,
+}
+
 pub struct AppState {
     pub docs: Vec<DocEntry>,
     pub active_doc: Option<DocId>,
@@ -186,6 +198,8 @@ pub struct AppState {
     pub hover_doc_pos: Option<Pt>,
     pub hover_screen_pos: Option<Pos2>,
     pub hover_color: Option<Rgba8>,
+    /// A color pick in progress: drives the zoomed loupe over the canvas.
+    pub pick_preview: Option<PickPreview>,
 
     /// Pen samples (screen pos, pressure) delivered by the tablet backend this frame.
     pub tablet_samples: Vec<(Pos2, f32)>,
@@ -252,6 +266,7 @@ impl AppState {
             hover_doc_pos: None,
             hover_screen_pos: None,
             hover_color: None,
+            pick_preview: None,
             tablet_samples: Vec::new(),
             render_state: None,
             thumbs: Default::default(),
@@ -336,8 +351,13 @@ impl AppState {
 
     /// Brush settings used by the current painting tool.
     pub fn current_brush(&self) -> Option<&BrushSettings> {
-        match self.effective_tool() {
-            ToolKind::Brush | ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse => Some(&self.brush),
+        self.brush_for_tool(self.effective_tool())
+    }
+
+    /// Brush settings for a specific tool, regardless of any temporary tool.
+    pub fn brush_for_tool(&self, tool: ToolKind) -> Option<&BrushSettings> {
+        match tool {
+            ToolKind::Brush | ToolKind::Line => Some(&self.brush),
             ToolKind::Pencil => Some(&self.pencil),
             ToolKind::Eraser => Some(&self.eraser),
             _ => None,
@@ -351,7 +371,7 @@ impl AppState {
     /// Brush settings for a specific tool, regardless of any temporary tool.
     pub fn brush_for_tool_mut(&mut self, tool: ToolKind) -> Option<&mut BrushSettings> {
         match tool {
-            ToolKind::Brush | ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse => Some(&mut self.brush),
+            ToolKind::Brush | ToolKind::Line => Some(&mut self.brush),
             ToolKind::Pencil => Some(&mut self.pencil),
             ToolKind::Eraser => Some(&mut self.eraser),
             _ => None,

@@ -464,6 +464,12 @@ pub struct CanvasSettings {
     pub pan_inertia: bool,
     /// Briefly light up a layer's pixels on the canvas when it becomes active.
     pub flash_selected_layer: bool,
+    /// Show the zoomed loupe while picking a color.
+    pub pick_loupe: bool,
+    /// Loupe diameter in screen points.
+    pub pick_loupe_size: f32,
+    /// How many canvas pixels the loupe spans.
+    pub pick_loupe_pixels: u32,
 }
 
 impl Default for CanvasSettings {
@@ -484,6 +490,9 @@ impl Default for CanvasSettings {
             quick_rotate_double_tap_reset: true,
             pan_inertia: true,
             flash_selected_layer: true,
+            pick_loupe: true,
+            pick_loupe_size: 132.0,
+            pick_loupe_pixels: 13,
         }
     }
 }
@@ -586,8 +595,10 @@ impl Default for MouseSettings {
     fn default() -> Self {
         Self {
             middle_drag_pans: true,
-            right_click_brush_popup: true,
-            pick_foreground: Some(MouseChord { button: MouseButton::Left, ..MouseChord::default() }),
+            // Right-click picks a color (Aseprite-style); the quick brush
+            // popup moves out of its way and is off unless asked for.
+            right_click_brush_popup: false,
+            pick_foreground: Some(MouseChord { ctrl: false, shift: false, alt: false, button: MouseButton::Right }),
             pick_background: Some(MouseChord { button: MouseButton::Right, ..MouseChord::default() }),
             quick_move: Some(MouseChord { ctrl: true, shift: false, alt: false, button: MouseButton::Left }),
         }

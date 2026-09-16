@@ -2,6 +2,28 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Pixel-perfect Rectangle and Ellipse tools. They paint hard pixels in the
+  foreground color instead of stamping brush dabs, so edges are exact at any
+  zoom and an ellipse is a clean pixel ellipse. The options bar gains an
+  outline `Thickness` in pixels beside `Filled`, and the drag preview now
+  traces the exact pixels that will be painted rather than a smooth vector
+  shape. Shapes obey symmetry and the current selection as before. The Line
+  tool still draws with the brush.
+- Right-click picks a color. Holding it opens a round loupe of zoomed canvas
+  pixels with the sampled pixel boxed at the center and its hex value below,
+  so single pixels can be picked without zooming the view; the color updates
+  as the pointer moves and lands on release. `Alt` + right-click picks the
+  background color, the Eyedropper tool shows the same loupe, and the loupe's
+  size and pixel count are in Preferences ▸ Canvas. Because a bare right-click
+  is now a pick chord it takes that button from the quick brush settings
+  popup, which is off by default as a result; both are rebindable in
+  Preferences ▸ Mouse.
+- The brush cursor previews size, hardness and roundness while the quick brush
+  settings popup is open, instead of only after closing it. It is drawn at the
+  point that opened the popup, stepping aside when the popup would cover it.
+
 ## 0.16.0 — 2026-09-16
 
 - Aseprite-style selection editing. A selection now carries the eight

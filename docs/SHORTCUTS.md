@@ -180,6 +180,29 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Quick Rotate (while held; move the pointer) | `Q` |
 | Reset rotation | `Q` `Q` (double-tap) |
 
+## Mouse
+
+| Action | Default |
+| --- | --- |
+| Pick the foreground color (hold for a zoomed loupe) | right-click |
+| Pick the background color | `Alt` + right-click |
+| Pan the view | middle-drag |
+| Move the layer / selected pixels with any tool | `Ctrl` + drag |
+
+Right-click picks a color out of the box, so the quick brush settings popup
+that used to own that button is off by default. Both are rebindable in
+Preferences ▸ Mouse: bind the pick chords elsewhere (`Alt` + click, say) and
+the popup can have right-click back. The loupe's size and pixel count live in
+Preferences ▸ Canvas.
+
+## Shapes
+
+The Rectangle and Ellipse tools paint hard pixels in the foreground color
+rather than brush dabs, so their edges are exact at any zoom. The options bar
+carries `Filled` and an outline `Thickness` in pixels; the preview while
+dragging traces the pixels that will be painted. The Line tool still draws
+with the current brush.
+
 ## Brush
 
 | Command | Default shortcut |
