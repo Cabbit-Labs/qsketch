@@ -207,12 +207,12 @@ actions! {
     FilterGlitch => (Filter, "Glitch…", []),
     FilterPencilSketch => (Filter, "Pencil Sketch…", []),
     // Tools
-    ToolMove => (Tools, "Move Tool", ["V"]),
+    ToolMove => (Tools, "Move Tool", ["C"]),
     ToolRectSelect => (Tools, "Rectangular Marquee", ["G", "M"]),
     ToolEllipseSelect => (Tools, "Elliptical Marquee", ["Shift+M"]),
     ToolLasso => (Tools, "Lasso", ["L"]),
     ToolMagicWand => (Tools, "Magic Wand", ["W"]),
-    ToolCrop => (Tools, "Crop", ["C"]),
+    ToolCrop => (Tools, "Crop", []),
     ToolEyedropper => (Tools, "Eyedropper", ["I"]),
     ToolBrush => (Tools, "Brush", ["B"]),
     ToolPencil => (Tools, "Pencil", ["N"]),
@@ -222,7 +222,7 @@ actions! {
     ToolLine => (Tools, "Line", ["U"]),
     ToolRect => (Tools, "Rectangle", ["R"]),
     ToolEllipse => (Tools, "Ellipse", ["Alt+U"]),
-    ToolContour => (Tools, "Contour", ["P"]),
+    ToolContour => (Tools, "Contour", ["V"]),
     ToolText => (Tools, "Text", ["T"]),
     ToolZoom => (Tools, "Zoom", ["Z"]),
     ToolHand => (Tools, "Hand", ["H"]),
@@ -339,8 +339,14 @@ pub struct Shortcut {
 }
 
 impl Shortcut {
+    /// Modifiers are canonicalized: any of ctrl / cmd / mac-cmd becomes
+    /// `command` alone. Without that, a chord captured from the keyboard
+    /// (where egui sets both `ctrl` and `command` on Linux) never compares
+    /// equal to the same chord parsed from text, so conflict detection and
+    /// "is this the default?" quietly missed.
     pub fn new(mods: Modifiers, key: Key) -> Self {
-        Self { mods, key }
+        let command = mods.command || mods.ctrl || mods.mac_cmd;
+        Self { mods: Modifiers { command, ctrl: false, mac_cmd: false, alt: mods.alt, shift: mods.shift }, key }
     }
 
     /// Parse `"Ctrl+Shift+Z"`, `"]"`, `"Alt+Backspace"`, `"F5"` etc.
@@ -369,7 +375,7 @@ impl Shortcut {
         if is_modifier_key(key) {
             return None;
         }
-        Some(Self { mods, key })
+        Some(Self::new(mods, key))
     }
 
     pub fn display(&self) -> String {
@@ -534,6 +540,19 @@ impl Keymap {
         self.map.insert(a, shortcuts);
     }
 
+    /// Take `sc` away from every action but `keep`. Returns the actions that
+    /// lost it, so the caller can say what happened.
+    pub fn unbind_elsewhere(&mut self, sc: Shortcut, keep: Action) -> Vec<Action> {
+        let losers: Vec<Action> =
+            Action::ALL.iter().copied().filter(|&a| a != keep && self.shortcuts(a).contains(&sc)).collect();
+        for a in &losers {
+            let mut v = self.shortcuts(*a).to_vec();
+            v.retain(|s| *s != sc);
+            self.map.insert(*a, v);
+        }
+        losers
+    }
+
     pub fn reset(&mut self, a: Action) {
         self.map.insert(a, a.default_shortcuts().iter().filter_map(|s| Shortcut::parse(s)).collect());
     }
@@ -547,7 +566,8 @@ impl Keymap {
         self.shortcuts(a).first().map(|s| s.display()).unwrap_or_default()
     }
 
-    /// Another action already using this chord.
+    /// Another action already using this chord (used by the default-conflict test).
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn conflict(&self, sc: Shortcut, except: Action) -> Option<Action> {
         Action::ALL.iter().copied().find(|&a| a != except && self.shortcuts(a).contains(&sc))
     }
@@ -609,6 +629,17 @@ mod tests {
         assert_eq!(km.lookup(Key::G, Modifiers::NONE), Some(Action::ToolRectSelect));
         assert_eq!(km.lookup(Key::R, Modifiers::COMMAND), Some(Action::Rotate90CW));
         assert_eq!(km.lookup(Key::X, Modifiers::SHIFT), Some(Action::FlipHorizontal));
+    }
+
+    #[test]
+    fn captured_and_parsed_chords_compare_equal() {
+        // What the keyboard delivers on Linux: both ctrl and command set.
+        let captured = Shortcut::new(Modifiers { command: true, ctrl: true, ..Modifiers::NONE }, Key::S);
+        assert_eq!(captured, Shortcut::parse("Ctrl+S").unwrap());
+        let mut km = Keymap::default();
+        assert_eq!(km.conflict(captured, Action::OpenDocument), Some(Action::Save));
+        assert_eq!(km.unbind_elsewhere(captured, Action::OpenDocument), vec![Action::Save]);
+        assert!(km.shortcuts(Action::Save).is_empty());
     }
 
     #[test]

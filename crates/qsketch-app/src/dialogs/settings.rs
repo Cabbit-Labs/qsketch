@@ -10,7 +10,6 @@ use crate::settings::{
 use crate::state::AppState;
 use crate::tools::ToolKind;
 use crate::ui::iconset;
-use crate::ui::widgets::keycap;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -28,7 +27,9 @@ pub struct SettingsDialog {
     pub filter: String,
     /// Action whose shortcut is being captured, and which slot (None = add).
     pub capturing: Option<(Action, Option<usize>)>,
-    pub conflict: Option<(Action, Shortcut, Action)>,
+    /// What the last assignment took away from another action, so the page
+    /// can say so: (shortcut, actions that lost it).
+    pub conflict: Option<(Shortcut, Vec<Action>)>,
 }
 
 impl SettingsDialog {
@@ -722,7 +723,13 @@ fn toggle_row(ui: &mut Ui, value: &mut bool, default: bool, hover: Option<&str>)
         if let Some(h) = hover {
             r.on_hover_text(h);
         }
-        if ui.add_enabled(*value != default, egui::Button::new("Reset").small()).clicked() {
+        if ui
+            .add_enabled(
+                *value != default,
+                egui::Button::new(egui::RichText::new("Reset").small()).min_size(RESET_BUTTON),
+            )
+            .clicked()
+        {
             *value = default;
         }
     });
@@ -748,7 +755,7 @@ fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>, default: 
         let v: Option<String> = if on { Some(id.to_string()) } else { None };
         ui.ctx().data_mut(|d| d.insert_temp(slot, v));
     };
-    let btn = ui.add(egui::Button::new(label).selected(armed).min_size(egui::vec2(150.0, 0.0))).on_hover_text(
+    let btn = ui.add_sized(egui::vec2(150.0, 20.0), egui::Button::new(label).selected(armed)).on_hover_text(
         "Right-click to bind right-click · left-click, then press the chord you want · Reset restores the default",
     );
     let mut captured = false;
@@ -795,11 +802,14 @@ fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>, default: 
     if !captured && btn.clicked() {
         set_armed(ui, !armed);
     }
-    if ui.small_button("Clear").clicked() {
+    if ui.add_sized(RESET_BUTTON, egui::Button::new(egui::RichText::new("Clear").small())).clicked() {
         *chord = None;
         set_armed(ui, false);
     }
-    if ui.add_enabled(*chord != default, egui::Button::new("Reset").small()).clicked() {
+    if ui
+        .add_enabled(*chord != default, egui::Button::new(egui::RichText::new("Reset").small()).min_size(RESET_BUTTON))
+        .clicked()
+    {
         *chord = default;
         set_armed(ui, false);
     }
@@ -879,6 +889,21 @@ fn pressure_curve_preview(ui: &mut Ui, gamma: f32, min: f32) {
     p.add(egui::Shape::line(pts, egui::Stroke::new(2.0, ui.visuals().selection.stroke.color)));
 }
 
+/// Fixed footprints for the shortcut editor, so nothing reflows while a
+/// binding is being edited.
+const SHORTCUT_BUTTON: egui::Vec2 = egui::vec2(96.0, 18.0);
+const RESET_BUTTON: egui::Vec2 = egui::vec2(46.0, 18.0);
+const STATUS_HEIGHT: f32 = 20.0;
+
+/// A line of fixed height that holds a transient message.
+fn status_line(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, STATUS_HEIGHT), egui::Sense::hover());
+    let mut child =
+        ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    add(&mut child);
+}
+
 fn shortcuts(ui: &mut Ui, ctx: &Context, state: &mut AppState, dlg: &mut SettingsDialog) {
     ui.heading("Keyboard Shortcuts");
     ui.add_space(4.0);
@@ -893,6 +918,24 @@ fn shortcuts(ui: &mut Ui, ctx: &Context, state: &mut AppState, dlg: &mut Setting
         ui.label(RichText::new("Click a shortcut to change it; Esc cancels, Backspace clears.").weak().small());
     });
     ui.separator();
+    // One fixed-height line for whatever the page has to say, so the list
+    // below never shifts as messages come and go.
+    status_line(ui, |ui| match (dlg.capturing, &dlg.conflict) {
+        (Some((action, _)), _) => {
+            ui.colored_label(
+                ui.visuals().selection.stroke.color,
+                format!("Press the new shortcut for \"{}\"…  (Esc cancels, Backspace clears)", action.label()),
+            );
+        }
+        (None, Some((sc, losers))) => {
+            let names: Vec<&str> = losers.iter().map(|a| a.label()).collect();
+            ui.colored_label(
+                egui::Color32::from_rgb(235, 170, 60),
+                format!("{} was taken from \"{}\".", sc.display(), names.join("\", \"")),
+            );
+        }
+        _ => {}
+    });
 
     // Key capture.
     if let Some((action, slot)) = dlg.capturing {
@@ -925,40 +968,14 @@ fn shortcuts(ui: &mut Ui, ctx: &Context, state: &mut AppState, dlg: &mut Setting
             state.keymap.set(action, v);
             dlg.capturing = None;
         } else if let Some(sc) = captured {
-            if let Some(other) = state.keymap.conflict(sc, action) {
-                dlg.conflict = Some((action, sc, other));
-            } else {
-                assign(state, action, slot, sc);
-            }
+            // The key goes where the user just put it: whoever held it loses
+            // it, rather than the assignment being refused.
+            let losers = state.keymap.unbind_elsewhere(sc, action);
+            assign(state, action, slot, sc);
+            dlg.conflict = (!losers.is_empty()).then_some((sc, losers));
             dlg.capturing = None;
         }
-        ui.colored_label(
-            ui.visuals().selection.stroke.color,
-            format!("Press the new shortcut for \"{}\"…", action.label()),
-        );
         ctx.request_repaint();
-    }
-    if let Some((action, sc, other)) = dlg.conflict {
-        ui.horizontal(|ui| {
-            ui.colored_label(
-                egui::Color32::from_rgb(235, 170, 60),
-                format!("{} is already used by \"{}\".", sc.display(), other.label()),
-            );
-            if ui.button("Reassign").clicked() {
-                let mut v = state.keymap.shortcuts(other).to_vec();
-                v.retain(|s| *s != sc);
-                state.keymap.set(other, v);
-                assign(state, action, None, sc);
-                dlg.conflict = None;
-            }
-            if ui.button("Keep both").clicked() {
-                assign(state, action, None, sc);
-                dlg.conflict = None;
-            }
-            if ui.button("Cancel").clicked() {
-                dlg.conflict = None;
-            }
-        });
     }
 
     let filter = dlg.filter.to_lowercase();
@@ -990,14 +1007,14 @@ fn shortcuts(ui: &mut Ui, ctx: &Context, state: &mut AppState, dlg: &mut Setting
                     ui.label(a.label());
                     ui.horizontal(|ui| {
                         let scs = state.keymap.shortcuts(a).to_vec();
+                        // Fixed sizes: a shortcut's text changes as it is
+                        // edited, and the row must not resize under the
+                        // pointer when it does.
                         for (i, sc) in scs.iter().enumerate() {
                             let capturing_this = dlg.capturing == Some((a, Some(i)));
                             let text = if capturing_this { "…".to_string() } else { sc.display() };
                             if ui
-                                .add(
-                                    egui::Button::new(RichText::new(text).monospace().small())
-                                        .min_size(egui::vec2(60.0, 18.0)),
-                                )
+                                .add_sized(SHORTCUT_BUTTON, egui::Button::new(RichText::new(text).monospace().small()))
                                 .clicked()
                             {
                                 to_capture = Some((a, Some(i)));
@@ -1006,7 +1023,10 @@ fn shortcuts(ui: &mut Ui, ctx: &Context, state: &mut AppState, dlg: &mut Setting
                         let capturing_new = dlg.capturing == Some((a, None));
                         let plus = if capturing_new { "…" } else { "+" };
                         if ui
-                            .add(egui::Button::new(RichText::new(plus).small()).min_size(egui::vec2(18.0, 18.0)))
+                            .add_sized(
+                                egui::vec2(20.0, SHORTCUT_BUTTON.y),
+                                egui::Button::new(RichText::new(plus).small()),
+                            )
                             .on_hover_text("Add a shortcut")
                             .clicked()
                         {
@@ -1017,9 +1037,15 @@ fn shortcuts(ui: &mut Ui, ctx: &Context, state: &mut AppState, dlg: &mut Setting
                         let d = crate::actions::Keymap::default();
                         d.shortcuts(a) == state.keymap.shortcuts(a)
                     };
-                    if is_default {
-                        keycap(ui, "");
-                    } else if ui.small_button("reset").clicked() {
+                    // Always drawn, disabled when there is nothing to undo, so
+                    // the column keeps its width.
+                    if ui
+                        .add_enabled(
+                            !is_default,
+                            egui::Button::new(RichText::new("reset").small()).min_size(RESET_BUTTON),
+                        )
+                        .clicked()
+                    {
                         to_reset = Some(a);
                     }
                     ui.end_row();

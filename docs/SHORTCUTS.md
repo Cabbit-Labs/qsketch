@@ -158,12 +158,12 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 
 | Command | Default shortcut |
 | --- | --- |
-| Move Tool | `V` |
+| Move Tool | `C` |
 | Rectangular Marquee | `M` |
 | Elliptical Marquee | `Shift+M` |
 | Lasso | `L` |
 | Magic Wand | `W` |
-| Crop | `C` |
+| Crop | — |
 | Eyedropper | `I` |
 | Brush | `B` |
 | Pencil | `N` |
@@ -173,13 +173,16 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Line | `U` |
 | Rectangle | `R` |
 | Ellipse | `Alt+U` |
-| Contour | `P` |
+| Contour | `V` |
 | Text | `T` |
 | Zoom | `Z` |
 | Hand | `H` |
 | Rotate View | `Shift+R` |
 | Quick Rotate (while held; move the pointer) | `Q` |
 | Reset rotation | `Q` `Q` (double-tap) |
+
+Assigning a key that another action already uses takes it from that action:
+the editor says which one lost it rather than refusing the change.
 
 ## Mouse
 

@@ -2,6 +2,24 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- `C` selects the Move tool and `V` the Contour tool. Crop gives up `C` and
+  ships unbound; `P`, which Contour used to hold, is free for it.
+- Assigning a shortcut another action already holds now takes the key from
+  that action and says so, instead of refusing the change. The old prompt
+  offered Reassign / Keep both / Cancel and could read as the key simply not
+  working.
+- Shortcut equality ignored which spelling of Ctrl a chord carried, so a
+  binding typed on the keyboard never compared equal to the same binding
+  parsed from settings. Conflict detection and the "is this the default?"
+  check both quietly missed because of it.
+- Preferences stops reflowing while it is being used: the shortcut and chord
+  buttons keep a fixed footprint as their text changes, every row's reset
+  button is always drawn (disabled when there is nothing to undo) rather than
+  appearing and disappearing, and the shortcut editor's messages sit on a
+  reserved line instead of pushing the list down.
+
 ## 0.17.9 — 2026-09-16
 
 - Only one mouse chord can be armed at a time. Clicking a second chord button
