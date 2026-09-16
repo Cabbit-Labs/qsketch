@@ -2,6 +2,19 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Only one mouse chord can be armed at a time. Clicking a second chord button
+  left the first waiting for input too, so several rows sat on "Press a
+  chord…" at once and it was anyone's guess which would take the next press.
+- An armed chord button now takes the next mouse press wherever it lands,
+  instead of only on the button. A chord you have to aim at the button is one
+  you cannot bind when aiming is the thing that went wrong.
+- Every row of Preferences ▸ Mouse has a Reset that puts that setting back to
+  what it ships as, so a binding that stops working can be recovered without
+  editing the settings file. Reset is greyed out when the value is already the
+  default.
+
 ## 0.17.8 — 2026-09-16
 
 - `Alt` picks a color again. Moving the pick chord to right-click left `Alt` +

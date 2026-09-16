@@ -196,7 +196,8 @@ Right-click picks a color out of the box, so the quick brush settings popup
 that used to own that button is off by default. Both are rebindable in
 Preferences ▸ Mouse: bind the pick chords elsewhere and the popup can have
 right-click back. To bind a chord, right-click or middle-click the button for
-that button on its own, or left-click it and then press the chord you want. The loupe's size and pixel count live in
+that button on its own, or left-click it and then press the chord you want
+anywhere in the dialog. Each row has a Reset that restores its default. The loupe's size and pixel count live in
 Preferences ▸ Canvas.
 
 ## Shapes

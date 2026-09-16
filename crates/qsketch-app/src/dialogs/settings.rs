@@ -675,58 +675,84 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
 }
 
 fn mouse(ui: &mut Ui, state: &mut AppState) {
+    let d = crate::settings::MouseSettings::default();
     let m = &mut state.settings.mouse;
     ui.heading("Mouse");
     ui.add_space(6.0);
     egui::Grid::new("mouse_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
         ui.label("Middle-button drag pans the view");
-        ui.checkbox(&mut m.middle_drag_pans, "");
+        toggle_row(ui, &mut m.middle_drag_pans, d.middle_drag_pans, None);
         ui.end_row();
         ui.label("Right-click opens quick brush settings");
-        ui.checkbox(&mut m.right_click_brush_popup, "");
+        toggle_row(ui, &mut m.right_click_brush_popup, d.right_click_brush_popup, None);
         ui.end_row();
         ui.label("Alt+click picks a color");
-        ui.checkbox(&mut m.alt_click_picks, "")
-            .on_hover_text("Alt takes the foreground color, Alt+right-click the background, with any tool that paints a color. Independent of the chords below.");
+        toggle_row(
+            ui,
+            &mut m.alt_click_picks,
+            d.alt_click_picks,
+            Some(
+                "Alt takes the foreground color, Alt+right-click the background, with any tool that paints a color. Independent of the chords below.",
+            ),
+        );
         ui.end_row();
         ui.label("Pick foreground color");
-        chord_binder(ui, "pick_fg", &mut m.pick_foreground);
+        chord_binder(ui, "pick_fg", &mut m.pick_foreground, d.pick_foreground);
         ui.end_row();
         ui.label("Pick background color");
-        chord_binder(ui, "pick_bg", &mut m.pick_background);
+        chord_binder(ui, "pick_bg", &mut m.pick_background, d.pick_background);
         ui.end_row();
         ui.label("Quick move (drag as the Move tool)");
-        chord_binder(ui, "quick_move", &mut m.quick_move);
+        chord_binder(ui, "quick_move", &mut m.quick_move, d.quick_move);
         ui.end_row();
     });
     ui.add_space(8.0);
     ui.label(
         RichText::new(
-            "Pick chords work with every tool that paints a color (brush, pencil, shapes, fill, gradient, text); holding a chord's modifiers shows the eyedropper, and holding the button shows a zoomed loupe. Right-click picks the foreground color by default; binding a pick chord to a bare right-click takes that button away from the quick brush settings popup above, which is why the popup is off out of the box. Quick move drags the active layer, or the selected pixels when there is a selection, with any tool; holding its modifiers shows the Move cursor. Keyboard chords (marquee on G, Ctrl+R rotate, Shift+X flip, Ctrl+V paste…) are edited under Keyboard Shortcuts.",
+            "Pick chords work with every tool that paints a color (brush, pencil, shapes, fill, gradient, text); holding a chord's modifiers shows the eyedropper, and holding the button shows a zoomed loupe. Alt picks a color whatever the chords say unless that is turned off above. Right-click picks the foreground color by default; binding a pick chord to a bare right-click takes that button away from the quick brush settings popup above, which is why the popup is off out of the box. Quick move drags the active layer, or the selected pixels when there is a selection, with any tool; holding its modifiers shows the Move cursor. Reset puts a setting back to what it ships as. Keyboard chords (marquee on G, Ctrl+R rotate, Shift+X flip, Ctrl+V paste…) are edited under Keyboard Shortcuts.",
         )
         .weak(),
     );
 }
 
+/// A checkbox with the Reset that every row on this page carries.
+fn toggle_row(ui: &mut Ui, value: &mut bool, default: bool, hover: Option<&str>) {
+    ui.horizontal(|ui| {
+        let r = ui.checkbox(value, "");
+        if let Some(h) = hover {
+            r.on_hover_text(h);
+        }
+        if ui.add_enabled(*value != default, egui::Button::new("Reset").small()).clicked() {
+            *value = default;
+        }
+    });
+}
+
 /// A button showing a mouse chord. Right-click (or middle-click) it to bind
-/// that button straight away; left-click arms it, and then any press with the
-/// modifiers you want is taken, on the button or anywhere else in the dialog.
+/// that button straight away; left-click arms it, and then the next mouse
+/// press anywhere in the dialog is taken, with whatever modifiers are held.
 /// Backspace/Delete clears, Escape cancels. A bare left click can't be bound:
-/// it's how every tool draws, so it just disarms.
-fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>) {
-    let armed_id = ui.id().with(("chord_armed", id));
-    let mut armed = ui.data(|d| d.get_temp::<bool>(armed_id)).unwrap_or(false);
+/// it's how every tool draws, so it just disarms. Only one binder is ever
+/// armed, and Reset puts the chord back to what it ships as.
+fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>, default: Option<MouseChord>) {
+    // One shared slot, so arming a binder disarms whichever was armed before.
+    let slot = egui::Id::new("chord_armed_binder");
+    let armed_now: Option<String> = ui.ctx().data(|d| d.get_temp(slot)).unwrap_or_default();
+    let mut armed = armed_now.as_deref() == Some(id);
     let label = if armed {
         "Press a chord…".to_string()
     } else {
         chord.map(|c| c.label()).unwrap_or_else(|| "—".to_string())
     };
-    let btn = ui
-        .add(egui::Button::new(label).selected(armed).min_size(egui::vec2(150.0, 0.0)))
-        .on_hover_text("Right-click to bind right-click · left-click, then press the chord you want");
+    let set_armed = |ui: &Ui, on: bool| {
+        let v: Option<String> = if on { Some(id.to_string()) } else { None };
+        ui.ctx().data_mut(|d| d.insert_temp(slot, v));
+    };
+    let btn = ui.add(egui::Button::new(label).selected(armed).min_size(egui::vec2(150.0, 0.0))).on_hover_text(
+        "Right-click to bind right-click · left-click, then press the chord you want · Reset restores the default",
+    );
     let mut captured = false;
     if armed {
-        let hovered = btn.hovered();
         let events = ui.input(|i| i.events.clone());
         for ev in events {
             match ev {
@@ -739,12 +765,10 @@ fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>) {
                     armed = false;
                     captured = true;
                 }
-                // A left press has to land on the button (it is also how the
-                // rest of the dialog is used); any other button counts
-                // wherever it is pressed, so the chord needn't be aimed.
-                egui::Event::PointerButton { pressed: true, button, modifiers, .. }
-                    if hovered || button != egui::PointerButton::Primary =>
-                {
+                // Any press ends the arming, wherever it lands: a chord that
+                // has to be aimed at the button is a chord you can't bind if
+                // the aiming is what went wrong.
+                egui::Event::PointerButton { pressed: true, button, modifiers, .. } => {
                     if let Some(c) = MouseChord::from_egui(modifiers, button) {
                         if c.has_modifiers() || c.button != crate::settings::MouseButton::Left {
                             *chord = Some(c);
@@ -756,6 +780,9 @@ fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>) {
                 _ => {}
             }
         }
+        if captured {
+            set_armed(ui, false);
+        }
     } else if btn.secondary_clicked() || btn.middle_clicked() {
         // Binding the button you just pressed is what that press means here.
         let button = if btn.secondary_clicked() { egui::PointerButton::Secondary } else { egui::PointerButton::Middle };
@@ -766,11 +793,15 @@ fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>) {
         captured = true;
     }
     if !captured && btn.clicked() {
-        armed = !armed;
+        set_armed(ui, !armed);
     }
-    ui.data_mut(|d| d.insert_temp(armed_id, armed));
     if ui.small_button("Clear").clicked() {
         *chord = None;
+        set_armed(ui, false);
+    }
+    if ui.add_enabled(*chord != default, egui::Button::new("Reset").small()).clicked() {
+        *chord = default;
+        set_armed(ui, false);
     }
 }
 
