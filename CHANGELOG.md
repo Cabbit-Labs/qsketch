@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.16.0 — 2026-09-16
 
 - Aseprite-style selection editing. A selection now carries the eight
   transform handles: drag inside it to move the selected pixels (no Ctrl
