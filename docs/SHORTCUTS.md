@@ -105,6 +105,7 @@ A selection carries eight handles. With the Move tool or any selection tool:
 | Rotate | drag just outside the box (`Shift` snaps to 15°) |
 | Constrain the move to one axis | `Shift` while dragging |
 | Apply | `Enter`, or double-click inside the box |
+| Scale a box bigger than the window | its handles park on the canvas edge |
 | Cancel | `Esc` |
 
 `Shift` and `Alt` with a selection tool still add to and subtract from the

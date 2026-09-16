@@ -391,8 +391,14 @@ impl FloatingPaste {
         self.dirty = true;
     }
 
-    /// Screen-space grab points for hit-testing and drawing.
+    /// Screen-space grab points for hit-testing and drawing. Points that fall
+    /// outside the canvas view are parked on its edge (see `clamp_into_view`).
     pub fn grabs(&self, view: &crate::canvas::view::CanvasView) -> Vec<(Grab, Pos2)> {
+        let vp = view.viewport;
+        self.raw_grabs(view).into_iter().map(|(g, p)| (g, clamp_into_view(p, vp))).collect()
+    }
+
+    fn raw_grabs(&self, view: &crate::canvas::view::CanvasView) -> Vec<(Grab, Pos2)> {
         match self.mode {
             Mode::Freeform | Mode::Resize | Mode::Rotate | Mode::Deform => {
                 let q = self.corners();
@@ -582,10 +588,22 @@ fn selection_grabs(state: &AppState, doc_id: DocId) -> Option<Vec<(Handle, Pos2)
                 let (u, v) = hd.uv();
                 let top = q[0].lerp(q[1], u);
                 let bot = q[3].lerp(q[2], u);
-                (*hd, view.doc_to_screen(top.lerp(bot, v)))
+                (*hd, clamp_into_view(view.doc_to_screen(top.lerp(bot, v)), view.viewport))
             })
             .collect(),
     )
+}
+
+/// Keep a grab point reachable: a transform box scaled past the window would
+/// otherwise put every handle off-screen, leaving nothing to drag but the box
+/// itself. Every drag is relative to where the pointer went down, so a parked
+/// handle scales exactly like the real one.
+fn clamp_into_view(p: Pos2, vp: Rect) -> Pos2 {
+    let inner = vp.shrink(9.0);
+    if !inner.is_positive() || !p.x.is_finite() || !p.y.is_finite() {
+        return p;
+    }
+    egui::pos2(p.x.clamp(inner.left(), inner.right()), p.y.clamp(inner.top(), inner.bottom()))
 }
 
 fn selection_handle_at(state: &AppState, doc_id: DocId, pos: Pos2) -> Option<Handle> {

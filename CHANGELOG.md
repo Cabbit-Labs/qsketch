@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Transform handles stay reachable when the box is scaled past the window.
+  Once a Free Transform or a selection grew beyond the visible canvas every
+  handle sat off-screen, so a drag could only move the box and there was no
+  way to scale it back or rotate it: the handles felt like they had stopped
+  working. Handles that fall outside the view now park on its edge and drag
+  the same edge or corner they always did. Nothing changes for a box that
+  fits on screen.
+
 ## 0.17.3 — 2026-09-16
 
 - The color picker loupe gained a precision crosshair on the pointer itself,
