@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- One cursor while picking a color. The system cursor stayed under the loupe
+  alongside the precision crosshair, which showed as two pointers once the
+  loupe shrank and moved up; it is hidden for as long as the loupe is up.
+- The loupe sits closer to the pointer again, since it no longer needs the
+  clearance its old size demanded.
+
 ## 0.17.6 — 2026-09-16
 
 - Scaling past 10000% no longer fights itself. The width and height fields

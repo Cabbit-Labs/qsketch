@@ -303,7 +303,11 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         state.hover_color = state
             .hover_doc_pos
             .and_then(|p| tools::sample_color_public(state, doc_id, p.x.floor() as i32, p.y.floor() as i32, true));
-        let cursor = if state.temp_tool.is_some_and(|(t, _)| t == ToolKind::Hand) && capturing {
+        let cursor = if state.pick_preview.is_some() {
+            // The loupe draws its own precision crosshair; a system cursor on
+            // top of it would read as two pointers.
+            egui::CursorIcon::None
+        } else if state.temp_tool.is_some_and(|(t, _)| t == ToolKind::Hand) && capturing {
             egui::CursorIcon::Grabbing
         } else if let Some(c) = tools::floating::cursor(state, doc_id, hover_pos)
             .filter(|_| !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView))

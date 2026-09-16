@@ -205,10 +205,10 @@ pub fn draw_pick_loupe(state: &AppState, doc_id: DocId, painter: &egui::Painter)
     let merged = state.tool_opts.eyedropper_sample_merged;
     let (px, py) = (pick.doc_pos.x.floor() as i32, pick.doc_pos.y.floor() as i32);
 
-    // Sit clear above the pointer, flipping below when there is no room; the
-    // gap leaves the crosshair and the pixel under it in plain view.
+    // Sit just above the pointer, flipping below when there is no room; the
+    // gap clears the crosshair and the pixel under it.
     let vp = entry.view.viewport;
-    let gap = radius + 34.0;
+    let gap = radius + 20.0;
     let mut c = egui::pos2(pick.screen.x, pick.screen.y - gap);
     let mut flipped = false;
     if c.y - radius < vp.top() {
