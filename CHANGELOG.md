@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- The color picker loupe gained a precision crosshair on the pointer itself,
+  so the pixel being sampled is marked on the canvas as well as shown in the
+  magnifier. The loupe is about a third smaller, sits higher above the
+  pointer, and its hex readout moved to the far side of the circle to keep the
+  crosshair clear. An existing loupe size carries over to the new default
+  unless it was resized by hand.
+
 ## 0.17.2 — 2026-09-16
 
 - Right-click now picks a color on existing installs too. The new binding only

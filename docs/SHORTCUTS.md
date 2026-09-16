@@ -184,7 +184,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 
 | Action | Default |
 | --- | --- |
-| Pick the foreground color (hold for a zoomed loupe) | right-click |
+| Pick the foreground color (hold for a zoomed loupe and crosshair) | right-click |
 | Pick the background color | `Alt` + right-click |
 | Pan the view | middle-drag |
 | Move the layer / selected pixels with any tool | `Ctrl` + drag |

@@ -205,12 +205,15 @@ pub fn draw_pick_loupe(state: &AppState, doc_id: DocId, painter: &egui::Painter)
     let merged = state.tool_opts.eyedropper_sample_merged;
     let (px, py) = (pick.doc_pos.x.floor() as i32, pick.doc_pos.y.floor() as i32);
 
-    // Sit above the pointer, flipping below when there is no room.
+    // Sit clear above the pointer, flipping below when there is no room; the
+    // gap leaves the crosshair and the pixel under it in plain view.
     let vp = entry.view.viewport;
-    let gap = radius + 22.0;
+    let gap = radius + 34.0;
     let mut c = egui::pos2(pick.screen.x, pick.screen.y - gap);
+    let mut flipped = false;
     if c.y - radius < vp.top() {
         c.y = pick.screen.y + gap;
+        flipped = true;
     }
     c.x = c.x.clamp(vp.left() + radius + 2.0, (vp.right() - radius - 2.0).max(vp.left() + radius + 2.0));
     c.y = c.y.clamp(vp.top() + radius + 2.0, (vp.bottom() - radius - 2.0).max(vp.top() + radius + 2.0));
@@ -253,6 +256,27 @@ pub fn draw_pick_loupe(state: &AppState, doc_id: DocId, painter: &egui::Painter)
     painter.circle_stroke(c, radius + cell * 0.6, egui::Stroke::new(cell * 1.4, c8));
     painter.circle_stroke(c, radius + cell * 1.3, egui::Stroke::new(1.5, egui::Color32::from_black_alpha(190)));
     painter.circle_stroke(c, radius, egui::Stroke::new(1.0, egui::Color32::from_black_alpha(90)));
+    // Precision crosshair on the pointer itself: the loupe shows which pixel,
+    // this shows exactly where it is on the canvas.
+    let (arm, hole) = (7.0, 2.0);
+    for (a, b) in [
+        (egui::vec2(-arm, 0.0), egui::vec2(-hole, 0.0)),
+        (egui::vec2(hole, 0.0), egui::vec2(arm, 0.0)),
+        (egui::vec2(0.0, -arm), egui::vec2(0.0, -hole)),
+        (egui::vec2(0.0, hole), egui::vec2(0.0, arm)),
+    ] {
+        painter.line_segment(
+            [pick.screen + a, pick.screen + b],
+            egui::Stroke::new(3.0, egui::Color32::from_black_alpha(160)),
+        );
+        painter.line_segment([pick.screen + a, pick.screen + b], egui::Stroke::new(1.0, egui::Color32::WHITE));
+    }
+    painter.rect_stroke(
+        egui::Rect::from_center_size(pick.screen, egui::Vec2::splat(3.0)),
+        0.0,
+        egui::Stroke::new(1.0, egui::Color32::from_black_alpha(160)),
+        egui::StrokeKind::Outside,
+    );
     // Hex readout, and which color is being set.
     let label = format!(
         "{}  #{:02X}{:02X}{:02X}",
@@ -261,7 +285,9 @@ pub fn draw_pick_loupe(state: &AppState, doc_id: DocId, painter: &egui::Painter)
         pick.color.g,
         pick.color.b
     );
-    let at = egui::pos2(c.x, c.y + radius + cell * 1.3 + 10.0);
+    // On the far side from the pointer, so it never sits on the crosshair.
+    let off = radius + cell * 1.3 + 11.0;
+    let at = egui::pos2(c.x, if flipped { c.y + off } else { c.y - off });
     let galley = painter.layout_no_wrap(label, egui::FontId::proportional(12.0), egui::Color32::WHITE);
     let pill = egui::Rect::from_center_size(at, galley.size() + egui::vec2(10.0, 4.0));
     painter.rect_filled(pill, 4.0, egui::Color32::from_black_alpha(190));

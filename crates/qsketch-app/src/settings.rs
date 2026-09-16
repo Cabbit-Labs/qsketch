@@ -491,7 +491,7 @@ impl Default for CanvasSettings {
             pan_inertia: true,
             flash_selected_layer: true,
             pick_loupe: true,
-            pick_loupe_size: 132.0,
+            pick_loupe_size: 86.0,
             pick_loupe_pixels: 13,
         }
     }
@@ -792,8 +792,8 @@ pub struct Settings {
     pub schema: u32,
 }
 
-/// Current settings schema. 1 = right-click picks a color.
-pub const SCHEMA: u32 = 1;
+/// Current settings schema. 1 = right-click picks a color; 2 = smaller loupe.
+pub const SCHEMA: u32 = 2;
 
 impl Settings {
     pub fn config_dir() -> Option<PathBuf> {
@@ -844,10 +844,14 @@ impl Settings {
         // 0 → 1: right-click picks the foreground color, which takes the button
         // from the quick brush popup.
         let old_pick_fg = MouseChord { ctrl: false, shift: false, alt: true, button: MouseButton::Left };
-        if self.mouse.pick_foreground == Some(old_pick_fg) {
+        if self.schema < 1 && self.mouse.pick_foreground == Some(old_pick_fg) {
             self.mouse.pick_foreground =
                 Some(MouseChord { ctrl: false, shift: false, alt: false, button: MouseButton::Right });
             self.mouse.right_click_brush_popup = false;
+        }
+        // 1 → 2: the pick loupe shrank; carry it over unless resized by hand.
+        if self.schema < 2 && (self.canvas.pick_loupe_size - 132.0).abs() < 0.5 {
+            self.canvas.pick_loupe_size = 86.0;
         }
         self.schema = SCHEMA;
     }
