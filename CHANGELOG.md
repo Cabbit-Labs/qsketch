@@ -2,6 +2,20 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- `Alt` picks a color again. Moving the pick chord to right-click left `Alt` +
+  click bound to nothing, so the reflex every paint app shares stopped
+  working and the status bar still advertised it. `Alt` now picks the
+  foreground and `Alt` + right-click the background with any color tool,
+  independent of the chords, and holding `Alt` shows the eyedropper. There is
+  a toggle for it in Preferences ▸ Mouse.
+- Binding a mouse chord is easier: right-click or middle-click a chord button
+  to bind that button on its own, and once a button is armed a non-left press
+  counts anywhere in the dialog instead of having to land on the button.
+- The brush status-bar hint said right-click opened the brush settings, which
+  has not been true since right-click became the color picker.
+
 ## 0.17.7 — 2026-09-16
 
 - One cursor while picking a color. The system cursor stayed under the loupe

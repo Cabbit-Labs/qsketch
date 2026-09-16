@@ -185,15 +185,18 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 
 | Action | Default |
 | --- | --- |
-| Pick the foreground color (hold for a zoomed loupe and crosshair) | right-click |
+| Pick the foreground color (hold for a zoomed loupe and crosshair) | right-click, or `Alt` + click |
 | Pick the background color | `Alt` + right-click |
 | Pan the view | middle-drag |
 | Move the layer / selected pixels with any tool | `Ctrl` + drag |
 
+`Alt` with any color tool picks a color whatever the chords say, which is the
+Photoshop reflex; turn it off in Preferences ▸ Mouse if it gets in the way.
 Right-click picks a color out of the box, so the quick brush settings popup
 that used to own that button is off by default. Both are rebindable in
-Preferences ▸ Mouse: bind the pick chords elsewhere (`Alt` + click, say) and
-the popup can have right-click back. The loupe's size and pixel count live in
+Preferences ▸ Mouse: bind the pick chords elsewhere and the popup can have
+right-click back. To bind a chord, right-click or middle-click the button for
+that button on its own, or left-click it and then press the chord you want. The loupe's size and pixel count live in
 Preferences ▸ Canvas.
 
 ## Shapes

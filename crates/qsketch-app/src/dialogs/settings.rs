@@ -685,6 +685,10 @@ fn mouse(ui: &mut Ui, state: &mut AppState) {
         ui.label("Right-click opens quick brush settings");
         ui.checkbox(&mut m.right_click_brush_popup, "");
         ui.end_row();
+        ui.label("Alt+click picks a color");
+        ui.checkbox(&mut m.alt_click_picks, "")
+            .on_hover_text("Alt takes the foreground color, Alt+right-click the background, with any tool that paints a color. Independent of the chords below.");
+        ui.end_row();
         ui.label("Pick foreground color");
         chord_binder(ui, "pick_fg", &mut m.pick_foreground);
         ui.end_row();
@@ -704,10 +708,11 @@ fn mouse(ui: &mut Ui, state: &mut AppState) {
     );
 }
 
-/// A button showing a mouse chord. Click to arm, then press the new chord on
-/// it (a mouse button with whatever modifiers are held). Backspace/Delete
-/// clears, Escape cancels. A bare left click can't be bound: it's how every
-/// tool draws, so it just disarms.
+/// A button showing a mouse chord. Right-click (or middle-click) it to bind
+/// that button straight away; left-click arms it, and then any press with the
+/// modifiers you want is taken, on the button or anywhere else in the dialog.
+/// Backspace/Delete clears, Escape cancels. A bare left click can't be bound:
+/// it's how every tool draws, so it just disarms.
 fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>) {
     let armed_id = ui.id().with(("chord_armed", id));
     let mut armed = ui.data(|d| d.get_temp::<bool>(armed_id)).unwrap_or(false);
@@ -716,7 +721,9 @@ fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>) {
     } else {
         chord.map(|c| c.label()).unwrap_or_else(|| "—".to_string())
     };
-    let btn = ui.add(egui::Button::new(label).selected(armed).min_size(egui::vec2(150.0, 0.0)));
+    let btn = ui
+        .add(egui::Button::new(label).selected(armed).min_size(egui::vec2(150.0, 0.0)))
+        .on_hover_text("Right-click to bind right-click · left-click, then press the chord you want");
     let mut captured = false;
     if armed {
         let hovered = btn.hovered();
@@ -732,7 +739,12 @@ fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>) {
                     armed = false;
                     captured = true;
                 }
-                egui::Event::PointerButton { pressed: true, button, modifiers, .. } if hovered => {
+                // A left press has to land on the button (it is also how the
+                // rest of the dialog is used); any other button counts
+                // wherever it is pressed, so the chord needn't be aimed.
+                egui::Event::PointerButton { pressed: true, button, modifiers, .. }
+                    if hovered || button != egui::PointerButton::Primary =>
+                {
                     if let Some(c) = MouseChord::from_egui(modifiers, button) {
                         if c.has_modifiers() || c.button != crate::settings::MouseButton::Left {
                             *chord = Some(c);
@@ -744,8 +756,16 @@ fn chord_binder(ui: &mut Ui, id: &str, chord: &mut Option<MouseChord>) {
                 _ => {}
             }
         }
+    } else if btn.secondary_clicked() || btn.middle_clicked() {
+        // Binding the button you just pressed is what that press means here.
+        let button = if btn.secondary_clicked() { egui::PointerButton::Secondary } else { egui::PointerButton::Middle };
+        let mods = ui.input(|i| i.modifiers);
+        if let Some(c) = MouseChord::from_egui(mods, button) {
+            *chord = Some(c);
+        }
+        captured = true;
     }
-    if !captured && (btn.clicked() || btn.secondary_clicked() || btn.middle_clicked()) {
+    if !captured && btn.clicked() {
         armed = !armed;
     }
     ui.data_mut(|d| d.insert_temp(armed_id, armed));

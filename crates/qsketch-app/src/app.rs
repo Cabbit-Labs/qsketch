@@ -972,7 +972,7 @@ impl QSketchApp {
                 let tool = self.state.effective_tool();
                 let hint = match tool {
                     ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => {
-                        "Shift+click: straight line · [ ]: size · Alt+click: pick · right-click: brush · middle-drag: pan"
+                        "Shift+click: straight line · [ ]: size · Alt or right-click: pick · middle-drag: pan"
                     }
                     ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso => {
                         "Shift: add · Alt: subtract · click: deselect"

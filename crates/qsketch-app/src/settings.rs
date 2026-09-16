@@ -589,6 +589,10 @@ pub struct MouseSettings {
     /// Chord that drags the layer (or the selected pixels) as the Move tool
     /// with any tool active.
     pub quick_move: Option<MouseChord>,
+    /// Alt with a color tool picks a color, on top of whatever the chords
+    /// below say: Alt+left takes the foreground, Alt+right the background.
+    /// This is the Photoshop reflex, and holding Alt shows the eyedropper.
+    pub alt_click_picks: bool,
 }
 
 impl Default for MouseSettings {
@@ -601,6 +605,7 @@ impl Default for MouseSettings {
             pick_foreground: Some(MouseChord { ctrl: false, shift: false, alt: false, button: MouseButton::Right }),
             pick_background: Some(MouseChord { button: MouseButton::Right, ..MouseChord::default() }),
             quick_move: Some(MouseChord { ctrl: true, shift: false, alt: false, button: MouseButton::Left }),
+            alt_click_picks: true,
         }
     }
 }
@@ -609,10 +614,23 @@ impl MouseSettings {
     /// A pick chord's modifiers are held (a chord without modifiers can't be
     /// signalled ahead of the click, so it never puts the eyedropper up).
     pub fn pick_modifiers_held(&self, mods: egui::Modifiers) -> bool {
+        if self.alt_only(mods) {
+            return true;
+        }
         [self.pick_foreground, self.pick_background]
             .into_iter()
             .flatten()
             .any(|c| c.has_modifiers() && c.modifiers_held(mods))
+    }
+
+    /// Alt alone is held and it means "pick a color" (see `alt_click_picks`).
+    /// A quick-move chord bound to Alt keeps Alt for itself.
+    fn alt_only(&self, mods: egui::Modifiers) -> bool {
+        self.alt_click_picks
+            && mods.alt
+            && !mods.shift
+            && !(mods.command || mods.ctrl || mods.mac_cmd)
+            && !self.quick_move.is_some_and(|c| c.alt && !c.ctrl && !c.shift)
     }
 
     /// The quick-move chord's modifiers are held (a chord without modifiers
@@ -632,6 +650,12 @@ impl MouseSettings {
             Some(PickTarget::Foreground)
         } else if self.pick_background.is_some_and(|c| c.matches(mods, button)) {
             Some(PickTarget::Background)
+        } else if self.alt_only(mods) {
+            match button {
+                egui::PointerButton::Primary => Some(PickTarget::Foreground),
+                egui::PointerButton::Secondary => Some(PickTarget::Background),
+                _ => None,
+            }
         } else {
             None
         }
