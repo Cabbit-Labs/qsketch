@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.17.2 — 2026-09-16
 
 - Right-click now picks a color on existing installs too. The new binding only
   reached fresh settings files, so an upgrade kept the old Alt+click pick chord
