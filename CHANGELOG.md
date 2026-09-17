@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.23.0 — 2026-09-17
 
 - View ▸ Grid: an Aseprite-style tile grid over the canvas, every 4, 8, 16,
   32, 64 or a custom number of pixels, toggled with Ctrl+Shift+G (Ungroup
