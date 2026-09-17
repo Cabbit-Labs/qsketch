@@ -2,6 +2,25 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.21.0 — 2026-09-17
+
+- Edits still in flight can no longer be caught out by a change to the layer
+  list. A paste or transform box, a text placement and a stroke each pointed
+  at their layer by position and drew their preview into the working image;
+  adding, duplicating, deleting, grouping, merging or reordering layers (or
+  Cut, Select All, Crop, a nudge, a dialog) while one was up would aim it at
+  the wrong layer — a deleted layer under a text placement was a crash — and
+  snapshot the preview into history, where Esc could no longer take it back.
+  Every such action now lands the pending edit first, the way filters already
+  did; a History-panel jump discards it, like Undo. Layer Properties keeps its
+  layer by id, so it can no longer rename a different layer.
+- Hovering a compact button (Preferences ▸ "Reset all to defaults", the
+  Navigator's Fit / 100% / 200%, History's Clear…) no longer nudges the
+  content under it. egui's small button drops its vertical padding but still
+  adds the hover outline to its frame, so it grew two pixels on hover.
+- The transform box remembers the Smooth / Pixel choice across transforms
+  and restarts.
+
 ## 0.20.0 — 2026-09-17
 
 - The pencil shows the pixels it is about to paint. Instead of a circle that
