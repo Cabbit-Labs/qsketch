@@ -349,7 +349,9 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
             if r.clicked() {
                 b.pressure_opacity = !b.pressure_opacity;
             }
-            if tool == ToolKind::Pencil {
+            // The pencil's pixel switch, and the eraser's too: with it off the
+            // eraser takes pixels away the way the pencil puts them down.
+            if matches!(tool, ToolKind::Pencil | ToolKind::Eraser) {
                 let r = icon_button(ui, icons::WAVE_SINE, "Anti-aliasing", 22.0, b.antialias);
                 if r.clicked() {
                     b.antialias = !b.antialias;
@@ -375,7 +377,7 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                         b.spacing = sp / 100.0;
                     }
                 });
-                if tool != ToolKind::Pencil {
+                if !matches!(tool, ToolKind::Pencil | ToolKind::Eraser) {
                     ui.checkbox(&mut b.antialias, "Anti-aliasing");
                 }
                 if tool.is_paint() && b.stabilizer == qsketch_core::StabilizerMode::Rope {

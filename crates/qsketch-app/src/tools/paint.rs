@@ -291,6 +291,16 @@ pub fn handle_stroke(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: Ca
 
 /// Feed evenly spaced samples along a straight segment.
 pub(super) fn feed_line(state: &mut AppState, doc_id: DocId, a: Pt, b: Pt, pressure: f32) {
+    // A hard round tip walks the pixel grid itself (`StrokeEngine::extend`);
+    // fed in half-pixel slices it would round each slice separately and turn
+    // a diagonal back into a staircase of corners. Give it the endpoints.
+    let hard = matches!(&state.session, Some(ToolSession::Stroke { engine, .. })
+        if !engine.settings().antialias && engine.settings().is_round());
+    if hard {
+        feed(state, doc_id, StrokeSample { pos: a, pressure });
+        feed(state, doc_id, StrokeSample { pos: b, pressure });
+        return;
+    }
     let len = a.dist(b);
     let steps = (len / 0.5).ceil().max(1.0) as usize;
     for i in 0..=steps {

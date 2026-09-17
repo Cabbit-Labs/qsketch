@@ -425,6 +425,7 @@ impl BrushSettings {
             return None;
         }
         let r = self.dab_radius(pressure);
+        let center = if self.antialias { center } else { pixel_snap(center, r) };
         // What one dab lays down: coverage × opacity. A pixel counts as marked
         // once that survives rounding to 8-bit alpha — the rim of a soft tip
         // fades below it well before the falloff reaches zero.
@@ -633,6 +634,24 @@ impl StrokeEngine {
             return dirty;
         }
         self.direction = (pos.y - last.pos.y).atan2(pos.x - last.pos.x);
+        // A hard round tip walks the pixel grid one step at a time, so a
+        // diagonal is a thin 8-connected line rather than a staircase of
+        // doubled corners; sub-pixel spacing would only re-stamp the same
+        // pixels.
+        if !self.settings.antialias && self.settings.is_round() {
+            let p0 = pixel_snap(last.pos, self.radius_for(last.pressure));
+            let p1 = pixel_snap(pos, self.radius_for(pressure));
+            let (dx, dy) = (p1.x - p0.x, p1.y - p0.y);
+            let n = dx.abs().max(dy.abs()).round() as i32;
+            for k in 1..=n {
+                let t = k as f32 / n as f32;
+                let p = Pt::new(p0.x + (dx * t).round(), p0.y + (dy * t).round());
+                let pr = last.pressure + (pressure - last.pressure) * t;
+                dirty = dirty.union(&self.dab_group(raster, p, pr));
+            }
+            self.last = Some(cur);
+            return dirty;
+        }
         let mut travelled = self.until_next_dab;
         while travelled <= dist {
             let t = travelled / dist;
@@ -775,6 +794,7 @@ impl StrokeEngine {
         }
         let dab_color = self.color_for(pressure);
         let r = shape.radius;
+        let center = if !self.settings.antialias && self.settings.is_round() { pixel_snap(center, r) } else { center };
         // Bounding radius: rotation of an r × r·roundness ellipse stays within r.
         let rect =
             IRect::from_f32_bounds(center.x - r - 1.0, center.y - r - 1.0, center.x + r + 1.0, center.y + r + 1.0)
@@ -966,6 +986,18 @@ fn hash_pixel(x: i32, y: i32, seed: u64) -> f32 {
     (h >> 40) as f32 / (1u64 << 24) as f32
 }
 
+/// Where a hard-edged dab of radius `r` actually lands: on the pixel grid.
+/// An odd diameter centers on the pixel under the pointer, an even one on the
+/// corner between pixels, so a 1 px pencil always fills exactly the pixel it
+/// is over (at a corner nothing is within 0.5 of the pointer otherwise) and a
+/// 2 px one fills a 2×2 square rather than a plus.
+#[inline]
+pub fn pixel_snap(center: Pt, r: f32) -> Pt {
+    let odd = (2.0 * r).round() as i64 % 2 == 1;
+    let snap = |v: f32| if odd { v.floor() + 0.5 } else { v.round() };
+    Pt::new(snap(center.x), snap(center.y))
+}
+
 /// Dab intensity at `dist` from the center for radius `r`.
 #[inline]
 fn falloff(dist: f32, r: f32, hardness: f32, antialias: bool) -> f32 {
@@ -1107,6 +1139,52 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A 1 px pencil over the corner between four pixels still paints one
+    /// pixel (the one under the pointer), and the preview names the same one.
+    #[test]
+    fn pixel_pencil_never_misses() {
+        for (ox, oy) in [(0.0, 0.0), (0.999, 0.001), (0.5, 0.0), (0.25, 0.75)] {
+            let l = layer();
+            let mut raster = l.raster.clone();
+            let s = BrushSettings { size: 1.0, antialias: false, pressure_size: false, ..Default::default() };
+            let at = Pt::new(50.0 + ox, 50.0 + oy);
+            let spans = s.dab_spans(at, 1.0).unwrap();
+            assert_eq!(spans.bounds(), IRect::new(50, 50, 1, 1), "preview at {ox},{oy}");
+            let mut e = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
+            e.extend(&mut raster, StrokeSample { pos: at, pressure: 1.0 });
+            e.finish(&mut raster);
+            assert_eq!(raster.bounds(), Some(IRect::new(50, 50, 1, 1)), "paint at {ox},{oy}");
+        }
+        // Even sizes land on the corner: a 2 px pencil is a 2×2 square.
+        let s = BrushSettings { size: 2.0, antialias: false, pressure_size: false, ..Default::default() };
+        assert_eq!(s.dab_spans(Pt::new(50.3, 50.7), 1.0).unwrap().bounds(), IRect::new(49, 50, 2, 2));
+    }
+
+    /// A hard 1 px stroke along a diagonal is a thin line: one pixel per
+    /// row, no doubled corners.
+    #[test]
+    fn pixel_pencil_draws_thin_diagonals() {
+        let l = layer();
+        let mut raster = l.raster.clone();
+        let s =
+            BrushSettings { size: 1.0, antialias: false, pressure_size: false, smoothing: 0.0, ..Default::default() };
+        let mut e = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
+        e.extend(&mut raster, StrokeSample { pos: Pt::new(10.2, 10.2), pressure: 1.0 });
+        e.extend(&mut raster, StrokeSample { pos: Pt::new(19.7, 19.7), pressure: 1.0 });
+        e.finish(&mut raster);
+        let mut count = 0;
+        for y in 0..40 {
+            let row: Vec<i32> = (0..40).filter(|&x| raster.get_pixel(x, y).a > 0).collect();
+            if (10..=19).contains(&y) {
+                assert_eq!(row, vec![y], "row {y}");
+            } else {
+                assert!(row.is_empty(), "row {y}");
+            }
+            count += row.len();
+        }
+        assert_eq!(count, 10);
     }
 
     /// Nothing predictable to outline: a sampled tip, scattered dabs.

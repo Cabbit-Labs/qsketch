@@ -592,10 +592,29 @@ const PIXEL_PREVIEW_MAX_SIZE: f32 = 256.0;
 /// Outline the exact pixels a press would mark, along the pixel grid. The
 /// pencil and its eraser work pixel by pixel, so the cursor shows the pixels
 /// themselves rather than a circle that only approximates them.
-fn draw_pixel_preview(painter: &egui::Painter, view: &view::CanvasView, spans: &qsketch_core::shape::Spans) -> bool {
+fn draw_pixel_preview(
+    painter: &egui::Painter,
+    view: &view::CanvasView,
+    spans: &qsketch_core::shape::Spans,
+    fill: Option<Color32>,
+) -> bool {
     let segs = qsketch_core::shape::spans_outline(spans);
     if segs.is_empty() {
         return false;
+    }
+    // Paint the pixels in the color they are about to get, so the change is
+    // visible before it is made. One quad per row; the view may be rotated.
+    if let Some(color) = fill {
+        for (i, (a, b)) in spans.rows.iter().enumerate() {
+            if b <= a {
+                continue;
+            }
+            let y = (spans.y0 + i as i32) as f32;
+            let (l, r) = (*a as f32, *b as f32);
+            let quad = [Pt::new(l, y), Pt::new(r, y), Pt::new(r, y + 1.0), Pt::new(l, y + 1.0)];
+            let pts: Vec<Pos2> = quad.iter().map(|p| view.doc_to_screen(*p)).collect();
+            painter.add(egui::Shape::convex_polygon(pts, color, Stroke::NONE));
+        }
     }
     for (width, color) in [(2.0, Color32::from_black_alpha(140)), (1.0, Color32::from_white_alpha(220))] {
         for seg in &segs {
@@ -625,7 +644,14 @@ fn draw_brush_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, h
     if outline && matches!(tool, ToolKind::Pencil | ToolKind::Eraser) && brush.size <= PIXEL_PREVIEW_MAX_SIZE {
         let at = entry.view.screen_to_doc(pos);
         if let Some(spans) = brush.dab_spans(at, 1.0) {
-            if draw_pixel_preview(painter, &entry.view, &spans) {
+            // The pencil shows its ink; the eraser has nothing to show but
+            // the hole, so it keeps to the outline.
+            let fill = (tool == ToolKind::Pencil).then(|| {
+                let c = crate::ui::widgets::rgba_to_color32(state.fg);
+                let a = (brush.opacity * brush.flow).clamp(0.0, 1.0);
+                c.gamma_multiply(a)
+            });
+            if draw_pixel_preview(painter, &entry.view, &spans, fill) {
                 outline = false;
                 // The outlined pixels are the cursor; a crosshair over a
                 // one-pixel box would only hide it.

@@ -2,6 +2,23 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- The pencil is a pixel-art pencil. A hard-edged dab now lands on the pixel
+  grid — centered on the pixel under the pointer for odd sizes, on the corner
+  for even ones — so a 1 px pencil always fills exactly the pixel it is over.
+  Zoomed in, the pointer could sit on the corner between four pixels where
+  nothing was within reach: the cursor showed no pixel and a click painted
+  nothing.
+- The pencil cursor paints its pixels in the foreground color, at the
+  stroke's opacity, so the change is on the canvas before the click; the
+  outline stays. The eraser keeps to the outline.
+- Hard-edged strokes step the pixel grid one pixel at a time (Bresenham), so
+  a diagonal is a thin 8-connected line instead of a staircase of doubled
+  corners. Shift+click lines and the Line tool do the same.
+- The Eraser's tool options gain the Anti-aliasing switch the Pencil has, so
+  a pixel eraser is one click away.
+
 ## 0.21.0 — 2026-09-17
 
 - Edits still in flight can no longer be caught out by a change to the layer
