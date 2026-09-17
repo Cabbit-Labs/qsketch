@@ -128,7 +128,7 @@ actions! {
     MergeVisible => (Layer, "Merge Visible", ["Ctrl+Shift+E"]),
     Flatten => (Layer, "Flatten Image", []),
     GroupLayers => (Layer, "Group Selected", ["Ctrl+G"]),
-    UngroupLayers => (Layer, "Ungroup", ["Ctrl+Shift+U"]),
+    UngroupLayers => (Layer, "Ungroup", ["Ctrl+Alt+G"]),
     LayerUp => (Layer, "Move Layer Up", ["Ctrl+]"]),
     LayerDown => (Layer, "Move Layer Down", ["Ctrl+["]),
     LayerToTop => (Layer, "Move Layer to Top", ["Ctrl+Shift+]"]),

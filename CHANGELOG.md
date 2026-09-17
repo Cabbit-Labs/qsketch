@@ -2,11 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- 0.23.0 shipped Ungroup on Ctrl+Shift+U, which Desaturate already held;
+  Ungroup is Ctrl+Alt+G.
+
 ## 0.23.0 — 2026-09-17
 
 - View ▸ Grid: an Aseprite-style tile grid over the canvas, every 4, 8, 16,
   32, 64 or a custom number of pixels, toggled with Ctrl+Shift+G (Ungroup
-  moves to Ctrl+Shift+U). It follows the view's rotation and hides once the
+  moves to Ctrl+Alt+G). It follows the view's rotation and hides once the
   cells would be smaller than 4 screen pixels. Also under Preferences ▸
   Canvas.
 - The mouse wheel steps the toolbar's value bars (Size, Opacity, Flow,
