@@ -765,6 +765,31 @@ impl QSketchApp {
                     self.state.pending.push(Action::TogglePixelGrid);
                     ui.close();
                 }
+                // Tile grid: on/off plus its size, Aseprite style.
+                let c = &mut self.state.settings.canvas;
+                ui.menu_button(format!("{} Grid", if c.show_grid { icons::CHECK } else { " " }), |ui| {
+                    let btn = egui::Button::new(format!("{} Show Grid", if c.show_grid { icons::CHECK } else { " " }))
+                        .shortcut_text(self.state.keymap.primary_text(Action::ToggleGrid));
+                    if ui.add(btn).clicked() {
+                        c.show_grid = !c.show_grid;
+                        ui.close();
+                    }
+                    ui.separator();
+                    for n in [4u32, 8, 16, 32, 64] {
+                        if ui.radio(c.grid_size == n, format!("{n} × {n}")).clicked() {
+                            c.grid_size = n;
+                            c.show_grid = true;
+                            ui.close();
+                        }
+                    }
+                    ui.horizontal(|ui| {
+                        let custom = ![4, 8, 16, 32, 64].contains(&c.grid_size);
+                        let _ = ui.radio(custom, "Custom");
+                        if ui.add(egui::DragValue::new(&mut c.grid_size).range(1..=4096).suffix(" px")).changed() {
+                            c.show_grid = true;
+                        }
+                    });
+                });
                 ui.separator();
                 ui.menu_button("Symmetry", |ui| {
                     let sym = self.state.symmetry;
@@ -1335,6 +1360,7 @@ impl QSketchApp {
                     });
                 }
             }
+            Action::ToggleGrid => self.state.settings.canvas.show_grid = !self.state.settings.canvas.show_grid,
             Action::TogglePixelGrid => {
                 self.state.settings.canvas.show_pixel_grid = !self.state.settings.canvas.show_pixel_grid
             }

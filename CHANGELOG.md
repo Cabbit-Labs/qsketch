@@ -2,6 +2,22 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- View ▸ Grid: an Aseprite-style tile grid over the canvas, every 4, 8, 16,
+  32, 64 or a custom number of pixels, toggled with Ctrl+Shift+G (Ungroup
+  moves to Ctrl+Shift+U). It follows the view's rotation and hides once the
+  cells would be smaller than 4 screen pixels. Also under Preferences ▸
+  Canvas.
+- The mouse wheel steps the toolbar's value bars (Size, Opacity, Flow,
+  Hardness, the shape tools' Thickness…) while the pointer is over them: one
+  unit for whole numbers, a hundredth of the range otherwise, a tenth of the
+  value on logarithmic ranges. The wheel is taken, so nothing behind them
+  scrolls.
+- The Color panel is split side by side: the picker square and hue strip on
+  the left, the sliders, hex field and recent colors on the right, so the
+  picker gets the panel's full height.
+
 ## 0.22.0 — 2026-09-17
 
 - The pencil is a pixel-art pencil. A hard-edged dab now lands on the pixel

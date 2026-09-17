@@ -346,6 +346,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     let outside = settings.outside_color.unwrap_or([theme_bg.r(), theme_bg.g(), theme_bg.b()]);
     let grid_on = settings.show_pixel_grid;
     let grid_min = settings.pixel_grid_min_zoom;
+    let tile_grid = settings.show_grid.then_some(settings.grid_size.max(1));
     let smooth_out = settings.smooth_zoom_out;
     let render_state = state.render_state.clone();
     let Some(entry) = state.doc_mut(doc_id) else { return };
@@ -405,6 +406,29 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         view.doc_to_screen(Pt::new(0.0, dh as f32)),
     ];
     painter.add(egui::Shape::closed_line(border_pts.to_vec(), Stroke::new(1.0, Color32::from_black_alpha(160))));
+    // Tile grid (View ▸ Grid): a line every N document pixels, drawn through
+    // the view so it follows rotation; skipped once the cells would be too
+    // small to read as cells.
+    if let Some(n) = tile_grid {
+        if n as f32 * view.zoom >= 4.0 {
+            let stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 170, 255, 120));
+            let (w, h) = (dw as f32, dh as f32);
+            let mut x = n;
+            while x < dw {
+                let xf = x as f32;
+                painter
+                    .line_segment([view.doc_to_screen(Pt::new(xf, 0.0)), view.doc_to_screen(Pt::new(xf, h))], stroke);
+                x += n;
+            }
+            let mut y = n;
+            while y < dh {
+                let yf = y as f32;
+                painter
+                    .line_segment([view.doc_to_screen(Pt::new(0.0, yf)), view.doc_to_screen(Pt::new(w, yf))], stroke);
+                y += n;
+            }
+        }
+    }
 
     draw_selection(&painter, entry, &ctx);
     flash::update(state, doc_id, &ctx, &painter);

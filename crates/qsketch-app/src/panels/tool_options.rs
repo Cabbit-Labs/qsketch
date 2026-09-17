@@ -291,13 +291,16 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
         group(ui, &theme, Section::Tools, |ui| {
             ui.checkbox(&mut state.tool_opts.shape_filled, "Filled");
             if !state.tool_opts.shape_filled {
-                ui.add(
+                let mut r = ui.add(
                     egui::DragValue::new(&mut state.tool_opts.shape_thickness)
                         .range(1..=64)
                         .speed(0.2)
                         .prefix("Thickness "),
-                )
-                .on_hover_text("Outline width in pixels");
+                );
+                let mut t = state.tool_opts.shape_thickness as f32;
+                crate::ui::widgets::wheel_adjust(ui, &mut r, &mut t, 1.0, 1.0..=64.0);
+                state.tool_opts.shape_thickness = t as u32;
+                r.on_hover_text("Outline width in pixels");
             }
         });
         return;

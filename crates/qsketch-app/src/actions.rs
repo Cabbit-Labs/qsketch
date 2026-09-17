@@ -128,7 +128,7 @@ actions! {
     MergeVisible => (Layer, "Merge Visible", ["Ctrl+Shift+E"]),
     Flatten => (Layer, "Flatten Image", []),
     GroupLayers => (Layer, "Group Selected", ["Ctrl+G"]),
-    UngroupLayers => (Layer, "Ungroup", ["Ctrl+Shift+G"]),
+    UngroupLayers => (Layer, "Ungroup", ["Ctrl+Shift+U"]),
     LayerUp => (Layer, "Move Layer Up", ["Ctrl+]"]),
     LayerDown => (Layer, "Move Layer Down", ["Ctrl+["]),
     LayerToTop => (Layer, "Move Layer to Top", ["Ctrl+Shift+]"]),
@@ -158,6 +158,7 @@ actions! {
     ResetView => (View, "Reset View", ["Escape"]),
     FlipViewHorizontal => (View, "Flip View Horizontal", ["Shift+F"]),
     TogglePixelGrid => (View, "Pixel Grid", ["Ctrl+'"]),
+    ToggleGrid => (View, "Grid", ["Ctrl+Shift+G"]),
     ToggleFullscreen => (View, "Fullscreen", ["F11"]),
     TogglePanels => (View, "Hide/Show Panels", ["Tab"]),
     // Filter (the menu groups these into submenus; see app.rs)

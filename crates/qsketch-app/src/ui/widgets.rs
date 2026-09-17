@@ -157,6 +157,34 @@ pub fn checkerboard(p: &egui::Painter, rect: egui::Rect, cell: f32) {
     }
 }
 
+/// Nudge `value` by `step` per wheel notch while `r` is hovered, staying in
+/// `range`. Marks the response changed so callers see it like a drag.
+pub fn wheel_adjust(ui: &Ui, r: &mut Response, value: &mut f32, step: f32, range: std::ops::RangeInclusive<f32>) {
+    if !r.hovered() {
+        return;
+    }
+    // Whole notches from the raw wheel events, which are then taken so a
+    // scroll area around the widget does not scroll as well.
+    let mut notches = 0.0;
+    ui.input_mut(|i| {
+        i.events.retain(|e| match e {
+            egui::Event::MouseWheel { delta, .. } if delta.y != 0.0 => {
+                notches += delta.y.signum();
+                false
+            }
+            _ => true,
+        });
+    });
+    if notches == 0.0 {
+        return;
+    }
+    let next = (*value + notches * step).clamp(*range.start(), *range.end());
+    if next != *value {
+        *value = next;
+        r.mark_changed();
+    }
+}
+
 /// Compact numeric control for toolbars: `Label 80 px`, draggable and
 /// click-to-type, with a thin fill bar underneath showing the position in
 /// `range`. Replaces a full slider at about a third of the width.
@@ -171,14 +199,23 @@ pub fn param(
 ) -> Response {
     let (lo, hi) = (*range.start(), *range.end());
     let speed = if log { (*value * 0.02).max(0.05) } else { (hi - lo) / 200.0 };
-    let r = ui.add(
+    let mut r = ui.add(
         egui::DragValue::new(value)
-            .range(range)
+            .range(range.clone())
             .speed(speed as f64)
             .prefix(format!("{label} "))
             .suffix(suffix)
             .fixed_decimals(decimals),
     );
+    // The wheel steps it too: one unit for whole numbers, a hundredth of the
+    // range otherwise, and a tenth of the value on logarithmic ranges.
+    let unit = 10f32.powi(-(decimals as i32));
+    let step = if log { (*value * 0.1).max(unit) } else { ((hi - lo) / 100.0).max(unit) };
+    let step = (step / unit).round().max(1.0) * unit;
+    wheel_adjust(ui, &mut r, value, step, range);
+    if r.changed() {
+        *value = (*value / unit).round() * unit;
+    }
     // Position bar along the bottom edge of the widget.
     let t = if log {
         ((value.max(lo.max(1e-3)) / lo.max(1e-3)).ln() / (hi / lo.max(1e-3)).ln()).clamp(0.0, 1.0)

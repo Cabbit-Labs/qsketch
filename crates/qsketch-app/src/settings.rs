@@ -455,6 +455,9 @@ pub struct CanvasSettings {
     pub outside_color: Option<[u8; 3]>,
     pub pixel_grid_min_zoom: f32,
     pub show_pixel_grid: bool,
+    /// Tile grid over the canvas (View ▸ Grid), every `grid_size` pixels.
+    pub show_grid: bool,
+    pub grid_size: u32,
     pub wheel: WheelBehavior,
     pub invert_wheel_zoom: bool,
     pub zoom_to_cursor: bool,
@@ -488,6 +491,8 @@ impl Default for CanvasSettings {
             outside_color: None,
             pixel_grid_min_zoom: 8.0,
             show_pixel_grid: false,
+            show_grid: false,
+            grid_size: 16,
             transform_filter: qsketch_core::raster::ResizeFilter::Bilinear,
             wheel: WheelBehavior::Zoom,
             invert_wheel_zoom: false,
@@ -895,6 +900,7 @@ impl Settings {
         self.tablet.min_pressure = self.tablet.min_pressure.clamp(0.0, 0.5);
         self.canvas.checker_size = self.canvas.checker_size.clamp(2.0, 64.0);
         self.canvas.pixel_grid_min_zoom = self.canvas.pixel_grid_min_zoom.clamp(2.0, 64.0);
+        self.canvas.grid_size = self.canvas.grid_size.clamp(1, 4096);
         self.update.check_interval_hours = self.update.check_interval_hours.clamp(1, 24 * 30);
         self.general.autosave_interval_secs = self.general.autosave_interval_secs.clamp(15, 3600);
         self.paint.recent_colors.truncate(crate::state::COLOR_HISTORY_LEN);

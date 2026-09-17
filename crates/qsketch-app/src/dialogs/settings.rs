@@ -646,6 +646,15 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             ui.add(egui::DragValue::new(&mut c.pixel_grid_min_zoom).range(2.0..=64.0).suffix("×"));
         });
         ui.end_row();
+        ui.label("Grid");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut c.show_grid, "Show");
+            ui.label("every");
+            ui.add(egui::DragValue::new(&mut c.grid_size).range(1..=4096).suffix(" px"));
+        })
+        .response
+        .on_hover_text("A tile grid over the canvas (View ▸ Grid, Ctrl+Shift+G).");
+        ui.end_row();
         ui.label("Transparency checkerboard");
         ui.horizontal(|ui| {
             let mut a = egui::Color32::from_rgb(c.checker_a[0], c.checker_a[1], c.checker_a[2]);
