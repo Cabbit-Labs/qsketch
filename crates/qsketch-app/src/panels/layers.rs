@@ -7,7 +7,7 @@ use qsketch_core::layer::LayerId;
 use qsketch_core::BlendMode;
 
 use crate::actions::Action;
-use crate::state::AppState;
+use crate::state::{AppState, DocId};
 use crate::ui::icons;
 use crate::ui::widgets::{icon_button, icon_toggle, percent_slider};
 
@@ -26,6 +26,25 @@ enum Click {
     Activate(usize),
 }
 
+/// An inline layer-name edit in flight.
+#[derive(Clone)]
+struct Rename {
+    /// Layer ids are per-document, so the document has to be part of the key.
+    doc: DocId,
+    /// The layer whose name is being edited.
+    layer: LayerId,
+    text: String,
+    /// The layer that was active when the edit started. The edit ends as soon
+    /// as the active layer moves off it.
+    anchor: LayerId,
+}
+
+impl Rename {
+    fn start(doc: DocId, layer: LayerId, name: &str, active: Option<LayerId>) -> Self {
+        Self { doc, layer, text: name.to_string(), anchor: active.unwrap_or(layer) }
+    }
+}
+
 pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let Some(doc_id) = state.active_doc else {
         ui.centered_and_justified(|ui| ui.label(egui::RichText::new("No document").weak()));
@@ -35,7 +54,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let mut changed_props = false;
     let mut toggle_vis: Option<(LayerId, bool)> = None;
     let mut toggle_expand: Option<usize> = None;
-    let mut rename_target: Option<(usize, String)> = None;
+    let mut rename_target: Option<(LayerId, String)> = None;
     let mut click: Option<Click> = None;
     let mut reorder: Option<(usize, usize, Option<LayerId>)> = None;
 
@@ -126,7 +145,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let footer_h = 34.0;
     let list_h = (ui.available_height() - footer_h).max(row_h);
     let rename_id = ui.id().with("rename");
-    let mut renaming = ui.data(|d| d.get_temp::<(usize, String)>(rename_id));
+    let mut renaming = ui.data(|d| d.get_temp::<Rename>(rename_id));
     let multi = selected_ids.len() > 1;
     // When the active layer changes from anywhere (keyboard, canvas, undo),
     // scroll the list so its row is in view. A click on a row is already
@@ -136,6 +155,21 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let seen = ui.data(|d| d.get_temp::<Option<LayerId>>(seen_id)).flatten();
     let jump_to_active = seen != active_layer_id;
     ui.data_mut(|d| d.insert_temp(seen_id, active_layer_id));
+    // Switching layers mid-rename (a row click, a shortcut, the canvas) means
+    // the user is done with the name, not that they want the box to follow
+    // them around: take the name and close the editor. The layer the rename
+    // started on is the anchor, so a rename begun on a row that was not active
+    // (right-click ▸ Rename) does not close itself on the next frame.
+    if let Some(r) = &renaming {
+        if r.doc != doc_id || !s.layers.iter().any(|l| l.props.id == r.layer) {
+            // The layer (or the whole document) is gone; there is nothing left
+            // to name.
+            renaming = None;
+        } else if active_layer_id != Some(r.anchor) {
+            rename_target = Some((r.layer, r.text.clone()));
+            renaming = None;
+        }
+    }
     egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(list_h).id_salt("layer_list").show(ui, |ui| {
         for (row_no, &(i, depth)) in rows.iter().enumerate() {
             let layer_id = s.layers[i].props.id;
@@ -276,8 +310,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 row_rect.min + egui::vec2(x, 0.0),
                 egui::vec2((row_rect.width() - x - 26.0).max(20.0), row_h),
             );
-            if renaming.as_ref().is_some_and(|(ri, _)| *ri == i) {
-                let (_, text) = renaming.as_mut().unwrap();
+            if renaming.as_ref().is_some_and(|r| r.layer == layer_id) {
+                let text = &mut renaming.as_mut().unwrap().text;
                 let te = ui.put(name_rect.shrink2(egui::vec2(0.0, 9.0)), egui::TextEdit::singleline(text));
                 te.request_focus();
                 let done = te.lost_focus() || ui.input(|inp| inp.key_pressed(egui::Key::Enter));
@@ -285,7 +319,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 if cancel {
                     renaming = None;
                 } else if done {
-                    rename_target = Some((i, text.clone()));
+                    rename_target = Some((layer_id, text.clone()));
                     renaming = None;
                 }
             } else {
@@ -328,7 +362,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 });
             }
             if drag_resp.double_clicked() {
-                renaming = Some((i, s.layers[i].props.name.clone()));
+                renaming = Some(Rename::start(doc_id, layer_id, &s.layers[i].props.name, active_layer_id));
             }
             drag_resp.context_menu(|ui| {
                 let mut queued: Option<Action> = None;
@@ -336,7 +370,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     queued = Some(Action::NewLayer);
                 }
                 if ui.button("Rename").clicked() {
-                    renaming = Some((i, s.layers[i].props.name.clone()));
+                    renaming = Some(Rename::start(doc_id, layer_id, &s.layers[i].props.name, active_layer_id));
                     ui.close();
                 }
                 ui.separator();
@@ -401,7 +435,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             d.insert_temp(rename_id, r.clone());
         }
         None => {
-            d.remove::<(usize, String)>(rename_id);
+            d.remove::<Rename>(rename_id);
         }
     });
 
@@ -472,12 +506,15 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             entry.doc.mark_all_dirty();
             entry.doc.commit("Reorder Layers");
         }
-    } else if let Some((i, name)) = rename_target {
+    } else if let Some((id, name)) = rename_target {
         let name = name.trim().to_string();
-        if !name.is_empty() && s.layers[i].props.name != name {
-            s.layers[i].props.name = name;
-            let label = if s.layers[i].is_group() { "Rename Group" } else { "Rename Layer" };
-            entry.doc.commit(label);
+        let i = s.layers.iter().position(|l| l.props.id == id);
+        if let Some(i) = i.filter(|_| !name.is_empty()) {
+            if s.layers[i].props.name != name {
+                s.layers[i].props.name = name;
+                let label = if s.layers[i].is_group() { "Rename Group" } else { "Rename Layer" };
+                entry.doc.commit(label);
+            }
         }
     } else if changed_props {
         entry.doc.mark_all_dirty();

@@ -2,6 +2,21 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- The pencil shows the pixels it is about to paint. Instead of a circle that
+  runs between pixels, the cursor outlines the exact pixel footprint of a
+  press, snapped to the grid — the same coverage test the stroke rasterizes
+  with, so what you see outlined is what lands. The eraser previews the same
+  way, down to a single-pixel box at size 1, so the two line up when you are
+  working pixel by pixel. Brushes past 256 px keep the round cursor, and the
+  brush-cursor setting (Outline / Crosshair / Both / Hidden) still decides
+  what is drawn.
+- Switching layers while renaming one keeps the name. The edit box used to
+  stay open on the old row with the typed name stranded in it; the name is now
+  accepted and the box closes, on a row click or any other way the active
+  layer changes. Esc still cancels.
+
 ## 0.19.0 — 2026-09-16
 
 - Ctrl+drag duplicates as often as you like. The first Ctrl+drag lifted a copy

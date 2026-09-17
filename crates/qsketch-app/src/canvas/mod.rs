@@ -584,6 +584,27 @@ fn draw_rotate_cursor(painter: &egui::Painter, hover: Option<Pos2>) {
     painter.text(pos, egui::Align2::CENTER_CENTER, glyph, font, Color32::WHITE);
 }
 
+/// Widest pencil / eraser that still previews pixel by pixel. Past this the
+/// outline is indistinguishable from the round cursor and walking the dab
+/// every frame stops being free.
+const PIXEL_PREVIEW_MAX_SIZE: f32 = 256.0;
+
+/// Outline the exact pixels a press would mark, along the pixel grid. The
+/// pencil and its eraser work pixel by pixel, so the cursor shows the pixels
+/// themselves rather than a circle that only approximates them.
+fn draw_pixel_preview(painter: &egui::Painter, view: &view::CanvasView, spans: &qsketch_core::shape::Spans) -> bool {
+    let segs = qsketch_core::shape::spans_outline(spans);
+    if segs.is_empty() {
+        return false;
+    }
+    for (width, color) in [(2.0, Color32::from_black_alpha(140)), (1.0, Color32::from_white_alpha(220))] {
+        for seg in &segs {
+            painter.line_segment([view.doc_to_screen(seg[0]), view.doc_to_screen(seg[1])], Stroke::new(width, color));
+        }
+    }
+    true
+}
+
 fn draw_brush_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, hover: Option<Pos2>, tool: ToolKind) {
     let Some(pos) = hover else { return };
     if !tool.uses_brush() {
@@ -596,8 +617,28 @@ fn draw_brush_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, h
         return;
     }
     let r = brush.size / 2.0 * entry.view.zoom;
-    let outline = matches!(mode, BrushCursor::Outline | BrushCursor::Both);
-    let cross = matches!(mode, BrushCursor::Crosshair | BrushCursor::Both) || r < 3.0;
+    let mut outline = matches!(mode, BrushCursor::Outline | BrushCursor::Both);
+    let mut cross = matches!(mode, BrushCursor::Crosshair | BrushCursor::Both) || r < 3.0;
+    // A pencil press lands on whole pixels, so show those instead of a ring
+    // that runs between them. The eraser does the same: it is a pencil that
+    // takes ink away, and it has to line up with the one that put it there.
+    if outline && matches!(tool, ToolKind::Pencil | ToolKind::Eraser) && brush.size <= PIXEL_PREVIEW_MAX_SIZE {
+        let at = entry.view.screen_to_doc(pos);
+        if let Some(spans) = brush.dab_spans(at, 1.0) {
+            if draw_pixel_preview(painter, &entry.view, &spans) {
+                outline = false;
+                // The outlined pixels are the cursor; a crosshair over a
+                // one-pixel box would only hide it.
+                cross = matches!(mode, BrushCursor::Crosshair | BrushCursor::Both);
+                // The footprint says which pixels are reached, not how hard:
+                // a soft tip keeps its hardness ring.
+                if brush.is_round() && brush.hardness < 0.999 && r >= 3.0 {
+                    let inner = r * brush.hardness.max(0.05);
+                    painter.circle_stroke(pos, inner, Stroke::new(1.0, Color32::from_white_alpha(90)));
+                }
+            }
+        }
+    }
     if outline && r >= 3.0 {
         let elliptical = brush.roundness < 0.999;
         if elliptical {

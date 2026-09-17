@@ -17,6 +17,7 @@ use crate::geom::{IRect, Pt};
 use crate::layer::Layer;
 use crate::mask::Mask;
 use crate::raster::{tile_rect, Raster, TILE, TILE_PX};
+use crate::shape::Spans;
 
 use crate::color::Hsv;
 use crate::tip::{Rng, TipImage};
@@ -400,6 +401,69 @@ impl BrushSettings {
         self.tip.is_empty() || self.tip == ROUND_TIP
     }
 
+    /// Radius of one dab at `pressure`, in document pixels.
+    pub fn dab_radius(&self, pressure: f32) -> f32 {
+        let scale = if self.pressure_size { self.min_size + (1.0 - self.min_size) * pressure } else { 1.0 };
+        (self.size * scale / 2.0).max(0.5)
+    }
+
+    /// The pixels one dab at `center` would put ink on, row by row — the same
+    /// coverage test `StrokeEngine::dab` rasterizes with, so a cursor preview
+    /// outlines exactly what a press will paint. A soft tip still reports the
+    /// pixels it reaches; how hard it hits them is the hardness ring's job.
+    ///
+    /// `None` when there is no such set to show: a sampled tip, or randomized
+    /// placement / shape, where the dab lands somewhere this cannot predict.
+    pub fn dab_spans(&self, center: Pt, pressure: f32) -> Option<Spans> {
+        let jittered = self.scattering
+            || (self.shape_dynamics
+                && (self.size_jitter > 0.0
+                    || self.angle_jitter > 0.0
+                    || self.roundness_jitter > 0.0
+                    || self.angle_control != AngleControl::Off));
+        if !self.is_round() || jittered {
+            return None;
+        }
+        let r = self.dab_radius(pressure);
+        // What one dab lays down: coverage × opacity. A pixel counts as marked
+        // once that survives rounding to 8-bit alpha — the rim of a soft tip
+        // fades below it well before the falloff reaches zero.
+        let alpha = (if self.pressure_opacity { self.flow * pressure } else { self.flow }) * self.opacity;
+        const MIN_ALPHA: f32 = 0.5 / 255.0;
+        // Same bounds the rasterizer walks: rotating an r × r·roundness
+        // ellipse keeps it inside r, and the anti-aliased rim adds a pixel.
+        let bounds =
+            IRect::from_f32_bounds(center.x - r - 1.0, center.y - r - 1.0, center.x + r + 1.0, center.y + r + 1.0);
+        if bounds.is_empty() {
+            return None;
+        }
+        // The user angle is counter-clockwise on screen; raster y points down.
+        let (sin, cos) = (-self.angle.to_radians()).sin_cos();
+        let fx = if self.flip_x { -1.0 } else { 1.0 };
+        let fy = if self.flip_y { -1.0 } else { 1.0 };
+        let inv_round = 1.0 / self.roundness.clamp(0.01, 1.0);
+        let mut rows = Vec::with_capacity(bounds.h as usize);
+        for y in bounds.y..bounds.bottom() {
+            let py = y as f32 + 0.5 - center.y;
+            let (mut a, mut b) = (0, 0);
+            for x in bounds.x..bounds.right() {
+                let px = x as f32 + 0.5 - center.x;
+                let lx = (px * cos + py * sin) * fx;
+                let ly = (-px * sin + py * cos) * inv_round * fy;
+                let fall = falloff((lx * lx + ly * ly).sqrt(), r, self.hardness, self.antialias);
+                if fall * alpha >= MIN_ALPHA {
+                    // A dab is convex, so each row is one run.
+                    if b <= a {
+                        a = x;
+                    }
+                    b = x + 1;
+                }
+            }
+            rows.push((a, b));
+        }
+        Some(Spans { y0: bounds.y, rows })
+    }
+
     /// Whether any randomized feature is active (the preview needs a stable seed).
     pub fn is_randomized(&self) -> bool {
         (self.shape_dynamics && (self.size_jitter > 0.0 || self.angle_jitter > 0.0 || self.roundness_jitter > 0.0))
@@ -529,9 +593,7 @@ impl StrokeEngine {
     }
 
     fn radius_for(&self, pressure: f32) -> f32 {
-        let s = &self.settings;
-        let scale = if s.pressure_size { s.min_size + (1.0 - s.min_size) * pressure } else { 1.0 };
-        (s.size * scale / 2.0).max(0.5)
+        self.settings.dab_radius(pressure)
     }
 
     fn alpha_for(&self, pressure: f32) -> f32 {
@@ -996,6 +1058,64 @@ mod tests {
         assert_eq!(raster.get_pixel(50, 50), Rgba8::BLACK);
         assert_eq!(raster.get_pixel(50, 60), Rgba8::TRANSPARENT);
         assert!(!e.dirty_total().is_empty());
+    }
+
+    /// The pencil cursor preview has to name the same pixels the press paints,
+    /// at whatever sub-pixel position the pointer sits.
+    #[test]
+    fn dab_spans_match_what_a_click_paints() {
+        // size, anti-aliasing, hardness, opacity — the knobs that decide which
+        // pixels a press actually marks.
+        let cases = [
+            (1.0, false, 1.0, 1.0),
+            (3.0, false, 1.0, 1.0),
+            (4.0, false, 1.0, 1.0),
+            (7.0, false, 1.0, 1.0),
+            (6.0, true, 1.0, 1.0),
+            (9.0, true, 0.5, 1.0),
+            (12.0, true, 0.2, 1.0),
+            (11.0, true, 0.9, 0.3),
+            (5.0, true, 1.0, 0.02),
+        ];
+        for (size, aa, hardness, opacity) in cases {
+            for (ox, oy) in [(0.0, 0.0), (0.5, 0.5), (0.3, 0.8)] {
+                let l = layer();
+                let mut raster = l.raster.clone();
+                let s = BrushSettings {
+                    size,
+                    flow: 1.0,
+                    opacity,
+                    hardness,
+                    antialias: aa,
+                    pressure_size: false,
+                    smoothing: 0.0,
+                    ..Default::default()
+                };
+                let at = Pt::new(50.0 + ox, 50.0 + oy);
+                let spans = s.dab_spans(at, 1.0).expect("round hard tip previews");
+                let mut e = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
+                e.extend(&mut raster, StrokeSample { pos: at, pressure: 1.0 });
+                e.finish(&mut raster);
+                let case = format!("size {size} aa {aa} hard {hardness} op {opacity} at {ox},{oy}");
+                for y in 40..60 {
+                    for x in 40..60 {
+                        let (a, b) = spans.row(y);
+                        let previewed = b > a && x >= a && x < b;
+                        let painted = raster.get_pixel(x, y).a > 0;
+                        assert_eq!(previewed, painted, "{case}: pixel {x},{y}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Nothing predictable to outline: a sampled tip, scattered dabs.
+    #[test]
+    fn dab_spans_declines_fuzzy_dabs() {
+        let tipped = BrushSettings { tip: "Chalk".into(), ..Default::default() };
+        assert!(tipped.dab_spans(Pt::new(10.0, 10.0), 1.0).is_none());
+        let scattered = BrushSettings { scattering: true, scatter: 2.0, ..Default::default() };
+        assert!(scattered.dab_spans(Pt::new(10.0, 10.0), 1.0).is_none());
     }
 
     #[test]

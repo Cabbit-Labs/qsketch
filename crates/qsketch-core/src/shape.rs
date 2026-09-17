@@ -20,7 +20,8 @@ impl Spans {
         self.rows.iter().all(|(a, b)| b <= a)
     }
 
-    fn row(&self, y: i32) -> (i32, i32) {
+    /// The `[x0, x1)` run covered on document row `y`; empty when uncovered.
+    pub fn row(&self, y: i32) -> (i32, i32) {
         let i = y - self.y0;
         if i < 0 || i as usize >= self.rows.len() {
             return (0, 0);
