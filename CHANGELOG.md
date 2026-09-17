@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.23.1 — 2026-09-17
 
 - 0.23.0 shipped Ungroup on Ctrl+Shift+U, which Desaturate already held;
   Ungroup is Ctrl+Alt+G.
