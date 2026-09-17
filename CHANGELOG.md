@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.22.0 — 2026-09-17
 
 - The pencil is a pixel-art pencil. A hard-edged dab now lands on the pixel
   grid — centered on the pixel under the pointer for odd sizes, on the corner
