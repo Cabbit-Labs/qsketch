@@ -369,9 +369,12 @@ pub fn editor_ui(ui: &mut egui::Ui, state: &mut AppState, doc_id: DocId) {
                     te.focus = false;
                 }
                 ui.horizontal(|ui| {
-                    apply =
-                        ui.small_button(format!("{} Apply", crate::ui::icons::CHECK)).on_hover_text("Enter").clicked();
-                    discard = ui.small_button(format!("{} Cancel", crate::ui::icons::X)).on_hover_text("Esc").clicked();
+                    apply = crate::ui::widgets::small_button(ui, format!("{} Apply", crate::ui::icons::CHECK))
+                        .on_hover_text("Enter")
+                        .clicked();
+                    discard = crate::ui::widgets::small_button(ui, format!("{} Cancel", crate::ui::icons::X))
+                        .on_hover_text("Esc")
+                        .clicked();
                     ui.label(egui::RichText::new("Shift+Enter: new line · drag the text to move it").weak().small());
                 });
             });

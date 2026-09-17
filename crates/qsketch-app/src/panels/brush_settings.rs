@@ -421,8 +421,7 @@ fn library_buttons(ui: &mut Ui, kind: LibraryKind, deferred: &mut Vec<Deferred>)
         {
             deferred.push(Deferred::FromSelection(kind));
         }
-        if ui
-            .small_button("Open folder")
+        if crate::ui::widgets::small_button(ui, "Open folder")
             .on_hover_text("Drop PNGs here; they load on the next start or Rescan")
             .clicked()
         {

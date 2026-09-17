@@ -463,7 +463,7 @@ fn brush_popup(ui: &mut Ui, state: &mut AppState) {
                     ui.label(crate::ui::widgets::icon(tool.icon(), 15.0));
                     ui.label(egui::RichText::new(tool.label()).strong());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button(crate::ui::icons::X).clicked() {
+                        if crate::ui::widgets::small_button(ui, crate::ui::icons::X).clicked() {
                             state.brush_popup = None;
                         }
                     });
@@ -503,7 +503,7 @@ fn brush_popup(ui: &mut Ui, state: &mut AppState) {
                     ui.horizontal_wrapped(|ui| {
                         let names: Vec<String> = state.presets.iter().map(|p| p.name.clone()).collect();
                         for (i, name) in names.iter().enumerate() {
-                            if ui.small_button(name).clicked() {
+                            if crate::ui::widgets::small_button(ui, name).clicked() {
                                 state.brush = state.presets[i].clone();
                             }
                         }

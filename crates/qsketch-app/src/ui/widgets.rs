@@ -18,6 +18,15 @@ pub fn icon(glyph: &str, size: f32) -> RichText {
     RichText::new(glyph).family(super::iconset::family()).size(size)
 }
 
+/// A compact button that keeps its size on hover. egui's `Button::small`
+/// drops the vertical padding but still adds the hovered stroke width to the
+/// frame, so with an unstroked idle state (this theme) the button grows two
+/// pixels on hover and shoves everything below it. Small text in a normal
+/// frame stays put.
+pub fn small_button(ui: &mut Ui, text: impl Into<String>) -> Response {
+    ui.add(egui::Button::new(RichText::new(text.into()).small()))
+}
+
 /// Square icon button with tooltip; `selected` renders it in the accent state.
 pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected: bool) -> Response {
     let btn = egui::Button::new(icon(glyph, size * 0.62))

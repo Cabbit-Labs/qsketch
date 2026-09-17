@@ -58,7 +58,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     ui.label(
                         RichText::new(p.parent().map(|d| d.display().to_string()).unwrap_or_default()).weak().small(),
                     );
-                    if ui.small_button(icons::X).on_hover_text("Remove from list").clicked() {
+                    if crate::ui::widgets::small_button(ui, icons::X).on_hover_text("Remove from list").clicked() {
                         forget = Some(p.clone());
                     }
                 });

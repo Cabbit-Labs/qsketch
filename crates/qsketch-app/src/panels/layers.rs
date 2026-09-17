@@ -495,35 +495,6 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             }
         });
     }
-    let s = entry.doc.state_mut();
-    if let Some((from, to, parent)) = reorder {
-        let before: Vec<LayerId> = s.layers.iter().map(|l| l.props.id).collect();
-        let parents: Vec<Option<LayerId>> = s.layers.iter().map(|l| l.props.parent).collect();
-        s.move_block(from, to, parent);
-        let after: Vec<LayerId> = s.layers.iter().map(|l| l.props.id).collect();
-        let parents_after: Vec<Option<LayerId>> = s.layers.iter().map(|l| l.props.parent).collect();
-        if before != after || parents != parents_after {
-            entry.doc.mark_all_dirty();
-            entry.doc.commit("Reorder Layers");
-        }
-    } else if let Some((id, name)) = rename_target {
-        let name = name.trim().to_string();
-        let i = s.layers.iter().position(|l| l.props.id == id);
-        if let Some(i) = i.filter(|_| !name.is_empty()) {
-            if s.layers[i].props.name != name {
-                s.layers[i].props.name = name;
-                let label = if s.layers[i].is_group() { "Rename Group" } else { "Rename Layer" };
-                entry.doc.commit(label);
-            }
-        }
-    } else if changed_props {
-        entry.doc.mark_all_dirty();
-        // Coalesce slider drags: commit when the pointer is released.
-        let dragging = ctx.input(|i| i.pointer.any_down());
-        if !dragging {
-            entry.doc.commit("Layer Properties");
-        }
-    }
     // Visibility is a view toggle, not an undoable edit.
     if let Some((id, visible)) = toggle_vis {
         entry.doc.set_layer_visible(id, visible);
@@ -564,6 +535,44 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             }
         });
     });
+
+    // --- undoable edits ------------------------------------------------------
+    // These commit, so anything still floating over the document lands first
+    // (see `AppState::settle`); that needs the panel's borrows to be over.
+    if reorder.is_none() && rename_target.is_none() && !changed_props {
+        return;
+    }
+    state.settle();
+    let Some(entry) = state.doc_mut(doc_id) else { return };
+    let s = entry.doc.state_mut();
+    if let Some((from, to, parent)) = reorder {
+        let before: Vec<LayerId> = s.layers.iter().map(|l| l.props.id).collect();
+        let parents: Vec<Option<LayerId>> = s.layers.iter().map(|l| l.props.parent).collect();
+        s.move_block(from, to, parent);
+        let after: Vec<LayerId> = s.layers.iter().map(|l| l.props.id).collect();
+        let parents_after: Vec<Option<LayerId>> = s.layers.iter().map(|l| l.props.parent).collect();
+        if before != after || parents != parents_after {
+            entry.doc.mark_all_dirty();
+            entry.doc.commit("Reorder Layers");
+        }
+    } else if let Some((id, name)) = rename_target {
+        let name = name.trim().to_string();
+        let i = s.layers.iter().position(|l| l.props.id == id);
+        if let Some(i) = i.filter(|_| !name.is_empty()) {
+            if s.layers[i].props.name != name {
+                s.layers[i].props.name = name;
+                let label = if s.layers[i].is_group() { "Rename Group" } else { "Rename Layer" };
+                entry.doc.commit(label);
+            }
+        }
+    } else if changed_props {
+        entry.doc.mark_all_dirty();
+        // Coalesce slider drags: commit when the pointer is released.
+        let dragging = ctx.input(|i| i.pointer.any_down());
+        if !dragging {
+            entry.doc.commit("Layer Properties");
+        }
+    }
 }
 
 /// Eye-slash glyph for hidden layers: pushed well away from the visible

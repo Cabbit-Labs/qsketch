@@ -100,6 +100,7 @@ pub fn handle_move(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
 
 /// Nudge the layer / selection by whole pixels (arrow keys).
 pub fn nudge(state: &mut AppState, doc_id: DocId, dx: i32, dy: i32) {
+    state.settle();
     let Some(entry) = state.doc_mut(doc_id) else { return };
     let s = entry.doc.state_mut();
     let li = s.active;
@@ -159,6 +160,7 @@ pub fn handle_crop(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
 /// Apply the pending crop rect (Enter / double-click).
 pub fn commit_crop(state: &mut AppState, doc_id: DocId) {
     let Some(r) = state.tool_opts.crop_rect.take() else { return };
+    state.settle();
     let Some(entry) = state.doc_mut(doc_id) else { return };
     ops::crop(entry.doc.state_mut(), r);
     entry.doc.resized();

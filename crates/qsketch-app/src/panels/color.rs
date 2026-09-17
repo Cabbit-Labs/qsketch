@@ -35,7 +35,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         }
         ui.label(egui::RichText::new(if fg_sel { "Foreground" } else { "Background" }).weak());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button(crate::ui::icons::ARROWS_LEFT_RIGHT).on_hover_text("Swap (X)").clicked() {
+            if crate::ui::widgets::small_button(ui, crate::ui::icons::ARROWS_LEFT_RIGHT)
+                .on_hover_text("Swap (X)")
+                .clicked()
+            {
                 std::mem::swap(&mut state.fg, &mut state.bg);
             }
         });
@@ -196,7 +199,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Recent").weak());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button(crate::ui::icons::X).on_hover_text("Clear recent colors").clicked() {
+                if crate::ui::widgets::small_button(ui, crate::ui::icons::X)
+                    .on_hover_text("Clear recent colors")
+                    .clicked()
+                {
                     state.color_history.clear();
                 }
             });

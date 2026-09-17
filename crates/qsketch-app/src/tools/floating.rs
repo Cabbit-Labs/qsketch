@@ -246,6 +246,11 @@ impl FloatingPaste {
         }
     }
 
+    fn with_filter(mut self, filter: ResizeFilter) -> Self {
+        self.filter = filter;
+        self
+    }
+
     /// A plain selection move / duplicate needs no mode panel: it would cover
     /// the canvas on every drag. Ctrl+T and pastes still show it.
     pub fn shows_panel(&self) -> bool {
@@ -507,8 +512,7 @@ pub fn refresh(state: &mut AppState) {
 /// Begin floating `source` over the active layer of `doc_id` at `(x, y)` with
 /// the given display size. Any existing floating paste is committed first.
 pub fn begin(state: &mut AppState, doc_id: DocId, source: Raster, x: i32, y: i32, w: u32, h: u32) -> bool {
-    commit(state);
-    state.cancel_session();
+    state.settle();
     let Some(entry) = state.doc_mut(doc_id) else { return false };
     let s = entry.doc.state_mut();
     let li = s.active;
@@ -520,7 +524,8 @@ pub fn begin(state: &mut AppState, doc_id: DocId, source: Raster, x: i32, y: i32
     s.selection = None;
     entry.sel_outline = None;
     let place = IRect::new(x, y, w as i32, h as i32);
-    state.floating = Some(FloatingPaste::new(doc_id, li, source, base, place, Origin::Paste));
+    let filter = state.settings.canvas.transform_filter;
+    state.floating = Some(FloatingPaste::new(doc_id, li, source, base, place, Origin::Paste).with_filter(filter));
     refresh(state);
     true
 }
@@ -538,9 +543,7 @@ pub fn begin_transform_with(state: &mut AppState, doc_id: DocId, duplicate: bool
     if state.floating.as_ref().is_some_and(|f| f.doc == doc_id) {
         return true;
     }
-    commit(state);
-    crate::tools::text::commit(state);
-    state.cancel_session();
+    state.settle();
     let Some(entry) = state.doc_mut(doc_id) else { return false };
     let s = entry.doc.state_mut();
     let li = s.active;
@@ -569,7 +572,8 @@ pub fn begin_transform_with(state: &mut AppState, doc_id: DocId, duplicate: bool
     s.selection = None;
     entry.sel_outline = None;
     let origin = Origin::Transform { mask: lifted.mask, sel_before, label };
-    state.floating = Some(FloatingPaste::new(doc_id, li, lifted.raster, base, place, origin));
+    let filter = state.settings.canvas.transform_filter;
+    state.floating = Some(FloatingPaste::new(doc_id, li, lifted.raster, base, place, origin).with_filter(filter));
     refresh(state);
     true
 }

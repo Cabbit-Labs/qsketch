@@ -468,6 +468,9 @@ pub struct CanvasSettings {
     pub pan_inertia: bool,
     /// Briefly light up a layer's pixels on the canvas when it becomes active.
     pub flash_selected_layer: bool,
+    /// Smooth (bilinear) or Pixel (nearest) resampling for the transform box;
+    /// the toolbar toggle writes it back so the choice sticks.
+    pub transform_filter: qsketch_core::raster::ResizeFilter,
     /// Show the zoomed loupe while picking a color.
     pub pick_loupe: bool,
     /// Loupe diameter in screen points.
@@ -485,6 +488,7 @@ impl Default for CanvasSettings {
             outside_color: None,
             pixel_grid_min_zoom: 8.0,
             show_pixel_grid: false,
+            transform_filter: qsketch_core::raster::ResizeFilter::Bilinear,
             wheel: WheelBehavior::Zoom,
             invert_wheel_zoom: false,
             zoom_to_cursor: true,

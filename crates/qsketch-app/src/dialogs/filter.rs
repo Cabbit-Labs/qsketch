@@ -106,8 +106,7 @@ pub fn open(state: &mut AppState, action: Action) {
 /// Open the dialog pre-filled with `f` (applies immediately when `f` has no
 /// parameters).
 pub fn open_with(state: &mut AppState, f: Filter) {
-    state.cancel_session();
-    crate::tools::floating::commit(state);
+    state.settle();
     let Some(target) = target_layer(state) else { return };
     if !f.has_params() {
         apply_now(state, f);
@@ -304,7 +303,7 @@ fn seed_ui(ui: &mut Ui, seed: &mut u32) {
     ui.horizontal(|ui| {
         ui.add(egui::DragValue::new(seed).speed(1));
         ui.label("Seed");
-        if ui.small_button("Randomize").clicked() {
+        if crate::ui::widgets::small_button(ui, "Randomize").clicked() {
             let nanos = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.subsec_nanos())
@@ -347,7 +346,7 @@ fn params_ui(ui: &mut Ui, f: &mut Filter) {
                         *saturation = 0.0;
                     }
                 }
-                if ui.small_button("Reset").clicked() {
+                if crate::ui::widgets::small_button(ui, "Reset").clicked() {
                     *hue = 0.0;
                     *saturation = if *colorize { 25.0 } else { 0.0 };
                     *lightness = 0.0;

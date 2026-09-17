@@ -70,6 +70,7 @@ pub fn cut(state: &mut AppState, doc_id: DocId) {
     if !copy(state, doc_id, false) {
         return;
     }
+    state.settle();
     let Some(entry) = state.doc_mut(doc_id) else { return };
     let li = entry.doc.state().active;
     if !entry.doc.state().layer_editable(li) {

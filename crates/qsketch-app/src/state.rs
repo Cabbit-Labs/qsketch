@@ -295,6 +295,19 @@ impl AppState {
         }
     }
 
+    /// Land every edit still in flight before the document is changed under
+    /// it: the stroke in progress is dropped, floating pixels (a paste or a
+    /// transform) and a text placement are committed. The three each hold a
+    /// layer *index* and render their preview into the working state, so an
+    /// action that edits the layer list or commits while they are up would
+    /// point them at the wrong layer and snapshot the preview into history —
+    /// where Esc could no longer take it back.
+    pub fn settle(&mut self) {
+        self.cancel_session();
+        crate::tools::floating::commit(self);
+        crate::tools::text::commit(self);
+    }
+
     pub fn cancel_session(&mut self) {
         if self.session.take().is_some() {
             if let Some(id) = self.session_doc.take() {

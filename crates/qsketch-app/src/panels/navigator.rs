@@ -91,20 +91,22 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         }
     });
     ui.horizontal(|ui| {
-        if ui.small_button("Fit").clicked() {
+        if crate::ui::widgets::small_button(ui, "Fit").clicked() {
             entry.view.fit(dw, dh);
         }
-        if ui.small_button("100%").clicked() {
+        if crate::ui::widgets::small_button(ui, "100%").clicked() {
             entry.view.set_zoom(1.0, None);
         }
-        if ui.small_button("200%").clicked() {
+        if crate::ui::widgets::small_button(ui, "200%").clicked() {
             entry.view.set_zoom(2.0, None);
         }
         if entry.view.rotation != 0.0
-            && ui
-                .small_button(format!("{} {:.0}°", icons::ARROW_COUNTER_CLOCKWISE, entry.view.rotation_degrees()))
-                .on_hover_text("Reset rotation")
-                .clicked()
+            && crate::ui::widgets::small_button(
+                ui,
+                format!("{} {:.0}°", icons::ARROW_COUNTER_CLOCKWISE, entry.view.rotation_degrees()),
+            )
+            .on_hover_text("Reset rotation")
+            .clicked()
         {
             entry.view.reset_rotation();
         }

@@ -70,7 +70,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                         }
                     }
                     ui.add_space(12.0);
-                    if ui.small_button("Reset all to defaults").clicked() {
+                    if crate::ui::widgets::small_button(ui, "Reset all to defaults").clicked() {
                         let keep_recent = state.settings.general.recent_files.clone();
                         state.settings = Settings::default();
                         state.settings.general.recent_files = keep_recent;
@@ -211,7 +211,7 @@ fn general(ui: &mut Ui, state: &mut AppState) {
                 ui.label(RichText::new("none").weak());
             } else {
                 ui.label(&u.skipped_version);
-                if ui.small_button("Clear").clicked() {
+                if crate::ui::widgets::small_button(ui, "Clear").clicked() {
                     u.skipped_version.clear();
                 }
             }
@@ -431,7 +431,7 @@ fn custom_palette_editor(ui: &mut Ui, c: &mut CustomPalette) {
             ("Light", Palette::light()),
             ("Sepia", Palette::sepia()),
         ] {
-            if ui.small_button(label).clicked() {
+            if crate::ui::widgets::small_button(ui, label).clicked() {
                 *c = CustomPalette::from_palette(&p);
             }
         }
@@ -501,7 +501,7 @@ fn icons_page(ui: &mut Ui, state: &mut AppState) {
                 ui.end_row();
             }
         });
-        if !u.icon_overrides.is_empty() && ui.small_button("Reset all overrides").clicked() {
+        if !u.icon_overrides.is_empty() && crate::ui::widgets::small_button(ui, "Reset all overrides").clicked() {
             u.icon_overrides.clear();
         }
     });

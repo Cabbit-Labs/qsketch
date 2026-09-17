@@ -263,9 +263,12 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
             if filter != f.filter {
                 f.filter = filter;
                 f.reset_filter();
+                state.settings.canvas.transform_filter = filter;
             }
             if !f.is_identity()
-                && ui.small_button("Reset").on_hover_text("Back to the original size and angle").clicked()
+                && crate::ui::widgets::small_button(ui, "Reset")
+                    .on_hover_text("Back to the original size and angle")
+                    .clicked()
             {
                 f.reset();
             }
@@ -443,7 +446,9 @@ fn symmetry_options(ui: &mut Ui, state: &mut AppState) {
             state.symmetry_pick_center = !state.symmetry_pick_center;
         }
         if state.symmetry.center.is_some()
-            && ui.small_button("Center").on_hover_text("Reset the center to the canvas middle").clicked()
+            && crate::ui::widgets::small_button(ui, "Center")
+                .on_hover_text("Reset the center to the canvas middle")
+                .clicked()
         {
             state.symmetry.center = None;
         }

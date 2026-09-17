@@ -65,7 +65,9 @@ pub struct AdjustDialog {
 
 pub struct LayerPropsDialog {
     pub doc: DocId,
-    pub layer: usize,
+    /// By id: the dialog is modeless enough that the layer list can change
+    /// under it, and an index would then name a different layer.
+    pub layer: qsketch_core::layer::LayerId,
     pub name: String,
 }
 
@@ -174,10 +176,10 @@ fn show_recover(ctx: &Context, state: &mut AppState) {
                         ui.label(RichText::new(p.display().to_string()).weak());
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("Discard").clicked() {
+                        if crate::ui::widgets::small_button(ui, "Discard").clicked() {
                             single = Some((i, false));
                         }
-                        if ui.small_button("Recover").clicked() {
+                        if crate::ui::widgets::small_button(ui, "Recover").clicked() {
                             single = Some((i, true));
                         }
                         ui.label(RichText::new(when).weak());
@@ -432,7 +434,7 @@ fn show_new_doc(ctx: &Context, state: &mut AppState) {
                 ("Pixel 64", 64, 64),
                 ("Pixel 256", 256, 256),
             ] {
-                if ui.small_button(label).clicked() {
+                if crate::ui::widgets::small_button(ui, label).clicked() {
                     d.width = w;
                     d.height = h;
                 }
@@ -469,6 +471,7 @@ fn show_new_doc(ctx: &Context, state: &mut AppState) {
 }
 
 pub fn open_canvas_size(state: &mut AppState) {
+    state.settle();
     if let Some(e) = state.active() {
         state.dialogs.canvas_size =
             Some(CanvasSizeDialog { doc: e.id, width: e.doc.width(), height: e.doc.height(), anchor: Anchor::Center });
@@ -537,6 +540,7 @@ fn show_canvas_size(ctx: &Context, state: &mut AppState) {
 }
 
 pub fn open_image_size(state: &mut AppState) {
+    state.settle();
     if let Some(e) = state.active() {
         let (w, h) = (e.doc.width(), e.doc.height());
         state.dialogs.image_size = Some(ImageSizeDialog {
@@ -573,7 +577,7 @@ fn show_image_size(ctx: &Context, state: &mut AppState) {
             ui.label("Scale");
             ui.horizontal(|ui| {
                 for pct in [25u32, 50, 200, 400] {
-                    if ui.small_button(format!("{pct}%")).clicked() {
+                    if crate::ui::widgets::small_button(ui, format!("{pct}%")).clicked() {
                         d.width = (d.orig_w * pct / 100).max(1);
                         d.height = (d.orig_h * pct / 100).max(1);
                     }
@@ -613,6 +617,7 @@ fn show_image_size(ctx: &Context, state: &mut AppState) {
 }
 
 pub fn open_adjust(state: &mut AppState, kind: AdjustKind) {
+    state.settle();
     if let Some(e) = state.active() {
         let (a, b) = match kind {
             AdjustKind::BrightnessContrast => (0.0, 0.0),
@@ -666,10 +671,10 @@ fn show_adjust(ctx: &Context, state: &mut AppState) {
 }
 
 pub fn open_layer_props(state: &mut AppState) {
+    state.settle();
     if let Some(e) = state.active() {
-        let s = e.doc.state();
-        state.dialogs.layer_props =
-            Some(LayerPropsDialog { doc: e.id, layer: s.active, name: s.active_layer().props.name.clone() });
+        let l = e.doc.state().active_layer();
+        state.dialogs.layer_props = Some(LayerPropsDialog { doc: e.id, layer: l.props.id, name: l.props.name.clone() });
     }
 }
 
@@ -695,7 +700,8 @@ fn show_layer_props(ctx: &Context, state: &mut AppState) {
     if apply {
         let d = state.dialogs.layer_props.take().unwrap();
         if let Some(entry) = state.doc_mut(d.doc) {
-            if let Some(l) = entry.doc.state_mut().layers.get_mut(d.layer) {
+            let s = entry.doc.state_mut();
+            if let Some(l) = s.index_of(d.layer).map(|i| &mut s.layers[i]) {
                 if !d.name.trim().is_empty() {
                     l.props.name = d.name.trim().to_string();
                 }

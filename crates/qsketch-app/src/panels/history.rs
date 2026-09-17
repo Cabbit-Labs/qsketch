@@ -61,7 +61,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         }
     });
     if let Some(i) = jump {
+        // Like Undo: a jump abandons a paste or text still being placed
+        // rather than committing it as a step that the jump then leaves.
         state.cancel_session();
+        crate::tools::floating::cancel(state);
+        crate::tools::text::cancel(state);
         if let Some(entry) = state.active_mut() {
             entry.doc.jump_to(i);
             entry.sel_outline = None;
@@ -72,7 +76,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(format!("{} states", len)).weak());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("Clear").on_hover_text("Discard undo history (frees memory)").clicked() {
+                if crate::ui::widgets::small_button(ui, "Clear")
+                    .on_hover_text("Discard undo history (frees memory)")
+                    .clicked()
+                {
                     entry.doc.history.clear_to_current();
                 }
             });

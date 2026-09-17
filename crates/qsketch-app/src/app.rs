@@ -1055,9 +1055,7 @@ impl QSketchApp {
                 }
             }
             Action::Redo => {
-                self.state.cancel_session();
-                crate::tools::floating::commit(&mut self.state);
-                crate::tools::text::commit(&mut self.state);
+                self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     if d.doc.redo() {
                         d.sel_outline = None;
@@ -1154,6 +1152,7 @@ impl QSketchApp {
             Action::LastFilterDialog => dialogs::filter::reopen_last(&mut self.state),
             a if a.category() == Category::Filter => dialogs::filter::open(&mut self.state, a),
             Action::NewLayer => {
+                self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     let s = d.doc.state_mut();
                     let name = s.unique_layer_name("Layer");
@@ -1162,6 +1161,7 @@ impl QSketchApp {
                 }
             }
             Action::DuplicateLayer => {
+                self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     let s = d.doc.state_mut();
                     let a = s.active;
@@ -1171,6 +1171,7 @@ impl QSketchApp {
                 }
             }
             Action::DeleteLayer => {
+                self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     // Top to bottom so earlier removals don't shift later indices.
                     let mut targets = d.selected_indices();
@@ -1193,6 +1194,7 @@ impl QSketchApp {
                 }
             }
             Action::GroupLayers => {
+                self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     let ids = d.selected_ids();
                     if d.doc.state_mut().group_layers(&ids).is_some() {
@@ -1203,6 +1205,7 @@ impl QSketchApp {
                 }
             }
             Action::UngroupLayers => {
+                self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     let a = d.doc.state().active;
                     if d.doc.state_mut().ungroup(a) {
@@ -1215,6 +1218,7 @@ impl QSketchApp {
                 }
             }
             Action::MergeDown => {
+                self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     let s = d.doc.state_mut();
                     let a = s.active;
@@ -1228,6 +1232,7 @@ impl QSketchApp {
             Action::MergeVisible => self.edit_doc("Merge Visible", |s| s.merge_visible(), false),
             Action::Flatten => self.edit_doc("Flatten Image", |s| s.flatten(), false),
             Action::LayerUp | Action::LayerDown | Action::LayerToTop | Action::LayerToBottom => {
+                self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     let s = d.doc.state_mut();
                     let a = s.active;
@@ -1287,21 +1292,25 @@ impl QSketchApp {
                 }
             }
             Action::SelectAll => {
+                self.state.settle();
                 if let Some(id) = active {
                     crate::tools::select_all(&mut self.state, id);
                 }
             }
             Action::Deselect => {
+                self.state.settle();
                 if let Some(id) = active {
                     crate::tools::deselect(&mut self.state, id);
                 }
             }
             Action::InvertSelection => {
+                self.state.settle();
                 if let Some(id) = active {
                     crate::tools::invert_selection(&mut self.state, id);
                 }
             }
             Action::SelectLayerContent => {
+                self.state.settle();
                 if let Some(id) = active {
                     crate::tools::select_layer_content(&mut self.state, id);
                 }
@@ -1421,9 +1430,7 @@ impl QSketchApp {
     /// Apply an operation to every selected layer (respecting the selection;
     /// groups stand for their members) and commit once.
     fn edit_layer(&mut self, label: &str, f: impl Fn(&mut qsketch_core::DocState, usize) -> qsketch_core::IRect) {
-        self.state.cancel_session();
-        crate::tools::floating::commit(&mut self.state);
-        crate::tools::text::commit(&mut self.state);
+        self.state.settle();
         let Some(d) = self.state.active_mut() else { return };
         let targets = d.target_layers();
         if targets.is_empty() {
@@ -1446,9 +1453,7 @@ impl QSketchApp {
     /// Delete: clear the selected pixels, and (unless the setting is off) drop
     /// the selection in the same history step, so one undo puts both back.
     fn clear_selected(&mut self) {
-        self.state.cancel_session();
-        crate::tools::floating::commit(&mut self.state);
-        crate::tools::text::commit(&mut self.state);
+        self.state.settle();
         let deselect = self.state.settings.general.deselect_after_delete;
         let Some(d) = self.state.active_mut() else { return };
         let targets = d.target_layers();
@@ -1476,9 +1481,7 @@ impl QSketchApp {
 
     /// Apply a whole-document operation and commit.
     fn edit_doc(&mut self, label: &str, f: impl FnOnce(&mut qsketch_core::DocState), resizes: bool) {
-        self.state.cancel_session();
-        crate::tools::floating::commit(&mut self.state);
-        crate::tools::text::commit(&mut self.state);
+        self.state.settle();
         let Some(d) = self.state.active_mut() else { return };
         f(d.doc.state_mut());
         if resizes {
