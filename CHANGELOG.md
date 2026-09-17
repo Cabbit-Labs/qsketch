@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.20.0 — 2026-09-17
 
 - The pencil shows the pixels it is about to paint. Instead of a circle that
   runs between pixels, the cursor outlines the exact pixel footprint of a
