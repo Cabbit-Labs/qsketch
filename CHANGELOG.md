@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.25.1 — 2026-09-18
 
 - Updater: a manifest fetch that fails on the network (a DNS lookup that has
   not come back yet after waking, a dropped handshake) is retried for about
