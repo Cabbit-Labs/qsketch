@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Layers panel: right-clicking a layer row selects it (highlights it and makes
+  it the active layer) before the context menu opens, instead of only once a
+  menu item is picked. A right-click on a row inside a multi-selection keeps
+  the selection and makes that row the active one.
+
 ## 0.24.1 — 2026-09-18
 
 - Layers panel: the layer list's scroll bar sits on the left edge and is always

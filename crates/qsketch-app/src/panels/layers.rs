@@ -423,6 +423,17 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             if drag_resp.double_clicked() {
                 renaming = Some(Rename::start(doc_id, layer_id, &s.layers[i].props.name, active_layer_id));
             }
+            // A right-click lands on the row before its menu opens: a row
+            // outside the selection becomes the sole (active) layer, a row
+            // inside it becomes the active one so the menu acts on the whole
+            // selection.
+            if drag_resp.secondary_clicked() || row_resp.secondary_clicked() {
+                if !is_selected {
+                    click = Some(Click::Only(i));
+                } else if !is_active {
+                    click = Some(Click::Activate(i));
+                }
+            }
             drag_resp.context_menu(|ui| {
                 let mut queued: Option<Action> = None;
                 if ui.button("Add Layer").clicked() {
@@ -476,13 +487,6 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     queued = Some(Action::LayerProperties);
                 }
                 if let Some(a) = queued {
-                    // Acting on a row outside the selection targets that row
-                    // alone; inside it, the whole selection.
-                    if !is_selected {
-                        click = Some(Click::Only(i));
-                    } else if !is_active {
-                        click = Some(Click::Activate(i));
-                    }
                     pending.push(a);
                     ui.close();
                 }
