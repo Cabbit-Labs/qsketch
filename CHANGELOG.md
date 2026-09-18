@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.24.2 — 2026-09-18
 
 - Layers panel: right-clicking a layer row selects it (highlights it and makes
   it the active layer) before the context menu opens, instead of only once a
