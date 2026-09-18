@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.24.1 — 2026-09-18
 
 - Layers panel: the layer list's scroll bar sits on the left edge and is always
   shown as a solid, pen-sized track and handle instead of egui's thin bar that
