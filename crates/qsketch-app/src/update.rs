@@ -236,13 +236,14 @@ fn agent() -> ureq::Agent {
 /// Fetch and parse the manifest; `Some` if it advertises a newer version for
 /// this platform. Relative artifact URLs resolve against the manifest URL.
 pub fn check_manifest(manifest_url: &str) -> Result<Option<UpdateInfo>, String> {
-    // A relay can drop a TLS handshake now and then; retry transport errors
-    // a few times before surfacing them.
+    // A relay can drop a TLS handshake now and then, and a machine that just
+    // woke up can be without DNS for several seconds; retry transport errors
+    // with a growing pause (1, 2, 4, 8 s: ~15 s in all) before surfacing them.
     let mut body = None;
     let mut last_err = String::new();
-    for attempt in 0..3 {
+    for attempt in 0..5u32 {
         if attempt > 0 {
-            std::thread::sleep(Duration::from_millis(500 * attempt as u64));
+            std::thread::sleep(Duration::from_secs(1 << (attempt - 1)));
         }
         match agent().get(manifest_url).call() {
             Ok(mut resp) => match resp.body_mut().read_to_string() {
