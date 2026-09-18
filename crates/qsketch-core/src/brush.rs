@@ -414,6 +414,55 @@ impl BrushSettings {
     ///
     /// `None` when there is no such set to show: a sampled tip, or randomized
     /// placement / shape, where the dab lands somewhere this cannot predict.
+    /// The pixels a straight stroke from `a` to `b` would put ink on, for a
+    /// hard round tip: the same grid walk `StrokeEngine::extend` takes, one
+    /// dab footprint per step, so a Shift+click preview outlines exactly the
+    /// line that will be drawn. `None` when the tip is anti-aliased, soft or
+    /// jittered — then there is no crisp pixel set to promise.
+    pub fn line_spans(&self, a: Pt, b: Pt, pressure: f32) -> Option<Spans> {
+        if self.antialias || !self.is_round() {
+            return None;
+        }
+        let r = self.dab_radius(pressure);
+        let p0 = pixel_snap(a, r);
+        let p1 = pixel_snap(b, r);
+        let (dx, dy) = (p1.x - p0.x, p1.y - p0.y);
+        let n = dx.abs().max(dy.abs()).round() as i32;
+        if n > 4096 {
+            return None;
+        }
+        let mut rows: Vec<(i32, i32)> = Vec::new();
+        let mut y0 = i32::MAX;
+        for k in 0..=n {
+            let t = if n == 0 { 0.0 } else { k as f32 / n as f32 };
+            let p = Pt::new(p0.x + (dx * t).round(), p0.y + (dy * t).round());
+            let d = self.dab_spans(p, pressure)?;
+            // Merge row runs: a disc swept along a segment covers one
+            // contiguous run per row, so min/max per row is exact.
+            if rows.is_empty() {
+                y0 = d.y0;
+                rows = d.rows;
+                continue;
+            }
+            let new_y0 = y0.min(d.y0);
+            let new_y1 = (y0 + rows.len() as i32).max(d.y0 + d.rows.len() as i32);
+            let mut merged = vec![(0, 0); (new_y1 - new_y0) as usize];
+            for (i, run) in rows.iter().enumerate() {
+                merged[(y0 + i as i32 - new_y0) as usize] = *run;
+            }
+            for (i, run) in d.rows.iter().enumerate() {
+                if run.1 <= run.0 {
+                    continue;
+                }
+                let m = &mut merged[(d.y0 + i as i32 - new_y0) as usize];
+                *m = if m.1 <= m.0 { *run } else { (m.0.min(run.0), m.1.max(run.1)) };
+            }
+            y0 = new_y0;
+            rows = merged;
+        }
+        (!rows.is_empty()).then_some(Spans { y0, rows })
+    }
+
     pub fn dab_spans(&self, center: Pt, pressure: f32) -> Option<Spans> {
         let jittered = self.scattering
             || (self.shape_dynamics
@@ -1188,6 +1237,40 @@ mod tests {
     }
 
     /// Nothing predictable to outline: a sampled tip, scattered dabs.
+    #[test]
+    fn line_spans_match_a_hard_pencil_stroke() {
+        // A 1 px hard pencil from (2,2) to (8,5): the preview must cover
+        // exactly the pixels the engine walks, no more, no fewer.
+        for size in [1.0, 3.0, 4.0] {
+            let b = BrushSettings {
+                size,
+                flow: 1.0,
+                opacity: 1.0,
+                hardness: 1.0,
+                antialias: false,
+                pressure_size: false,
+                smoothing: 0.0,
+                ..Default::default()
+            };
+            let (a, z) = (Pt::new(42.5, 42.5), Pt::new(58.5, 49.5));
+            let spans = b.line_spans(a, z, 1.0).expect("hard round tip previews");
+            let l = layer();
+            let mut raster = l.raster.clone();
+            let mut eng = StrokeEngine::new(b, PaintMode::Paint, Rgba8::BLACK, &l, None);
+            eng.extend(&mut raster, StrokeSample { pos: a, pressure: 1.0 });
+            eng.extend(&mut raster, StrokeSample { pos: z, pressure: 1.0 });
+            eng.finish(&mut raster);
+            for y in 30..70 {
+                for x in 30..70 {
+                    let (l, r) = spans.row(y);
+                    let previewed = x >= l && x < r;
+                    let painted = raster.get_pixel(x, y).a > 0;
+                    assert_eq!(previewed, painted, "size {size}: pixel ({x},{y})");
+                }
+            }
+        }
+    }
+
     #[test]
     fn dab_spans_declines_fuzzy_dabs() {
         let tipped = BrushSettings { tip: "Chalk".into(), ..Default::default() };

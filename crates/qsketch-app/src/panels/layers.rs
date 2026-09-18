@@ -77,18 +77,40 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         let slider_w = (total - combo_w - 110.0).max(40.0);
         ui.spacing_mut().slider_width = slider_w;
         let is_group = layer.is_group();
-        egui::ComboBox::from_id_salt("blend_mode").selected_text(blend.label()).width(combo_w).show_ui(ui, |ui| {
-            if is_group {
-                ui.selectable_value(&mut blend, BlendMode::PassThrough, BlendMode::PassThrough.label());
-                ui.separator();
-            }
-            for m in BlendMode::ALL {
-                if m.starts_group() {
+        let combo =
+            egui::ComboBox::from_id_salt("blend_mode").selected_text(blend.label()).width(combo_w).show_ui(ui, |ui| {
+                if is_group {
+                    ui.selectable_value(&mut blend, BlendMode::PassThrough, BlendMode::PassThrough.label());
                     ui.separator();
                 }
-                ui.selectable_value(&mut blend, m, m.label());
+                for m in BlendMode::ALL {
+                    if m.starts_group() {
+                        ui.separator();
+                    }
+                    ui.selectable_value(&mut blend, m, m.label());
+                }
+            });
+        // Up / Down step through the modes while the combo has keyboard focus
+        // (it keeps focus after a pick), so the popup need not reopen each time.
+        if combo.response.clicked() {
+            combo.response.request_focus();
+        }
+        if combo.response.has_focus() {
+            let step = ui.input_mut(|i| {
+                let down = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown);
+                let up = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp);
+                (down as i32) - (up as i32)
+            });
+            if step != 0 {
+                let mut modes: Vec<BlendMode> = Vec::new();
+                if is_group {
+                    modes.push(BlendMode::PassThrough);
+                }
+                modes.extend(BlendMode::ALL);
+                let at = modes.iter().position(|m| *m == blend).unwrap_or(0) as i32;
+                blend = modes[(at + step).rem_euclid(modes.len() as i32) as usize];
             }
-        });
+        }
         if blend != layer.props.blend {
             layer.props.blend = blend;
             changed_props = true;
@@ -171,6 +193,34 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         }
     }
     egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(list_h).id_salt("layer_list").show(ui, |ui| {
+        // A layer in flight past the edge of the list scrolls it, so a drag
+        // can reach rows that are out of view; the wheel scrolls it too.
+        if egui::DragAndDrop::has_payload_of_type::<DragLayer>(&ctx) {
+            let clip = ui.clip_rect();
+            if let Some(p) = ui.input(|inp| inp.pointer.latest_pos()) {
+                const EDGE: f32 = 28.0;
+                const SPEED: f32 = 420.0; // points per second at the very edge
+                let dt = ui.input(|inp| inp.stable_dt).min(0.05);
+                let push = if p.y < clip.top() + EDGE {
+                    ((clip.top() + EDGE - p.y) / EDGE).clamp(0.0, 1.0)
+                } else if p.y > clip.bottom() - EDGE {
+                    -((p.y - (clip.bottom() - EDGE)) / EDGE).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                if push != 0.0 {
+                    ui.scroll_with_delta_animation(
+                        egui::vec2(0.0, push * SPEED * dt),
+                        egui::style::ScrollAnimation::none(),
+                    );
+                    ui.ctx().request_repaint();
+                }
+            }
+            let wheel = ui.input_mut(|inp| std::mem::take(&mut inp.smooth_scroll_delta).y);
+            if wheel != 0.0 {
+                ui.scroll_with_delta(egui::vec2(0.0, wheel));
+            }
+        }
         for (row_no, &(i, depth)) in rows.iter().enumerate() {
             let layer_id = s.layers[i].props.id;
             let is_group = s.layers[i].is_group();

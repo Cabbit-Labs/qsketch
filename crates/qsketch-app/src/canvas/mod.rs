@@ -455,6 +455,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             None => painter.clone(),
         };
         draw_brush_cursor(&cursor_painter, state, doc_id, cursor_pos, cursor_tool);
+        if state.brush_popup.is_none() && mods.shift {
+            draw_shift_line_preview(&painter, state, doc_id, hover_pos, tool);
+        }
         if tool == ToolKind::RotateView && state.brush_popup.is_none() {
             draw_rotate_cursor(&painter, hover_pos);
         }
@@ -646,6 +649,48 @@ fn draw_pixel_preview(
         }
     }
     true
+}
+
+/// Aseprite-style Shift preview: with Shift held, a stroke tool shows the
+/// straight line a click would draw from the end of the previous stroke to the
+/// pointer, so it can be judged before it is committed. The pencil (and its
+/// eraser) previews the exact pixels; a soft or anti-aliased tip gets a hairline
+/// along its path.
+fn draw_shift_line_preview(
+    painter: &egui::Painter,
+    state: &AppState,
+    doc_id: DocId,
+    hover: Option<Pos2>,
+    tool: ToolKind,
+) {
+    let Some(pos) = hover else { return };
+    if !matches!(tool, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser) || state.session.is_some() {
+        return;
+    }
+    let Some((d, from)) = state.last_stroke_end else { return };
+    if d != doc_id {
+        return;
+    }
+    let Some(brush) = state.brush_for_tool(tool) else { return };
+    let Some(entry) = state.doc(doc_id) else { return };
+    let view = &entry.view;
+    let to = view.screen_to_doc(pos);
+    if brush.size <= PIXEL_PREVIEW_MAX_SIZE {
+        if let Some(spans) = brush.line_spans(from, to, 1.0) {
+            let fill = (tool == ToolKind::Pencil).then(|| {
+                let c = crate::ui::widgets::rgba_to_color32(state.fg);
+                c.gamma_multiply((brush.opacity * brush.flow).clamp(0.0, 1.0))
+            });
+            if draw_pixel_preview(painter, view, &spans, fill) {
+                return;
+            }
+        }
+    }
+    let (a, b) = (view.doc_to_screen(from), pos);
+    painter.line_segment([a, b], Stroke::new(3.0, Color32::from_black_alpha(120)));
+    painter.line_segment([a, b], Stroke::new(1.0, Color32::from_white_alpha(230)));
+    let r = (brush.size / 2.0 * view.zoom).max(1.5);
+    painter.circle_stroke(a, r, Stroke::new(1.0, Color32::from_white_alpha(160)));
 }
 
 fn draw_brush_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, hover: Option<Pos2>, tool: ToolKind) {

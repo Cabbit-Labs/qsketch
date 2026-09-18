@@ -67,13 +67,15 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let gap = ui.spacing().item_spacing.x;
     let avail_w = ui.available_width();
     let avail_h = ui.available_height();
-    // The picker is a square sized by the panel height, but the column of
-    // sliders keeps a usable width; in a narrow panel the picker gives way.
-    let sv = (avail_h - 4.0).min(avail_w - strip_w - 3.0 * gap - 150.0).clamp(80.0, 400.0);
+    // The picker takes the full panel height; its width is what is left once
+    // the column of sliders keeps a usable width, so in a narrow panel it is
+    // taller than wide rather than leaving the bottom of the panel empty.
+    let sv_h = (avail_h - 4.0).clamp(80.0, 600.0);
+    let sv_w = (avail_w - strip_w - 3.0 * gap - 150.0).clamp(80.0, 600.0);
     let mut rgb = current;
     let mut hex = ui.data(|d| d.get_temp::<String>(ui.id().with("hex"))).unwrap_or_else(|| current.to_hex());
     ui.horizontal_top(|ui| {
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(sv, sv), Sense::click_and_drag());
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(sv_w, sv_h), Sense::click_and_drag());
         paint_sv_square(ui, rect, hsv.h);
         if resp.dragged() || resp.clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
@@ -86,7 +88,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         ui.painter().circle_stroke(marker, 5.0, egui::Stroke::new(2.0, Color32::BLACK));
         ui.painter().circle_stroke(marker, 5.0, egui::Stroke::new(1.0, Color32::WHITE));
 
-        let (hrect, hresp) = ui.allocate_exact_size(Vec2::new(strip_w, sv), Sense::click_and_drag());
+        let (hrect, hresp) = ui.allocate_exact_size(Vec2::new(strip_w, sv_h), Sense::click_and_drag());
         paint_hue_strip(ui, hrect);
         if hresp.dragged() || hresp.clicked() {
             if let Some(p) = hresp.interact_pointer_pos() {

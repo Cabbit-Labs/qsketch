@@ -711,17 +711,48 @@ pub fn begin_selection_transform(state: &mut AppState, doc_id: DocId, inp: super
 /// started. Ctrl on a handle keeps its own meaning (jump into Deform).
 pub fn restamp_duplicate(state: &mut AppState, doc_id: DocId, inp: super::CanvasInput) -> bool {
     let Some(fp) = state.floating.as_ref() else { return false };
-    // Only a selection drag stamps: a paste has no selection to lift the next
-    // copy from, and Ctrl+T keeps Ctrl for its own handle shortcuts.
-    if fp.doc != doc_id || !fp.is_selection_drag() {
+    if fp.doc != doc_id {
         return false;
     }
     let Some(entry) = state.doc(doc_id) else { return false };
     let view = &entry.view;
+    // Ctrl on a handle keeps its own meaning (jump into Deform).
     if fp.grab_at(view, inp.screen).is_some() || !fp.contains(view.screen_to_doc(inp.screen)) {
         return false;
     }
+    // A paste or Ctrl+T box has no selection to lift the next copy from: the
+    // pixels it just placed become the selection, so the duplicate is exactly
+    // what was floating (its opaque pixels), wherever it landed.
+    let footprint = (!fp.is_selection_drag()).then(|| fp.corners());
+    let layer = fp.layer;
     commit(state);
+    if let Some(q) = footprint {
+        let Some(entry) = state.doc_mut(doc_id) else { return false };
+        let s = entry.doc.state_mut();
+        let (w, h) = (s.width, s.height);
+        let Some(raster) = s.layers.get(layer).map(|l| &l.raster) else { return false };
+        let (x0, y0) = q.iter().fold((f32::MAX, f32::MAX), |(x, y), p| (x.min(p.x), y.min(p.y)));
+        let (x1, y1) = q.iter().fold((f32::MIN, f32::MIN), |(x, y), p| (x.max(p.x), y.max(p.y)));
+        let bb = IRect::from_f32_bounds(x0, y0, x1, y1).expand(1).intersect(&IRect::new(0, 0, w as i32, h as i32));
+        if bb.is_empty() {
+            return false;
+        }
+        let mut data = vec![0u8; (w * h) as usize];
+        for y in bb.y..bb.bottom() {
+            for x in bb.x..bb.right() {
+                let a = raster.get_pixel(x, y).a;
+                if a > 0 {
+                    data[(y as u32 * w + x as u32) as usize] = 255;
+                }
+            }
+        }
+        let mask = Mask::from_gray(w, h, data);
+        if mask.bounds().is_empty() {
+            return false;
+        }
+        s.selection = Some(Arc::new(mask));
+        entry.sel_outline = None;
+    }
     // The stamped copy leaves its selection behind; without one the next lift
     // would take the whole layer instead of the area the user is dragging.
     if state.doc(doc_id).is_none_or(|e| e.doc.state().selection.is_none()) {

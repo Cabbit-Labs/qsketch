@@ -104,12 +104,36 @@ pub fn percent_slider(ui: &mut Ui, label: &str, value: &mut f32) -> bool {
                 .clamping(egui::SliderClamping::Always),
         )
     });
-    if r.inner.changed() {
+    let mut changed = r.inner.changed();
+    // The wheel nudges the value while the pointer is over the slider (1 % a
+    // notch, 10 % with Shift), and the enclosing scroll area does not see it.
+    if r.inner.hovered() {
+        if let Some(notch) = wheel_notch(ui) {
+            let step = if ui.input(|i| i.modifiers.shift) { 10.0 } else { 1.0 };
+            pct = (pct + notch * step).clamp(0.0, 100.0);
+            changed = true;
+        }
+    }
+    if changed {
         *value = (pct / 100.0).clamp(0.0, 1.0);
         true
     } else {
         false
     }
+}
+
+/// Take this frame's wheel movement as a signed notch count (+ = wheel up),
+/// consuming it so nothing behind the widget scrolls. `None` when the wheel
+/// did not move.
+pub fn wheel_notch(ui: &Ui) -> Option<f32> {
+    let dy = ui.input_mut(|i| {
+        let d = i.smooth_scroll_delta.y;
+        if d != 0.0 {
+            i.smooth_scroll_delta = egui::Vec2::ZERO;
+        }
+        d
+    });
+    (dy != 0.0).then(|| dy.signum())
 }
 
 /// A color swatch rectangle with checkerboard behind transparent colors.

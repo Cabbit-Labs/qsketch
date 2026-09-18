@@ -2,6 +2,24 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Layers panel: dragging a layer to the top or bottom edge of the list scrolls
+  it, and the mouse wheel scrolls it during the drag, so a layer can be dropped
+  anywhere in a long stack. The wheel also nudges the Opacity slider while the
+  pointer is over it (1 % a notch, 10 % with Shift), and with the blend mode
+  box focused Up / Down step through the modes without opening it.
+- Color panel: the picker takes the panel's full height instead of stopping at
+  a square, so a tall panel no longer leaves the bottom empty.
+- Shift held with the pencil, brush or eraser previews the straight line a
+  click would draw from the end of the previous stroke to the pointer. The
+  pencil (and eraser) outline the exact pixels, Aseprite-style; a soft or
+  anti-aliased tip shows a hairline along the path.
+- Ctrl+drag inside any floating box now stamps a duplicate, not only a moved
+  selection: a paste (Ctrl+V / Ctrl+Shift+V) or a Free Transform box is
+  committed where it sits, its opaque pixels become the selection, and a copy
+  lifts off. Ctrl on a handle still jumps into Deform.
+
 ## 0.23.1 — 2026-09-17
 
 - 0.23.0 shipped Ungroup on Ctrl+Shift+U, which Desaturate already held;
