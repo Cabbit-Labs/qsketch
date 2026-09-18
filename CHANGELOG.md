@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.25.0 — 2026-09-18
 
 - Brush Settings panel: the brush name in the header is now a text box. Enter
   (or leaving the box) renames the live brush and the preset it was loaded
