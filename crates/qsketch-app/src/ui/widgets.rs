@@ -310,3 +310,93 @@ pub fn keycap(ui: &mut Ui, text: &str) -> Response {
             .sense(Sense::hover()),
     )
 }
+
+/// Width of the always-visible scroll bar drawn by [`scroll_left_bar`].
+pub const LEFT_BAR_W: f32 = 14.0;
+
+/// A vertical scroll area with a solid, always-visible scroll bar on its
+/// **left** edge instead of egui's auto-hiding one on the right. The bar is
+/// wide enough to grab with a pen; a drag on the handle scrolls, a tap on the
+/// track jumps there. egui only ever draws its bars on the right, so the
+/// built-in bar is hidden and this one is painted from the area's state.
+pub fn scroll_left_bar<R>(
+    ui: &mut Ui,
+    id_salt: &str,
+    max_height: f32,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> egui::scroll_area::ScrollAreaOutput<R> {
+    let outer = ui.available_rect_before_wrap();
+    let bar_rect = egui::Rect::from_min_size(outer.min, egui::vec2(LEFT_BAR_W, max_height.min(outer.height())));
+    let list_rect = egui::Rect::from_min_max(egui::pos2(outer.min.x + LEFT_BAR_W + 2.0, outer.min.y), outer.max);
+
+    let out = ui
+        .scope_builder(egui::UiBuilder::new().max_rect(list_rect), |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .max_height(max_height)
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                .id_salt(id_salt)
+                .show(ui, add_contents)
+        })
+        .inner;
+
+    // The bar spans exactly the height the list ended up with.
+    let track = egui::Rect::from_min_size(bar_rect.min, egui::vec2(LEFT_BAR_W, out.inner_rect.height()));
+    let view_h = out.inner_rect.height();
+    let content_h = out.content_size.y.max(view_h);
+    let max_off = (content_h - view_h).max(0.0);
+    let mut offset = out.state.offset.y.clamp(0.0, max_off);
+
+    let handle_h = (track.height() * view_h / content_h).clamp(24.0_f32.min(track.height()), track.height());
+    let travel = (track.height() - handle_h).max(0.0);
+    let handle_top = |off: f32| track.top() + if max_off > 0.0 { off / max_off * travel } else { 0.0 };
+    let handle =
+        egui::Rect::from_min_size(egui::pos2(track.left(), handle_top(offset)), egui::vec2(LEFT_BAR_W, handle_h));
+
+    let resp = ui.interact(track, ui.id().with("left_scroll_bar"), Sense::click_and_drag());
+    if max_off > 0.0 && travel > 0.0 {
+        if resp.drag_started() {
+            // Grab the handle where it is; a press on the bare track pulls the
+            // handle under the pen first so the drag then continues from there.
+            if let Some(p) = resp.interact_pointer_pos() {
+                if !handle.contains(p) {
+                    offset = ((p.y - track.top() - handle_h * 0.5) / travel * max_off).clamp(0.0, max_off);
+                }
+            }
+        }
+        if resp.dragged() {
+            offset = (offset + resp.drag_delta().y / travel * max_off).clamp(0.0, max_off);
+        } else if resp.clicked() {
+            if let Some(p) = resp.interact_pointer_pos() {
+                offset = ((p.y - track.top() - handle_h * 0.5) / travel * max_off).clamp(0.0, max_off);
+            }
+        }
+    }
+    if offset != out.state.offset.y {
+        let mut st = out.state;
+        st.offset.y = offset;
+        st.store(ui.ctx(), out.id);
+        ui.ctx().request_repaint();
+    }
+
+    // Paint: a solid track and a handle that follows the widget visuals, so
+    // it reads as one control in every theme.
+    let v = ui.visuals();
+    let p = ui.painter();
+    p.rect_filled(track, 3.0, v.extreme_bg_color);
+    let handle =
+        egui::Rect::from_min_size(egui::pos2(track.left(), handle_top(offset)), egui::vec2(LEFT_BAR_W, handle_h));
+    let w = if resp.dragged() {
+        &v.widgets.active
+    } else if resp.hovered() {
+        &v.widgets.hovered
+    } else {
+        &v.widgets.inactive
+    };
+    let handle_fill =
+        if max_off > 0.0 { w.fg_stroke.color.gamma_multiply(0.55) } else { w.bg_fill.gamma_multiply(0.6) };
+    p.rect_filled(handle.shrink2(egui::vec2(3.0, 2.0)), 3.0, handle_fill);
+    // Keep the bar inside the parent's layout so nothing overlaps it.
+    ui.allocate_rect(track, Sense::hover());
+    out
+}

@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Layers panel: the layer list's scroll bar sits on the left edge and is always
+  shown as a solid, pen-sized track and handle instead of egui's thin bar that
+  fades out on the right. Dragging the handle scrolls, tapping the track jumps.
+- Layers panel: with the blend mode box focused, Up / Down now actually step
+  through the modes; before, egui's focus navigation grabbed the keys first
+  and moved focus to a neighboring control.
+
 ## 0.24.0 — 2026-09-18
 
 - Layers panel: dragging a layer to the top or bottom edge of the list scrolls

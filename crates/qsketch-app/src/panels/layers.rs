@@ -96,6 +96,15 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             combo.response.request_focus();
         }
         if combo.response.has_focus() {
+            // egui moves keyboard focus on bare arrow keys at the start of the
+            // frame unless the focused widget claims them, so lock them first;
+            // otherwise Up / Down hop to a neighboring widget instead.
+            ui.memory_mut(|m| {
+                m.set_focus_lock_filter(
+                    combo.response.id,
+                    egui::EventFilter { vertical_arrows: true, ..Default::default() },
+                )
+            });
             let step = ui.input_mut(|i| {
                 let down = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown);
                 let up = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp);
@@ -192,7 +201,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             renaming = None;
         }
     }
-    egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(list_h).id_salt("layer_list").show(ui, |ui| {
+    crate::ui::widgets::scroll_left_bar(ui, "layer_list", list_h, |ui| {
         // A layer in flight past the edge of the list scrolls it, so a drag
         // can reach rows that are out of view; the wheel scrolls it too.
         if egui::DragAndDrop::has_payload_of_type::<DragLayer>(&ctx) {
