@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.24.0 — 2026-09-18
 
 - Layers panel: dragging a layer to the top or bottom edge of the list scrolls
   it, and the mouse wheel scrolls it during the drag, so a layer can be dropped
