@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Brush Settings panel: the brush name in the header is now a text box. Enter
+  (or leaving the box) renames the live brush and the preset it was loaded
+  from; a name another preset already uses is refused with a note.
+- Brush Settings panel: a new "Apply to preset" button (floppy icon) writes the
+  settings being edited back into the preset of the same name, so a tweak can
+  be kept without saving a copy. Every painting tool (brush, pencil, eraser)
+  keeps its own size, hardness and other settings, as before.
+
 ## 0.24.2 — 2026-09-18
 
 - Layers panel: right-clicking a layer row selects it (highlights it and makes

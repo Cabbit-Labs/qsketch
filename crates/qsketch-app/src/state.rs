@@ -391,6 +391,14 @@ impl AppState {
         }
     }
 
+    /// Drop the Brushes panel's stroke previews (keyed by row) so edited
+    /// presets re-render.
+    pub fn forget_preset_previews(&mut self) {
+        for k in 0..=self.presets.len() {
+            self.library.forget_stroke_preview(&format!("preset-{k}"));
+        }
+    }
+
     /// Unique untitled document title.
     pub fn untitled_title(&self) -> String {
         let mut n = 1;

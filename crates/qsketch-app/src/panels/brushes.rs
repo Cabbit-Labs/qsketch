@@ -154,6 +154,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             if let Some(b) = state.current_brush().cloned() {
                 let name = state.presets[idx].name.clone();
                 state.presets[idx] = BrushSettings { name, ..b };
+                state.forget_preset_previews();
             }
         } else {
             let preset = state.presets[i].clone();
@@ -167,10 +168,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     }
     if let Some(i) = remove {
         state.presets.remove(i);
-        // Preview cache keys are positional; drop them so rows re-render.
-        for k in i..=state.presets.len() {
-            state.library.forget_stroke_preview(&format!("preset-{k}"));
-        }
+        state.forget_preset_previews();
     }
     if edit {
         state.show_panel_requests.push(crate::workspace::PanelKind::BrushSettings);

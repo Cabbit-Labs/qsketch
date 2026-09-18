@@ -67,6 +67,10 @@ enum Deferred {
     OpenFolder(LibraryKind),
     SavePreset,
     ResetToPreset,
+    /// Overwrite the preset the brush was loaded from with the live settings.
+    ApplyToPreset,
+    /// Rename the live brush and, when it came from a preset, that preset too.
+    Rename(String),
 }
 
 /// The brush a tool edits here: the tool's own brush, or the Brush tool's when
@@ -95,14 +99,39 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 
         // Header
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(format!("{} {}", crate::ui::widgets::icon(tool.icon(), 14.0).text(), b.name))
-                    .strong(),
+            ui.label(egui::RichText::new(crate::ui::widgets::icon(tool.icon(), 14.0).text()).strong());
+            // The name is edited in place; it lands on Enter or when the box
+            // loses focus so a half-typed name never collides with a preset.
+            let name_id = ui.id().with(("brush_name", tool));
+            let mut draft: String = ui.data(|d| d.get_temp(name_id)).unwrap_or_else(|| b.name.clone());
+            let te = ui.add(
+                egui::TextEdit::singleline(&mut draft)
+                    .desired_width(150.0)
+                    .font(egui::TextStyle::Body)
+                    .hint_text("Brush name"),
             );
+            if te.has_focus() {
+                ui.data_mut(|d| d.insert_temp(name_id, draft.clone()));
+            } else {
+                ui.data_mut(|d| d.remove_temp::<String>(name_id));
+            }
+            if te.lost_focus() {
+                let new = draft.trim().to_string();
+                if !new.is_empty() && new != b.name {
+                    deferred.push(Deferred::Rename(new));
+                }
+            }
+            te.on_hover_text("Brush name (Enter to apply; renames the preset it came from)");
             ui.label(egui::RichText::new(format!("· editing the {} tool", tool.label())).weak().small());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if icon_button(ui, icons::PLUS, "Save as a new preset", 22.0, false).clicked() {
                     deferred.push(Deferred::SavePreset);
+                }
+                if is_preset
+                    && icon_button(ui, icons::FLOPPY_DISK, "Apply to preset: save these settings into it", 22.0, false)
+                        .clicked()
+                {
+                    deferred.push(Deferred::ApplyToPreset);
                 }
                 if is_preset
                     && icon_button(ui, icons::ARROW_COUNTER_CLOCKWISE, "Reset to the saved preset", 22.0, false)
@@ -750,6 +779,34 @@ fn run_deferred(ui: &mut Ui, state: &mut AppState, tool: ToolKind, deferred: Vec
                     cur.name = name.clone();
                 }
                 state.toasts.push(Level::Success, format!("Saved preset \"{name}\""));
+            }
+            Deferred::ApplyToPreset => {
+                let Some(b) = state.brush_for_tool_mut(tool).cloned() else { continue };
+                match state.presets.iter_mut().find(|p| p.name == b.name) {
+                    Some(p) => {
+                        *p = b.clone();
+                        state.toasts.push(Level::Success, format!("Saved settings to preset \"{}\"", b.name));
+                    }
+                    None => {
+                        state.presets.push(b.clone());
+                        state.toasts.push(Level::Success, format!("Saved preset \"{}\"", b.name));
+                    }
+                }
+                state.forget_preset_previews();
+            }
+            Deferred::Rename(new) => {
+                let Some(old) = state.brush_for_tool_mut(tool).map(|b| b.name.clone()) else { continue };
+                let taken = state.presets.iter().any(|p| p.name == new && p.name != old);
+                if taken {
+                    state.toasts.push(Level::Info, format!("A preset named \"{new}\" already exists"));
+                    continue;
+                }
+                if let Some(p) = state.presets.iter_mut().find(|p| p.name == old) {
+                    p.name = new.clone();
+                }
+                if let Some(b) = state.brush_for_tool_mut(tool) {
+                    b.name = new;
+                }
             }
             Deferred::ResetToPreset => {
                 let Some(name) = state.brush_for_tool_mut(tool).map(|b| b.name.clone()) else { continue };
