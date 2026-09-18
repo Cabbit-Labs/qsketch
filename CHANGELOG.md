@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.25.2 — 2026-09-18
 
 - Brush Settings panel: Escape closes it when it is a floating window. Docked
   in a column it stays, and a text box with focus takes the first Escape.
