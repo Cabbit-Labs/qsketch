@@ -208,6 +208,16 @@ impl Workspace {
         }
     }
 
+    /// Close a panel only when it lives on a floating window; a docked tab is
+    /// part of the layout and stays put.
+    pub fn close_if_floating(&mut self, kind: &PanelKind) {
+        if let Some(path) = self.find(kind) {
+            if !path.surface.is_main() {
+                self.dock.remove_tab(path);
+            }
+        }
+    }
+
     pub fn is_panel_open(&self, kind: &PanelKind) -> bool {
         self.find(kind).is_some()
     }

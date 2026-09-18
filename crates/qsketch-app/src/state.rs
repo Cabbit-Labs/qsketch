@@ -189,6 +189,8 @@ pub struct AppState {
     pub quit_requested: bool,
     pub layout_reset_requested: bool,
     pub show_panel_requests: Vec<crate::workspace::PanelKind>,
+    /// Panels asking to be closed when they are on a floating window (Escape).
+    pub close_floating_requests: Vec<crate::workspace::PanelKind>,
     pub close_doc_requests: Vec<DocId>,
     pub open_file_requests: Vec<PathBuf>,
     /// Backups picked from File ▸ Restore Previous Version: (original, backup).
@@ -260,6 +262,7 @@ impl AppState {
             quit_requested: false,
             layout_reset_requested: false,
             show_panel_requests: Vec::new(),
+            close_floating_requests: Vec::new(),
             close_doc_requests: Vec::new(),
             open_file_requests: Vec::new(),
             restore_requests: Vec::new(),

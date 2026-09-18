@@ -2,6 +2,11 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Brush Settings panel: Escape closes it when it is a floating window. Docked
+  in a column it stays, and a text box with focus takes the first Escape.
+
 ## 0.25.1 — 2026-09-18
 
 - Updater: a manifest fetch that fails on the network (a DNS lookup that has

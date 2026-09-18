@@ -87,6 +87,11 @@ fn edited_tool(state: &AppState) -> ToolKind {
 pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let tool = edited_tool(state);
     let mut deferred: Vec<Deferred> = Vec::new();
+    // Escape dismisses the panel when it floats (a docked tab stays). A text
+    // box that has focus takes the first Escape itself to drop focus.
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) && ui.memory(|m| m.focused().is_none()) {
+        state.close_floating_requests.push(crate::workspace::PanelKind::BrushSettings);
+    }
     {
         let AppState { brush, pencil, eraser, library, brush_page, fg, bg, presets, .. } = state;
         let b: &mut BrushSettings = match tool {

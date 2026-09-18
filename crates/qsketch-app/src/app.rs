@@ -169,6 +169,9 @@ impl QSketchApp {
         for p in std::mem::take(&mut self.state.show_panel_requests) {
             self.workspace.show_panel(p);
         }
+        for p in std::mem::take(&mut self.state.close_floating_requests) {
+            self.workspace.close_if_floating(&p);
+        }
         if self.state.layout_reset_requested {
             self.state.layout_reset_requested = false;
             self.workspace.reset(&ids);
