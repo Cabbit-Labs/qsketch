@@ -208,7 +208,7 @@ actions! {
     FilterGlitch => (Filter, "Glitch…", []),
     FilterPencilSketch => (Filter, "Pencil Sketch…", []),
     // Tools
-    ToolMove => (Tools, "Move Tool", ["C"]),
+    ToolMove => (Tools, "Move Tool", ["A"]),
     ToolRectSelect => (Tools, "Rectangular Marquee", ["G", "M"]),
     ToolEllipseSelect => (Tools, "Elliptical Marquee", ["Shift+M"]),
     ToolLasso => (Tools, "Lasso", ["L"]),
@@ -223,7 +223,7 @@ actions! {
     ToolGradient => (Tools, "Gradient", ["Shift+G"]),
     ToolLine => (Tools, "Line", ["U"]),
     ToolRect => (Tools, "Rectangle", ["R"]),
-    ToolEllipse => (Tools, "Ellipse", ["Alt+U"]),
+    ToolEllipse => (Tools, "Ellipse", ["C"]),
     ToolContour => (Tools, "Contour", ["V"]),
     ToolText => (Tools, "Text", ["T"]),
     ToolZoom => (Tools, "Zoom", ["Z"]),

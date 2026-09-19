@@ -158,7 +158,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 
 | Command | Default shortcut |
 | --- | --- |
-| Move Tool | `C` |
+| Move Tool | `A` |
 | Rectangular Marquee | `M` |
 | Elliptical Marquee | `Shift+M` |
 | Lasso | `L` |
@@ -173,7 +173,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Gradient | `Shift+G` |
 | Line | `U` |
 | Rectangle | `R` |
-| Ellipse | `Alt+U` |
+| Ellipse | `C` |
 | Contour | `V` |
 | Text | `T` |
 | Zoom | `Z` |
