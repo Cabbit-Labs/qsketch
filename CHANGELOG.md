@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.26.3 — 2026-09-19
 
 - Shortcuts: the Move tool now defaults to `A` (was `C`) and the Ellipse tool
   to `C` (was `Alt+U`). Existing custom bindings are untouched; use Reset in
