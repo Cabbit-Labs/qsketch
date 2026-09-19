@@ -982,6 +982,7 @@ impl QSketchApp {
     }
 
     fn status_bar(&mut self, ui: &mut Ui) {
+        let bar = ui.max_rect();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
             if let Some(d) = self.state.active() {
@@ -1048,6 +1049,28 @@ impl QSketchApp {
                 }
             });
         });
+        self.status_message(ui, bar);
+    }
+
+    /// A system message (an update check that failed, say) centered in the
+    /// status bar for a few seconds, over whatever the bar shows.
+    fn status_message(&mut self, ui: &mut Ui, bar: egui::Rect) {
+        const SHOW_FOR: std::time::Duration = std::time::Duration::from_secs(8);
+        let Some((msg, since)) = &self.state.status_msg else { return };
+        let age = since.elapsed();
+        if age >= SHOW_FOR {
+            self.state.status_msg = None;
+            return;
+        }
+        let painter = ui.painter();
+        let font = egui::FontId::proportional(12.0);
+        let galley = painter.layout_no_wrap(msg.clone(), font, ui.visuals().strong_text_color());
+        let pad = egui::vec2(10.0, 3.0);
+        let size = galley.size() + pad * 2.0;
+        let rect = egui::Rect::from_center_size(bar.center(), size.min(bar.size()));
+        painter.rect_filled(rect, 4.0, crate::ui::chrome::row_fill(ui.visuals().selection.bg_fill));
+        painter.galley(rect.min + pad, galley, ui.visuals().strong_text_color());
+        ui.ctx().request_repaint_after(SHOW_FOR - age);
     }
 
     // ---------------------------------------------------------------------
@@ -1625,8 +1648,14 @@ impl eframe::App for QSketchApp {
             self.state.updater.ctx = Some(ctx.clone());
         }
         self.auto_update_check();
+        if let Some(wait) = self.state.updater.tick() {
+            ctx.request_repaint_after(wait);
+        }
         if self.state.updater.poll() {
             ctx.request_repaint();
+            if let Some(n) = self.state.updater.notice.take() {
+                self.state.status_msg = Some((n, std::time::Instant::now()));
+            }
             // An automatic check stays quiet about a version the user skipped.
             let skipped = &self.state.settings.update.skipped_version;
             if !self.state.updater.manual && self.state.updater.info.as_ref().is_some_and(|i| &i.version == skipped) {

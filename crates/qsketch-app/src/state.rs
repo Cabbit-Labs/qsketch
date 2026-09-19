@@ -198,6 +198,8 @@ pub struct AppState {
 
     /// Pointer position over the active canvas (document coords), for the Info panel.
     pub hover_doc_pos: Option<Pt>,
+    /// A brief system message shown centered in the status bar.
+    pub status_msg: Option<(String, std::time::Instant)>,
     pub hover_screen_pos: Option<Pos2>,
     pub hover_color: Option<Rgba8>,
     /// A color pick in progress: drives the zoomed loupe over the canvas.
@@ -263,6 +265,7 @@ impl AppState {
             layout_reset_requested: false,
             show_panel_requests: Vec::new(),
             close_floating_requests: Vec::new(),
+            status_msg: None,
             close_doc_requests: Vec::new(),
             open_file_requests: Vec::new(),
             restore_requests: Vec::new(),

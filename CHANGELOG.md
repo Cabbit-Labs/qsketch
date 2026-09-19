@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Updater: a check that cannot reach the update server no longer opens an
+  "Update problem" dialog. It retries in the background (four more rounds,
+  30 s apart, each with its own ~15 s of retries, about three minutes in
+  all); a check you started says so once in the status bar, and only when
+  every retry fails does a short message appear there. The dialog remains for
+  a download that fails, since it offers the retry and manual routes.
+- Status bar: system messages show centered in the bar for eight seconds.
+
 ## 0.26.0 — 2026-09-19
 
 - New Polygonal Lasso tool (Shift+L, next to the Lasso): click to place

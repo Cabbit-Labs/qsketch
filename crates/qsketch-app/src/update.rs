@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
@@ -104,6 +104,15 @@ pub struct Updater {
     pub manual: bool,
     /// Install and relaunch as soon as the download verifies (one-click update).
     pub auto_install: bool,
+    /// A short note for the status bar (a check that could not reach the
+    /// server); the app moves it into the bar and clears it.
+    pub notice: Option<String>,
+    /// Manifest URL of the check in flight, kept for background retries.
+    retry_url: Option<String>,
+    /// Background re-checks still allowed after a failed manifest fetch.
+    retries_left: u32,
+    /// When the next background re-check starts.
+    retry_at: Option<Instant>,
     rx: Option<Receiver<Event>>,
     /// Woken by the worker so results show up without waiting for input
     /// (eframe only redraws on events).
@@ -118,22 +127,59 @@ impl Default for Updater {
             show_dialog: false,
             manual: false,
             auto_install: false,
+            notice: None,
+            retry_url: None,
+            retries_left: 0,
+            retry_at: None,
             rx: None,
             ctx: None,
         }
     }
 }
 
+/// Background re-checks after a manifest fetch fails all its in-thread
+/// retries, and the pause between them. With the ~15 s of retries inside each
+/// check this keeps trying for about three minutes.
+const RETRY_ROUNDS: u32 = 4;
+const RETRY_PAUSE: Duration = Duration::from_secs(30);
+
 impl Updater {
     pub fn busy(&self) -> bool {
         matches!(self.status, Status::Checking | Status::Downloading { .. })
     }
 
-    /// Kick off a manifest check on a worker thread.
+    /// Kick off a manifest check on a worker thread. A fetch that fails is
+    /// retried in the background a few times before the failure is reported.
     pub fn check(&mut self, manifest_url: String, manual: bool) {
         if self.busy() {
             return;
         }
+        self.retries_left = RETRY_ROUNDS;
+        self.retry_at = None;
+        self.retry_url = Some(manifest_url.clone());
+        self.spawn_check(manifest_url, manual);
+    }
+
+    /// Start a scheduled background re-check when it is due. Returns how long
+    /// until the next one so the app can wake itself for it.
+    pub fn tick(&mut self) -> Option<Duration> {
+        let at = self.retry_at?;
+        let now = Instant::now();
+        if now < at {
+            return Some(at - now);
+        }
+        self.retry_at = None;
+        if self.busy() {
+            return None;
+        }
+        if let Some(url) = self.retry_url.clone() {
+            let manual = self.manual;
+            self.spawn_check(url, manual);
+        }
+        None
+    }
+
+    fn spawn_check(&mut self, manifest_url: String, manual: bool) {
         self.manual = manual;
         self.status = Status::Checking;
         let (tx, rx) = mpsc::channel();
@@ -206,9 +252,24 @@ impl Updater {
                         }
                         Event::Ready(p) => self.status = Status::Ready(p),
                         Event::Failed(e) => {
-                            self.status = Status::Failed(e);
-                            if self.manual || self.info.is_some() {
+                            let checking = self.status == Status::Checking;
+                            self.status = Status::Failed(e.clone());
+                            if !checking || self.info.is_some() {
+                                // A download that failed: the dialog offers a
+                                // retry and the manual route.
                                 self.show_dialog = true;
+                            } else if self.retries_left > 0 {
+                                // The server could not be reached: keep trying
+                                // quietly, and tell a user who asked once.
+                                if self.retries_left == RETRY_ROUNDS && self.manual {
+                                    self.notice = Some(format!(
+                                        "Couldn't reach the update server ({e}); retrying in the background"
+                                    ));
+                                }
+                                self.retries_left -= 1;
+                                self.retry_at = Some(Instant::now() + RETRY_PAUSE);
+                            } else {
+                                self.notice = Some(format!("Update check failed: {e}"));
                             }
                         }
                     }
