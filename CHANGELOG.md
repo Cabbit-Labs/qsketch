@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.25.4 — 2026-09-19
 
 - Lifting the pen no longer stamps a full-size dot at the end of a tapered
   stroke. Windows keeps sending mouse moves for the pen after the tip is up,
