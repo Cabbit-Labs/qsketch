@@ -219,8 +219,12 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                     // lifted: Windows keeps sending mouse moves for the pen
                     // after the tip is up, and with the pen's pressure gone
                     // they would be painted at the mouse pressure (a full-size
-                    // dot at the end of a tapered stroke).
-                    let pen_lifted = state.pen.tablet_active && state.pen.pressure.is_none();
+                    // dot at the end of a tapered stroke). Only a paint stroke
+                    // is gated: quick rotate and the other hover-driven
+                    // gestures are meant to work with the pen up.
+                    let pen_lifted = state.pen.tablet_active
+                        && state.pen.pressure.is_none()
+                        && matches!(state.session, Some(ToolSession::Stroke { .. }));
                     if !use_tablet && !pen_lifted {
                         let inp = make_input(state, *pos, egui::PointerButton::Primary, mods);
                         tools::handle(state, doc_id, CanvasEvent::Drag(inp));

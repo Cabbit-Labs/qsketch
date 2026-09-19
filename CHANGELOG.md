@@ -2,6 +2,11 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Quick rotate (hold Q and move the pen) works again with the pen up; 0.25.4's
+  lifted-pen guard now applies only to paint strokes.
+
 ## 0.25.4 — 2026-09-19
 
 - Lifting the pen no longer stamps a full-size dot at the end of a tapered
