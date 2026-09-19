@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.26.0 — 2026-09-19
 
 - New Polygonal Lasso tool (Shift+L, next to the Lasso): click to place
   vertices, the edge to the pointer follows; click the first vertex,
