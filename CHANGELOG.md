@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.25.3 — 2026-09-19
 
 - Brush smoothing no longer cuts the corners of fast, sharp turns or stops a
   stroke short of the pointer. The filter now works on distance moved rather
