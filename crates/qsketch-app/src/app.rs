@@ -426,6 +426,16 @@ impl QSketchApp {
                     self.state.cancel_session();
                     continue;
                 }
+                if matches!(self.state.session, Some(crate::tools::ToolSession::PolyLasso { .. })) {
+                    if key == Key::Enter {
+                        crate::tools::select::close_poly_lasso(&mut self.state, id, modifiers);
+                        continue;
+                    }
+                    if key == Key::Backspace {
+                        crate::tools::select::poly_lasso_undo_point(&mut self.state);
+                        continue;
+                    }
+                }
                 let nudge = match key {
                     Key::ArrowLeft => Some((-1, 0)),
                     Key::ArrowRight => Some((1, 0)),
@@ -1004,6 +1014,9 @@ impl QSketchApp {
                     }
                     ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso => {
                         "Shift: add · Alt: subtract · click: deselect"
+                    }
+                    ToolKind::PolyLasso => {
+                        "click: add point · first point / double-click / Enter: close · Backspace: undo point · Esc: cancel · Shift: add · Alt: subtract"
                     }
                     _ if self.state.floating.is_some() => {
                         match self.state.floating.as_ref().map(|f| f.mode) {

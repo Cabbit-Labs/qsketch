@@ -137,7 +137,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 }
 
 /// The user's tool order, validated: unknown entries dropped, missing tools
-/// appended in default order.
+/// slotted in after their default predecessor.
 pub fn tool_order(saved: &[ToolKind]) -> Vec<ToolKind> {
     let mut v: Vec<ToolKind> = Vec::with_capacity(ToolKind::ALL.len());
     for &t in saved {
@@ -145,9 +145,13 @@ pub fn tool_order(saved: &[ToolKind]) -> Vec<ToolKind> {
             v.push(t);
         }
     }
-    for t in ToolKind::ALL {
-        if !v.contains(&t) {
-            v.push(t);
+    // A tool the saved order does not know (added in an update) goes right
+    // after its default predecessor, not to the end of the strip.
+    for (i, t) in ToolKind::ALL.iter().enumerate() {
+        if !v.contains(t) {
+            let after = ToolKind::ALL[..i].iter().rev().find_map(|p| v.iter().position(|x| x == p));
+            let at = after.map(|a| a + 1).unwrap_or(v.len());
+            v.insert(at, *t);
         }
     }
     v

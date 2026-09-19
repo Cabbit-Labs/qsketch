@@ -249,6 +249,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         match &mut state.session {
             Some(ToolSession::DragRect { mods: m, .. })
             | Some(ToolSession::Lasso { mods: m, .. })
+            | Some(ToolSession::PolyLasso { mods: m, .. })
             | Some(ToolSession::Shape { mods: m, .. }) => *m = mods,
             _ => {}
         }

@@ -4,7 +4,7 @@ mod contour;
 pub mod fill;
 pub mod floating;
 mod paint;
-mod select;
+pub mod select;
 pub mod symmetry;
 pub mod text;
 mod transform;
@@ -31,6 +31,7 @@ pub enum ToolKind {
     RectSelect,
     EllipseSelect,
     Lasso,
+    PolyLasso,
     MagicWand,
     Crop,
     Eyedropper,
@@ -50,11 +51,12 @@ pub enum ToolKind {
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 20] = [
+    pub const ALL: [ToolKind; 21] = [
         ToolKind::Move,
         ToolKind::RectSelect,
         ToolKind::EllipseSelect,
         ToolKind::Lasso,
+        ToolKind::PolyLasso,
         ToolKind::MagicWand,
         ToolKind::Crop,
         ToolKind::Eyedropper,
@@ -79,6 +81,7 @@ impl ToolKind {
             ToolKind::RectSelect => "Rectangular Marquee",
             ToolKind::EllipseSelect => "Elliptical Marquee",
             ToolKind::Lasso => "Lasso",
+            ToolKind::PolyLasso => "Polygonal Lasso",
             ToolKind::MagicWand => "Magic Wand",
             ToolKind::Crop => "Crop",
             ToolKind::Eyedropper => "Eyedropper",
@@ -110,6 +113,7 @@ impl ToolKind {
             ToolKind::RectSelect => icons::SELECTION,
             ToolKind::EllipseSelect => icons::CIRCLE_DASHED,
             ToolKind::Lasso => icons::LASSO,
+            ToolKind::PolyLasso => icons::POLYGON,
             ToolKind::MagicWand => icons::MAGIC_WAND,
             ToolKind::Crop => icons::CROP,
             ToolKind::Eyedropper => icons::EYEDROPPER,
@@ -133,7 +137,11 @@ impl ToolKind {
     pub fn group(self) -> u8 {
         match self {
             ToolKind::Move => 0,
-            ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso | ToolKind::MagicWand => 1,
+            ToolKind::RectSelect
+            | ToolKind::EllipseSelect
+            | ToolKind::Lasso
+            | ToolKind::PolyLasso
+            | ToolKind::MagicWand => 1,
             ToolKind::Crop | ToolKind::Eyedropper => 2,
             ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => 3,
             ToolKind::Fill | ToolKind::Gradient => 4,
@@ -145,7 +153,14 @@ impl ToolKind {
 
     /// Marquee / lasso / wand: the tools that edit the selection.
     pub fn is_selection(self) -> bool {
-        matches!(self, ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso | ToolKind::MagicWand)
+        matches!(
+            self,
+            ToolKind::RectSelect
+                | ToolKind::EllipseSelect
+                | ToolKind::Lasso
+                | ToolKind::PolyLasso
+                | ToolKind::MagicWand
+        )
     }
 
     pub fn is_paint(self) -> bool {
@@ -272,6 +287,13 @@ pub enum ToolSession {
     },
     Lasso {
         pts: Vec<Pt>,
+        mods: Modifiers,
+    },
+    /// Polygonal lasso: vertices placed click by click, `cur` is the pointer
+    /// the rubber-band edge follows. Lives across releases until closed.
+    PolyLasso {
+        pts: Vec<Pt>,
+        cur: Pt,
         mods: Modifiers,
     },
     Moving {
@@ -404,6 +426,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         ToolKind::Text => text::handle(state, doc_id, ev),
         ToolKind::RectSelect | ToolKind::EllipseSelect => select::handle_marquee(state, doc_id, tool, ev),
         ToolKind::Lasso => select::handle_lasso(state, doc_id, ev),
+        ToolKind::PolyLasso => select::handle_poly_lasso(state, doc_id, ev),
         ToolKind::MagicWand => select::handle_wand(state, doc_id, ev),
         ToolKind::Move => transform::handle_move(state, doc_id, ev),
         ToolKind::Crop => transform::handle_crop(state, doc_id, ev),
@@ -459,6 +482,26 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
                 if sp.len() > 1 {
                     painter.add(egui::Shape::line(sp.clone(), shadow));
                     painter.add(egui::Shape::line(sp, stroke));
+                }
+            }
+            Some(ToolSession::PolyLasso { pts, cur, .. }) => {
+                // Placed edges solid, the rubber band to the pointer dashed,
+                // and a ring on the first vertex once a click there closes.
+                let sp: Vec<Pos2> = pts.iter().map(|p| to_s(*p)).collect();
+                if sp.len() > 1 {
+                    painter.add(egui::Shape::line(sp.clone(), shadow));
+                    painter.add(egui::Shape::line(sp.clone(), stroke));
+                }
+                if let Some(last) = sp.last() {
+                    let c = to_s(*cur);
+                    painter.line_segment([*last, c], shadow);
+                    painter.add(egui::Shape::dashed_line(&[*last, c], stroke, 4.0, 4.0));
+                }
+                if let Some(first) = sp.first() {
+                    if sp.len() >= 3 {
+                        painter.circle_stroke(*first, select::POLY_CLOSE_PX, shadow);
+                        painter.circle_stroke(*first, select::POLY_CLOSE_PX, stroke);
+                    }
                 }
             }
             Some(ToolSession::GradientDrag { start, cur }) => {

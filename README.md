@@ -29,7 +29,7 @@ keyboard.
   spec / Photoshop semantics), per-layer opacity, clipping masks, alpha lock,
   layer groups (nested, with their own opacity/blend/visibility), and
   merge-down/merge-visible/flatten.
-- **A real selection system.** Rectangle, ellipse, lasso and magic-wand
+- **A real selection system.** Rectangle, ellipse, lasso, polygonal lasso and magic-wand
   selections with add/subtract/intersect modifiers, anti-aliased edges,
   marching-ants outlines, and move/lift/drop of floating selections.
 - **A Filter menu with live preview.** 43 filters in Photoshop's groups

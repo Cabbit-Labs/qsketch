@@ -96,6 +96,80 @@ pub fn handle_lasso(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     }
 }
 
+/// Screen-pixel radius around the first vertex where a click closes the polygon.
+pub const POLY_CLOSE_PX: f32 = 7.0;
+
+/// Polygonal lasso: each click places a vertex, the edge to the pointer
+/// follows it. Click the first vertex, double-click, or press Enter to close;
+/// Backspace removes the last vertex, Escape cancels. The modifiers held when
+/// it closes decide add / subtract / intersect, as with the other selection
+/// tools.
+pub fn handle_poly_lasso(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
+    match ev {
+        CanvasEvent::Press(inp) if inp.button == egui::PointerButton::Primary => {
+            let zoom = state.doc(doc_id).map(|d| d.view.zoom).unwrap_or(1.0).max(0.01);
+            let mut close = false;
+            match &mut state.session {
+                None => {
+                    state.session = Some(ToolSession::PolyLasso { pts: vec![inp.doc], cur: inp.doc, mods: inp.mods });
+                    state.session_doc = Some(doc_id);
+                }
+                Some(ToolSession::PolyLasso { pts, cur, mods }) => {
+                    *cur = inp.doc;
+                    *mods = inp.mods;
+                    if pts.len() >= 3 && pts[0].dist(inp.doc) <= POLY_CLOSE_PX / zoom {
+                        close = true;
+                    } else if pts.last().is_none_or(|l| l.dist(inp.doc) > 1.0 / zoom) {
+                        pts.push(inp.doc);
+                    }
+                }
+                _ => {}
+            }
+            if close {
+                close_poly_lasso(state, doc_id, inp.mods);
+            }
+        }
+        CanvasEvent::Drag(inp) | CanvasEvent::Hover(inp) => {
+            if let Some(ToolSession::PolyLasso { cur, mods, .. }) = &mut state.session {
+                *cur = inp.doc;
+                *mods = inp.mods;
+            }
+        }
+        CanvasEvent::DoubleClick(inp) => {
+            if matches!(state.session, Some(ToolSession::PolyLasso { .. })) {
+                close_poly_lasso(state, doc_id, inp.mods);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Drop the last placed vertex (Backspace); the polygon is cancelled when
+/// none remain.
+pub fn poly_lasso_undo_point(state: &mut AppState) {
+    if let Some(ToolSession::PolyLasso { pts, .. }) = &mut state.session {
+        pts.pop();
+        if pts.is_empty() {
+            state.cancel_session();
+        }
+    }
+}
+
+/// Close the polygon (Enter / click on the first vertex / double-click) and
+/// apply it to the selection. Fewer than three vertices just cancels.
+pub fn close_poly_lasso(state: &mut AppState, doc_id: DocId, mods: egui::Modifiers) {
+    let Some(ToolSession::PolyLasso { pts, .. }) = state.session.take() else { return };
+    state.session_doc = None;
+    if pts.len() < 3 {
+        return;
+    }
+    let op = op_from_mods(state.tool_opts.selection_op, mods);
+    let Some(entry) = state.doc(doc_id) else { return };
+    let (w, h) = (entry.doc.width(), entry.doc.height());
+    let mask = Mask::from_polygon(w, h, &pts);
+    apply_selection(state, doc_id, mask, op, "Polygonal Lasso");
+}
+
 pub fn handle_wand(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     let CanvasEvent::Press(inp) = ev else { return };
     if inp.button != egui::PointerButton::Primary {

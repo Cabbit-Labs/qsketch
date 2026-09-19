@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- New Polygonal Lasso tool (Shift+L, next to the Lasso): click to place
+  vertices, the edge to the pointer follows; click the first vertex,
+  double-click or press Enter to close, Backspace removes the last vertex,
+  Escape cancels. Shift / Alt add, subtract or intersect as with the other
+  selection tools. A tool added in an update now appears next to its
+  neighbor in a saved tool order instead of at the end of the strip.
+
 ## 0.25.6 — 2026-09-19
 
 - Selection tools: Shift (add), Alt (subtract) and Shift+Alt (intersect) are

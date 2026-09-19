@@ -58,7 +58,7 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                 hint(ui, "Drag a freehand shape; it closes and fills with the foreground color.");
             }
             ToolKind::Text => text_options(ui, state),
-            ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso => {
+            ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso | ToolKind::PolyLasso => {
                 group(ui, &theme, Section::Tools, |ui| selection_ops(ui, state));
             }
             ToolKind::MagicWand => {

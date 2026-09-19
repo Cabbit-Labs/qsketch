@@ -162,6 +162,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Rectangular Marquee | `M` |
 | Elliptical Marquee | `Shift+M` |
 | Lasso | `L` |
+| Polygonal Lasso | `Shift+L` |
 | Magic Wand | `W` |
 | Crop | — |
 | Eyedropper | `I` |
