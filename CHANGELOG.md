@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.25.6 — 2026-09-19
 
 - Selection tools: Shift (add), Alt (subtract) and Shift+Alt (intersect) are
   read live throughout a marquee or lasso drag and at release, so letting a
