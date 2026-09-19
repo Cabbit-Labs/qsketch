@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Lifting the pen no longer stamps a full-size dot at the end of a tapered
+  stroke. Windows keeps sending mouse moves for the pen after the tip is up,
+  and once the pen's pressure was gone that motion was painted at the mouse
+  pressure; a stroke now ignores mouse motion while a pen in proximity is
+  lifted.
+
 ## 0.25.3 — 2026-09-19
 
 - Brush smoothing no longer cuts the corners of fast, sharp turns or stops a

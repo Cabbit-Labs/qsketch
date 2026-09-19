@@ -214,7 +214,14 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                 let float_drag = state.floating.as_ref().is_some_and(|f| f.doc == doc_id && f.drag.is_some());
                 let text_drag = tools::text::dragging(state, doc_id);
                 if capturing_now || float_drag || text_drag {
-                    if !use_tablet {
+                    // Mouse motion drives a stroke only when no tablet sample
+                    // did this frame, and never while a pen in proximity has
+                    // lifted: Windows keeps sending mouse moves for the pen
+                    // after the tip is up, and with the pen's pressure gone
+                    // they would be painted at the mouse pressure (a full-size
+                    // dot at the end of a tapered stroke).
+                    let pen_lifted = state.pen.tablet_active && state.pen.pressure.is_none();
+                    if !use_tablet && !pen_lifted {
                         let inp = make_input(state, *pos, egui::PointerButton::Primary, mods);
                         tools::handle(state, doc_id, CanvasEvent::Drag(inp));
                     }
