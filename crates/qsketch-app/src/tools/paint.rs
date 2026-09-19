@@ -119,6 +119,7 @@ pub(super) fn begin_engine_with(
         state.note_color_used(color);
     }
     let symmetry = state.symmetry;
+    let zoom = state.doc(doc_id).map(|d| d.view.zoom).unwrap_or(1.0);
     let entry = state.doc_mut(doc_id)?;
     let (w, h) = (entry.doc.width(), entry.doc.height());
     let s = entry.doc.state();
@@ -139,6 +140,7 @@ pub(super) fn begin_engine_with(
             .with_texture(texture.clone())
             .with_background(bg)
             .with_seed(seed)
+            .with_zoom(zoom)
     };
     let base_seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

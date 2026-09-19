@@ -563,6 +563,14 @@ pub struct StrokeEngine {
     colors: Option<HashMap<usize, Box<[[f32; 3]; TILE_PX]>>>,
     last: Option<StrokeSample>,
     smooth_pos: Option<Pt>,
+    /// The last raw (unsmoothed) input position, so the stroke can finish
+    /// exactly where the pointer stopped.
+    last_raw: Option<Pt>,
+    /// Smoothing length in document pixels (0 = raw input). The filter is a
+    /// function of distance moved, not of sample count, so the lag behind the
+    /// pointer is bounded by a few pixels however fast the hand moves or
+    /// however often the device reports.
+    smooth_len: f32,
     /// Stroke direction in radians from the last two positions.
     direction: f32,
     /// Distance to travel before the next dab.
@@ -570,6 +578,13 @@ pub struct StrokeEngine {
     dabs: usize,
     dirty_total: IRect,
     rng: Rng,
+}
+
+/// Smoothing length in screen pixels for a slider value 0..=1: 0.2 → ~2 px,
+/// 0.4 → ~8 px, 1 → 44 px.
+fn smoothing_len(smoothing: f32) -> f32 {
+    let s = smoothing.clamp(0.0, 1.0);
+    s * s * 40.0 + s * 4.0
 }
 
 impl StrokeEngine {
@@ -584,6 +599,7 @@ impl StrokeEngine {
     ) -> Self {
         settings.clamp();
         let colors = if settings.color_dynamics && mode == PaintMode::Paint { Some(HashMap::new()) } else { None };
+        let smooth_len = smoothing_len(settings.smoothing);
         Self {
             settings,
             mode,
@@ -598,12 +614,21 @@ impl StrokeEngine {
             colors,
             last: None,
             smooth_pos: None,
+            last_raw: None,
+            smooth_len,
             direction: 0.0,
             until_next_dab: 0.0,
             dabs: 0,
             dirty_total: IRect::EMPTY,
             rng: Rng::new(0x5EED),
         }
+    }
+
+    /// Scale the smoothing length to the view: the slider is tuned in screen
+    /// pixels, so a zoomed-in canvas smooths over fewer document pixels.
+    pub fn with_zoom(mut self, zoom: f32) -> Self {
+        self.smooth_len = smoothing_len(self.settings.smoothing) / zoom.max(0.01);
+        self
     }
 
     /// Use a tip image instead of the analytic round dab.
@@ -658,13 +683,20 @@ impl StrokeEngine {
     /// Feed a new input sample. Returns the pixel rect modified by this call.
     pub fn extend(&mut self, raster: &mut Raster, sample: StrokeSample) -> IRect {
         let pressure = sample.pressure.clamp(0.0, 1.0);
-        // Exponential smoothing of position.
+        self.last_raw = Some(sample.pos);
+        // Distance-based low-pass on position: the painted point closes the
+        // gap to the pointer by a fraction that grows with the distance moved
+        // (1 - e^(-d / len)), so a big jump is followed almost fully and only
+        // small jitter is damped. A per-sample blend would instead cut the
+        // corners of fast turns by an amount that depends on the mouse's
+        // report rate.
         let pos = match self.smooth_pos {
-            None => sample.pos,
-            Some(sp) => {
-                let k = 1.0 - self.settings.smoothing * 0.9;
+            Some(sp) if self.smooth_len > 0.0 => {
+                let d = sp.dist(sample.pos);
+                let k = 1.0 - (-d / self.smooth_len).exp();
                 sp.lerp(sample.pos, k)
             }
+            _ => sample.pos,
         };
         self.smooth_pos = Some(pos);
         let cur = StrokeSample { pos, pressure };
@@ -714,8 +746,16 @@ impl StrokeEngine {
         dirty
     }
 
-    /// Finish the stroke. Guarantees at least one dab (a click) was placed.
+    /// Finish the stroke. Guarantees at least one dab (a click) was placed,
+    /// and lands the smoothed path on the pointer's final position.
     pub fn finish(&mut self, raster: &mut Raster) -> IRect {
+        let mut catch_up = IRect::EMPTY;
+        if let (Some(raw), Some(sp), Some(last)) = (self.last_raw, self.smooth_pos, self.last) {
+            if self.smooth_len > 0.0 && sp.dist(raw) > 0.25 {
+                self.smooth_len = 0.0;
+                catch_up = self.extend(raster, StrokeSample { pos: raw, pressure: last.pressure });
+            }
+        }
         let r = if self.dabs == 0 {
             if let Some(l) = self.last {
                 self.dab_group(raster, l.pos, l.pressure)
@@ -728,7 +768,13 @@ impl StrokeEngine {
         if self.mode == PaintMode::Erase {
             raster.prune_empty_tiles();
         }
-        r
+        if r.is_empty() {
+            catch_up
+        } else if catch_up.is_empty() {
+            r
+        } else {
+            r.union(&catch_up)
+        }
     }
 
     fn spacing_px(&self, pressure: f32) -> f32 {
@@ -1139,6 +1185,30 @@ mod tests {
         assert_eq!(raster.get_pixel(50, 50), Rgba8::BLACK);
         assert_eq!(raster.get_pixel(50, 60), Rgba8::TRANSPARENT);
         assert!(!e.dirty_total().is_empty());
+    }
+
+    /// Smoothing must not skip the tip of a sharp, fast turn, and the stroke
+    /// has to end where the pointer stopped.
+    #[test]
+    fn smoothing_keeps_sharp_corners_and_stroke_end() {
+        let l = layer();
+        let mut raster = l.raster.clone();
+        let s = BrushSettings {
+            size: 6.0,
+            flow: 1.0,
+            hardness: 1.0,
+            pressure_size: false,
+            smoothing: 0.5,
+            ..Default::default()
+        };
+        let mut e = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
+        // Three samples far apart: a V with its tip at (50, 10).
+        for p in [Pt::new(10.0, 60.0), Pt::new(50.0, 10.0), Pt::new(90.0, 60.0)] {
+            e.extend(&mut raster, StrokeSample { pos: p, pressure: 1.0 });
+        }
+        e.finish(&mut raster);
+        assert_eq!(raster.get_pixel(50, 10), Rgba8::BLACK, "corner tip skipped");
+        assert_eq!(raster.get_pixel(90, 60), Rgba8::BLACK, "stroke end not reached");
     }
 
     /// The pencil cursor preview has to name the same pixels the press paints,

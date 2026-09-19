@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Brush smoothing no longer cuts the corners of fast, sharp turns or stops a
+  stroke short of the pointer. The filter now works on distance moved rather
+  than on sample count, so the lag behind the pointer is a bounded few screen
+  pixels (about 2 px at the default 20 %, 44 px at 100 %) however fast the
+  hand moves or however often the mouse or pen reports, and the stroke is
+  completed to where the pointer stopped on release. The smoothing length
+  follows the zoom, so a zoomed-in canvas smooths over fewer document pixels.
+
 ## 0.25.2 — 2026-09-18
 
 - Brush Settings panel: Escape closes it when it is a floating window. Docked
