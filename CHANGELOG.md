@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.26.1 — 2026-09-19
 
 - Updater: a check that cannot reach the update server no longer opens an
   "Update problem" dialog. It retries in the background (four more rounds,
