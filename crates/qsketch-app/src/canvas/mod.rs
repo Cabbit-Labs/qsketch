@@ -241,6 +241,18 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     // session, a floating paste / Free Transform drag, or a text-box drag.
     // (WinTab drivers deliver packets for the mouse too, so this path is the
     // only one that moves a transform handle while a tablet is in proximity.)
+    // Modifiers are read live, not only on motion: Shift / Alt pressed or
+    // released while the pointer is held still must still change what a
+    // selection or shape drag does, whether they were down at the press or
+    // let go and pressed again halfway through.
+    if state.session_doc == Some(doc_id) {
+        match &mut state.session {
+            Some(ToolSession::DragRect { mods: m, .. })
+            | Some(ToolSession::Lasso { mods: m, .. })
+            | Some(ToolSession::Shape { mods: m, .. }) => *m = mods,
+            _ => {}
+        }
+    }
     let tablet_capturing = (state.session.is_some() && state.session_doc == Some(doc_id))
         || state.floating.as_ref().is_some_and(|f| f.doc == doc_id && f.drag.is_some())
         || tools::text::dragging(state, doc_id);

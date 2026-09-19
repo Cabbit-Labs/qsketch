@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Selection tools: Shift (add), Alt (subtract) and Shift+Alt (intersect) are
+  read live throughout a marquee or lasso drag and at release, so letting a
+  modifier go and pressing it again mid-drag, or pressing it while the pointer
+  is still, works the same as holding it from the start. Shape drags read
+  their constrain modifiers live the same way.
+
 ## 0.25.5 — 2026-09-19
 
 - Quick rotate (hold Q and move the pen) works again with the pen up; 0.25.4's

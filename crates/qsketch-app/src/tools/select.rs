@@ -21,8 +21,10 @@ pub fn handle_marquee(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: C
             }
         }
         CanvasEvent::Release(inp) => {
-            let Some(ToolSession::DragRect { start, mods, .. }) = state.session.take() else { return };
+            let Some(ToolSession::DragRect { start, .. }) = state.session.take() else { return };
             state.session_doc = None;
+            // The modifiers held at release decide the combine mode.
+            let mods = inp.mods;
             let cur = inp.doc;
             let Some(entry) = state.doc(doc_id) else { return };
             let (w, h) = (entry.doc.width(), entry.doc.height());
@@ -70,10 +72,10 @@ pub fn handle_lasso(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 *mods = inp.mods;
             }
         }
-        CanvasEvent::Release(_) => {
-            let Some(ToolSession::Lasso { pts, mods }) = state.session.take() else { return };
+        CanvasEvent::Release(inp) => {
+            let Some(ToolSession::Lasso { pts, .. }) = state.session.take() else { return };
             state.session_doc = None;
-            let op = op_from_mods(state.tool_opts.selection_op, mods);
+            let op = op_from_mods(state.tool_opts.selection_op, inp.mods);
             let Some(entry) = state.doc(doc_id) else { return };
             let (w, h) = (entry.doc.width(), entry.doc.height());
             if pts.len() < 3 {
