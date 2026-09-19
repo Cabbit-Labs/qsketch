@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.26.2 — 2026-09-19
+
+- Transform: the pointer turns into a curved rotate arrow wherever a drag
+  would rotate — the band just outside a Freeform transform box or the
+  selection box (off the handles), anywhere in Rotate mode, and while a
+  rotation is in progress — so it is clear a drag there rotates rather than
+  deselects. Past the band the tool's own cursor shows, since a press there
+  commits the transform and starts a fresh marquee.
+
 ## 0.26.1 — 2026-09-19
 
 - Updater: a check that cannot reach the update server no longer opens an

@@ -673,6 +673,38 @@ pub fn selection_hit(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
     bb.expand(SELECTION_BAND).contains(pos)
 }
 
+/// True when a primary press at `pos` would ROTATE rather than move, scale,
+/// commit or deselect: the band hugging a Freeform box (or the idle selection
+/// box) that is outside the pixels and off every handle, anywhere while in
+/// Rotate mode, and for as long as a rotation drag is in progress. The canvas
+/// swaps the pointer for a rotate glyph there, so the band — invisible on
+/// its own — is legible before the press (2026-09-19).
+pub fn in_rotation_band(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
+    let Some(entry) = state.doc(doc_id) else { return false };
+    let view = &entry.view;
+    if let Some(fp) = state.floating.as_ref() {
+        if fp.doc != doc_id {
+            return false;
+        }
+        if fp.drag.is_some() {
+            return matches!(fp.drag, Some(FloatDrag::Rotate { .. }));
+        }
+        return match fp.mode {
+            Mode::Rotate => fp.grab_at(view, pos).is_none(),
+            Mode::Freeform => {
+                fp.grab_at(view, pos).is_none()
+                    && !fp.contains(view.screen_to_doc(pos))
+                    && !outside_box(state, doc_id, pos)
+            }
+            _ => false,
+        };
+    }
+    let Some(q) = selection_quad(state, doc_id) else { return false };
+    selection_handle_at(state, doc_id, pos).is_none()
+        && !point_in_quad(q, view.screen_to_doc(pos))
+        && selection_hit(state, doc_id, pos)
+}
+
 /// True when `pos` is clear of the floating box and its rotation band, so a
 /// selection tool should commit and start a fresh marquee there.
 pub fn outside_box(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
@@ -1050,7 +1082,15 @@ pub fn cursor(state: &AppState, doc_id: DocId, pos: Option<Pos2>) -> Option<egui
                 _ if fp.mode == Mode::Rotate => C::Alias,
                 Some(Grab::Box(h)) if matches!(fp.mode, Mode::Freeform | Mode::Resize) => handle_cursor(h),
                 Some(_) => C::Grab,
-                None if fp.mode == Mode::Freeform && !fp.contains(view.screen_to_doc(p)) => C::Alias,
+                // Outside the box: the rotation band gets the rotate glyph
+                // (canvas draws it); past the band a press commits and starts
+                // a marquee, so let the tool's own cursor say so.
+                None if fp.mode == Mode::Freeform && !fp.contains(view.screen_to_doc(p)) => {
+                    if outside_box(state, doc_id, p) {
+                        return None;
+                    }
+                    C::Alias
+                }
                 None => C::Move,
             }
         }

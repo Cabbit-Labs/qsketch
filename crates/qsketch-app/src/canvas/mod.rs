@@ -321,6 +321,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
 
     // Hover info for the Info panel + cursor.
     let hover_pos = ui.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p) && hovered);
+    // Pointer sits where a drag would rotate the transform / selection box.
+    let rotate_band = hovered
+        && state.brush_popup.is_none()
+        && state.pick_preview.is_none()
+        && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)
+        && !(state.temp_tool.is_some_and(|(t, _)| t == ToolKind::Hand) && capturing)
+        && hover_pos.is_some_and(|p| tools::floating::in_rotation_band(state, doc_id, p));
     if hovered {
         state.hover_screen_pos = hover_pos;
         state.hover_doc_pos = hover_pos.map(|p| state.doc(doc_id).unwrap().view.screen_to_doc(p));
@@ -333,6 +340,10 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             egui::CursorIcon::None
         } else if state.temp_tool.is_some_and(|(t, _)| t == ToolKind::Hand) && capturing {
             egui::CursorIcon::Grabbing
+        } else if rotate_band {
+            // Drawn as a corner-rotate glyph at the pointer (see
+            // `draw_rotate_cursor`): a drag here rotates, not deselects.
+            egui::CursorIcon::None
         } else if let Some(c) = tools::floating::cursor(state, doc_id, hover_pos)
             .filter(|_| !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView))
         {
@@ -483,7 +494,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             draw_shift_line_preview(&painter, state, doc_id, hover_pos, tool);
         }
         if tool == ToolKind::RotateView && state.brush_popup.is_none() {
-            draw_rotate_cursor(&painter, hover_pos);
+            draw_rotate_cursor(&painter, hover_pos, crate::ui::icons::ARROWS_CLOCKWISE, 22.0);
+        } else if rotate_band {
+            draw_rotate_cursor(&painter, hover_pos, crate::ui::icons::ARROW_ARC_RIGHT, 20.0);
         }
     }
     brush_popup(ui, state);
@@ -625,10 +638,11 @@ fn draw_selection(painter: &egui::Painter, entry: &mut crate::state::DocEntry, c
 }
 
 /// Rotate View has no system cursor; draw the rotate glyph at the pointer.
-fn draw_rotate_cursor(painter: &egui::Painter, hover: Option<Pos2>) {
+/// A glyph standing in for the pointer: the view-rotate arrows for the
+/// Rotate View tool, a curved corner arrow inside a transform's rotation band.
+fn draw_rotate_cursor(painter: &egui::Painter, hover: Option<Pos2>, glyph: &str, size: f32) {
     let Some(pos) = hover else { return };
-    let font = egui::FontId::new(22.0, crate::ui::iconset::family());
-    let glyph = crate::ui::icons::ARROWS_CLOCKWISE;
+    let font = egui::FontId::new(size, crate::ui::iconset::family());
     for d in [egui::vec2(1.0, 1.0), egui::vec2(-1.0, 1.0), egui::vec2(1.0, -1.0), egui::vec2(-1.0, -1.0)] {
         painter.text(pos + d, egui::Align2::CENTER_CENTER, glyph, font.clone(), Color32::from_black_alpha(160));
     }
