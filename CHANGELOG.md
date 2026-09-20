@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.27.3 — 2026-09-20
 
 - Layers: press an eye and drag across other layers' eyes to show or hide
   them all in one sweep, Photoshop style. Every eye the pointer crosses takes
