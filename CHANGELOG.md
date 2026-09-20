@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.27.2 — 2026-09-20
 
 - Elliptical Marquee: while dragging, the preview is the ellipse the marquee
   will actually select, pixel for pixel (like the Ellipse shape tool), instead
