@@ -2,6 +2,25 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Save As can now target any format qsketch writes: qsketch `.qsk`, Aseprite
+  `.ase`/`.aseprite`, Photoshop `.psd`, or a flat PNG / JPEG / WebP / BMP /
+  TGA / TIFF. Saving to a format that can't hold everything (layers in a flat
+  image, transparency in JPEG/BMP, the selection, clipping masks or blend
+  modes Aseprite lacks) first shows what will be lost; once accepted for a
+  path, plain Save there doesn't ask again. Save on a document opened from a
+  PNG writes the PNG back instead of demanding a `.qsk`.
+- Aseprite `.ase`/`.aseprite` files open and save. Reading handles 32-bit
+  RGBA, 16-bit grayscale and 8-bit indexed sprites, raw and zlib cels, linked
+  cels, groups (nesting preserved), layer visibility / lock / collapsed state,
+  opacity and every Aseprite blend mode. Multi-frame sprites open on frame 1
+  with a note (the parser already keeps all frames, tags and durations for
+  the upcoming animation work). Writing produces a single-frame RGBA sprite
+  with groups, trimmed compressed cels and a palette built from the art.
+- Opening a file now reports anything the import had to drop (frames,
+  tilemap layers) as a note instead of silently.
+
 ## 0.27.3 — 2026-09-20
 
 - Layers: press an eye and drag across other layers' eyes to show or hide

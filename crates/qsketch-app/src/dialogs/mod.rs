@@ -76,6 +76,16 @@ pub struct CloseConfirm {
     pub then: AfterClose,
 }
 
+/// "This format can't hold everything": shown before a Save / Save As to a
+/// flat image, PSD or Aseprite file that would drop something.
+pub struct SaveConfirm {
+    pub doc: DocId,
+    pub path: std::path::PathBuf,
+    pub warnings: Vec<String>,
+    /// Continue with a close / quit once the file is written.
+    pub then: Option<AfterClose>,
+}
+
 #[derive(Default)]
 pub struct Dialogs {
     pub color_target: Option<ColorTarget>,
@@ -86,6 +96,7 @@ pub struct Dialogs {
     pub filter: Option<filter::FilterDialog>,
     pub layer_props: Option<LayerPropsDialog>,
     pub close_confirm: Option<CloseConfirm>,
+    pub save_confirm: Option<SaveConfirm>,
     pub settings: Option<settings::SettingsDialog>,
     pub about: bool,
     /// Autosave snapshots found at startup, offered for recovery.
@@ -101,6 +112,7 @@ impl Dialogs {
             || self.filter.is_some()
             || self.layer_props.is_some()
             || self.close_confirm.is_some()
+            || self.save_confirm.is_some()
             || self.settings.is_some()
             || self.about
             || self.recover.is_some()
@@ -131,6 +143,7 @@ pub fn show_all(ctx: &Context, state: &mut AppState) {
     filter::show(ctx, state);
     show_layer_props(ctx, state);
     show_close_confirm(ctx, state);
+    show_save_confirm(ctx, state);
     settings::show(ctx, state);
     show_about(ctx, state);
     show_update(ctx, state);
@@ -721,6 +734,63 @@ pub enum CloseChoice {
     Cancel,
 }
 
+fn show_save_confirm(ctx: &Context, state: &mut AppState) {
+    let Some(c) = state.dialogs.save_confirm.as_ref() else { return };
+    let doc_id = c.doc;
+    let path = c.path.clone();
+    let then = c.then;
+    let warnings = c.warnings.clone();
+    let format = qsketch_core::io::format_name(&path);
+    let flattens = qsketch_core::io::is_export_image(&path);
+    let file = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let mut choice: Option<bool> = None;
+    let (_, closed) = modal(ctx, "save_confirm", &format!("Save as {format}?"), 420.0, |ui| {
+        ui.label(RichText::new(format!("\"{file}\" can't keep everything in this document:")));
+        ui.add_space(6.0);
+        for w in &warnings {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("•");
+                ui.label(w);
+            });
+        }
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            if flattens {
+                ui.label(RichText::new("Tip: keep a .qsk copy to edit the layers later.").weak());
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add(egui::Button::new(RichText::new("Save Anyway").strong())).clicked()
+                    || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                {
+                    choice = Some(true);
+                }
+                if ui.button("Cancel").clicked() {
+                    choice = Some(false);
+                }
+            });
+        });
+    });
+    if closed && choice.is_none() {
+        choice = Some(false);
+    }
+    let Some(choice) = choice else { return };
+    state.dialogs.save_confirm = None;
+    if !choice {
+        state.quit_requested = false;
+        return;
+    }
+    if crate::files::write_document(state, doc_id, &path) {
+        if let Some(then) = then {
+            crate::files::force_close(state, doc_id);
+            if then == AfterClose::Quit {
+                state.quit_requested = true;
+            }
+        }
+    } else {
+        state.quit_requested = false;
+    }
+}
+
 fn show_close_confirm(ctx: &Context, state: &mut AppState) {
     let Some(c) = state.dialogs.close_confirm.as_ref() else { return };
     let doc_id = c.doc;
@@ -762,11 +832,13 @@ fn show_close_confirm(ctx: &Context, state: &mut AppState) {
             }
         }
         CloseChoice::Save => {
-            if crate::files::save(state, doc_id) {
+            if crate::files::save_then(state, doc_id, Some(then)) {
                 crate::files::force_close(state, doc_id);
                 if then == AfterClose::Quit {
                     state.quit_requested = true;
                 }
+            } else if state.dialogs.save_confirm.is_some() {
+                // The format-warning dialog carries the close forward.
             } else {
                 state.quit_requested = false;
                 state.toasts.push(Level::Info, "Close cancelled.");

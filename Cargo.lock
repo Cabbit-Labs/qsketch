@@ -2672,6 +2672,7 @@ version = "0.27.3"
 dependencies = [
  "ab_glyph",
  "anyhow",
+ "flate2",
  "image",
  "log",
  "rayon",

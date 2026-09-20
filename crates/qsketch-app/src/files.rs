@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use qsketch_core::io;
 use qsketch_core::Document;
 
+use crate::dialogs::{AfterClose, SaveConfirm};
 use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
 
@@ -19,6 +20,7 @@ pub fn open_dialog(state: &mut AppState) {
         .set_title("Open")
         .add_filter("All supported", &all)
         .add_filter("qsketch document", &[io::NATIVE_EXTENSION])
+        .add_filter("Aseprite", io::ase::EXTENSIONS)
         .add_filter("Photoshop", &[io::psd::EXTENSION])
         .add_filter("Images", &image_filter_exts());
     let dlg = match state.settings.general.recent_files.first().and_then(|p| p.parent()) {
@@ -39,12 +41,15 @@ pub fn open_path(state: &mut AppState, path: &Path) -> Option<DocId> {
         state.active_doc = Some(id);
         return Some(id);
     }
-    match io::open(path) {
-        Ok(doc_state) => {
+    match io::open_with_warnings(path) {
+        Ok((doc_state, warnings)) => {
             let title = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Untitled".into());
             let doc = Document::from_state(doc_state, title, Some(path.to_path_buf()), "Open");
             let id = state.add_document(doc);
             state.settings.push_recent(path.to_path_buf());
+            for w in warnings {
+                state.toasts.push(Level::Info, w);
+            }
             Some(id)
         }
         Err(e) => {
@@ -54,29 +59,48 @@ pub fn open_path(state: &mut AppState, path: &Path) -> Option<DocId> {
     }
 }
 
-/// Save to the document's own path, or prompt if it has none / isn't native.
+/// Save to the document's own path, or prompt if it has none / can't be
+/// written. Returns true once the file is on disk; false when cancelled, or
+/// when a format warning is up and the save continues from that dialog.
 pub fn save(state: &mut AppState, doc_id: DocId) -> bool {
+    save_then(state, doc_id, None)
+}
+
+/// `save`, with something to do after the write completes even when it goes
+/// through the format-warning dialog (closing the document, quitting).
+pub fn save_then(state: &mut AppState, doc_id: DocId, then: Option<AfterClose>) -> bool {
     let path = state.doc(doc_id).and_then(|d| d.doc.path.clone());
     match path {
-        Some(p) if io::is_document(&p) => write_native(state, doc_id, &p),
-        _ => save_as(state, doc_id),
+        Some(p) if io::can_save(&p) => request_write(state, doc_id, &p, then),
+        _ => save_as_then(state, doc_id, then),
     }
 }
 
 pub fn save_as(state: &mut AppState, doc_id: DocId) -> bool {
+    save_as_then(state, doc_id, None)
+}
+
+pub fn save_as_then(state: &mut AppState, doc_id: DocId, then: Option<AfterClose>) -> bool {
     let Some(entry) = state.doc(doc_id) else { return false };
     let suggested = entry
         .doc
         .path
         .as_ref()
-        .map(|p| if io::is_document(p) { p.clone() } else { p.with_extension(io::NATIVE_EXTENSION) })
+        .map(|p| if io::can_save(p) { p.clone() } else { p.with_extension(io::NATIVE_EXTENSION) })
         .unwrap_or_else(|| {
             PathBuf::from(format!("{}.{}", entry.doc.title.trim_end_matches('*'), io::NATIVE_EXTENSION))
         });
     let mut dlg = rfd::FileDialog::new()
         .set_title("Save As")
         .add_filter("qsketch document", &[io::NATIVE_EXTENSION])
-        .add_filter("Photoshop (layers, no selection)", &[io::psd::EXTENSION]);
+        .add_filter("Aseprite (layers)", io::ase::EXTENSIONS)
+        .add_filter("Photoshop (layers)", &[io::psd::EXTENSION])
+        .add_filter("PNG (flattened)", &["png"])
+        .add_filter("JPEG (flattened, no transparency)", &["jpg", "jpeg"])
+        .add_filter("WebP (flattened)", &["webp"])
+        .add_filter("BMP (flattened, no transparency)", &["bmp"])
+        .add_filter("TGA (flattened)", &["tga"])
+        .add_filter("TIFF (flattened)", &["tif", "tiff"]);
     if let Some(name) = suggested.file_name() {
         dlg = dlg.set_file_name(name.to_string_lossy());
     }
@@ -84,22 +108,40 @@ pub fn save_as(state: &mut AppState, doc_id: DocId) -> bool {
         dlg = dlg.set_directory(dir);
     }
     let Some(mut path) = dlg.save_file() else { return false };
-    if path.extension().is_none() {
-        path.set_extension(io::NATIVE_EXTENSION);
+    if path.extension().is_none() || !io::can_save(&path) {
+        // Unknown or missing extension: keep what was typed and make it a
+        // native document rather than guessing a format.
+        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        path.set_file_name(format!("{}.{}", name.trim_end_matches('.'), io::NATIVE_EXTENSION));
     }
-    write_native(state, doc_id, &path)
+    request_write(state, doc_id, &path, then)
 }
 
-fn write_native(state: &mut AppState, doc_id: DocId, path: &Path) -> bool {
+/// Write now, or first put up the format-warning dialog when the format
+/// can't hold everything and the user hasn't already accepted that for
+/// this path.
+fn request_write(state: &mut AppState, doc_id: DocId, path: &Path, then: Option<AfterClose>) -> bool {
+    let Some(entry) = state.doc(doc_id) else { return false };
+    let warnings = io::compat_warnings(path, entry.doc.state());
+    if warnings.is_empty() || entry.format_ack.as_deref() == Some(path) {
+        return write_document(state, doc_id, path);
+    }
+    state.dialogs.save_confirm = Some(SaveConfirm { doc: doc_id, path: path.to_path_buf(), warnings, then });
+    false
+}
+
+/// Write the document to `path` in the format its extension names.
+pub fn write_document(state: &mut AppState, doc_id: DocId, path: &Path) -> bool {
     if state.settings.general.backups {
         crate::backups::take(path, state.settings.general.backup_versions as usize);
     }
     let Some(entry) = state.doc_mut(doc_id) else { return false };
-    match io::save_document(path, entry.doc.state()) {
+    match io::save_any(path, entry.doc.state()) {
         Ok(()) => {
             entry.doc.path = Some(path.to_path_buf());
             entry.doc.title = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             entry.doc.mark_saved();
+            entry.format_ack = Some(path.to_path_buf());
             state.autosave.forget(doc_id);
             state.settings.push_recent(path.to_path_buf());
             state.toasts.push(Level::Success, format!("Saved {}", path.display()));

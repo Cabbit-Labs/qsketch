@@ -25,6 +25,12 @@ keyboard.
 - **Photoshop `.psd` open and save** (8/16-bit RGB or grayscale; layer names,
   visibility, opacity, blend modes and clipping round-trip; groups flatten
   into the layer list on open).
+- **Aseprite `.ase`/`.aseprite` open and save** (RGBA, grayscale and indexed
+  sprites; layers, groups, visibility, lock, opacity and blend modes
+  round-trip; multi-frame sprites open on their first frame for now).
+- **Save As any image format** (PNG, JPEG, WebP, BMP, TGA, TIFF) straight
+  from Save As, with a heads-up listing what that format drops (layers,
+  transparency, selection) before it writes.
 - **20 blend modes** (Normal through Luminosity, matching the W3C compositing
   spec / Photoshop semantics), per-layer opacity, clipping masks, alpha lock,
   layer groups (nested, with their own opacity/blend/visibility), and

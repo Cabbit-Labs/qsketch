@@ -36,6 +36,9 @@ pub struct DocEntry {
     /// Active layer id as of the last canvas frame; a change starts a flash.
     pub flash_seen_active: Option<LayerId>,
     pub layer_flash: Option<crate::canvas::flash::LayerFlash>,
+    /// Path whose format warnings (flattening, dropped features) the user
+    /// has accepted, so plain Save there doesn't ask again.
+    pub format_ack: Option<std::path::PathBuf>,
 }
 
 impl DocEntry {
@@ -48,6 +51,7 @@ impl DocEntry {
             generation: 1,
             needs_full_upload: true,
             selected: Vec::new(),
+            format_ack: None,
             flash_seen_active: None,
             layer_flash: None,
         }

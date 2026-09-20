@@ -129,3 +129,14 @@ JSON, a `.qsk` file with a `version` this build doesn't understand, or a
 corrupted/missing non-essential entry, can still usually be salvaged by hand
 (unzip it, read `manifest.json`, open the layer PNGs directly) even if
 qsketch itself refuses to load it.
+
+## Other formats
+
+`io::save_any` routes by extension: `.qsk` (native, lossless), `.ase` /
+`.aseprite` (`io::ase`, single-frame RGBA with groups and compressed cels),
+`.psd` (`io::psd`), and the flat image formats in `io::EXPORT_EXTENSIONS`
+(flattened through `composite::flatten`). `io::compat_warnings(path, doc)`
+lists what a given target would lose, and the app shows that list before
+writing. `io::ase::parse` keeps every frame, cel, tag and duration of a
+sprite in `AseSprite`; `AseSprite::to_doc(frame)` builds a document from one
+frame.
