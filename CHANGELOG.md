@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Elliptical Marquee: while dragging, the preview is the ellipse the marquee
+  will actually select, pixel for pixel (like the Ellipse shape tool), instead
+  of its bounding rectangle. Both marquees' previews now also honor the Shift
+  square/circle constraint while dragging, not only on release.
+
 ## 0.27.1 — 2026-09-20
 
 - Canvas auto-scroll is slower and precise: it starts at a crawl and builds

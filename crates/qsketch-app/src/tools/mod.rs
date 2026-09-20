@@ -465,7 +465,26 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
 
     if state.session_doc == Some(doc_id) {
         match &state.session {
-            Some(ToolSession::DragRect { start, cur, .. }) | Some(ToolSession::CropDrag { start, cur }) => {
+            Some(ToolSession::DragRect { start, cur, mods }) => {
+                // Same square rule as the release (Shift constrains unless it
+                // means "add to selection"), so the preview is what you get.
+                let has_sel = entry.doc.state().selection.is_some();
+                let square = mods.shift && (!has_sel || mods.alt);
+                let r = rect_from_drag(*start, *cur, square);
+                if state.effective_tool() == ToolKind::EllipseSelect {
+                    // The ellipse the marquee will actually select, pixel
+                    // for pixel, not its bounding box.
+                    let spans = qsketch_core::shape::ellipse_spans(r);
+                    for seg in qsketch_core::shape::spans_outline(&spans) {
+                        let (a, b) = (to_s(seg[0]), to_s(seg[1]));
+                        painter.line_segment([a, b], shadow);
+                        painter.line_segment([a, b], stroke);
+                    }
+                } else {
+                    draw_doc_rect(painter, view, r, shadow, stroke);
+                }
+            }
+            Some(ToolSession::CropDrag { start, cur }) => {
                 let r = rect_from_drag(*start, *cur, false);
                 draw_doc_rect(painter, view, r, shadow, stroke);
             }
