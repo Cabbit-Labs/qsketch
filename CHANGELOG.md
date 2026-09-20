@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.27.0 — 2026-09-20
 
 - Fixed: Ctrl+= / Ctrl+- also scaled the whole UI (egui's built-in zoom) on
   top of zooming the canvas. Only the canvas zooms now; the UI scale stays
