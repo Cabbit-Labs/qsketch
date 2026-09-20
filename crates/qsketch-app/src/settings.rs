@@ -469,6 +469,9 @@ pub struct CanvasSettings {
     pub quick_rotate_double_tap_reset: bool,
     /// A fast hand-tool (Space) drag keeps gliding briefly after release.
     pub pan_inertia: bool,
+    /// Dragging a selection, shape or move past the edge of the viewport
+    /// scrolls the canvas in that direction.
+    pub edge_autoscroll: bool,
     /// Briefly light up a layer's pixels on the canvas when it becomes active.
     pub flash_selected_layer: bool,
     /// Smooth (bilinear) or Pixel (nearest) resampling for the transform box;
@@ -502,6 +505,7 @@ impl Default for CanvasSettings {
             quick_rotate_follow_pointer: true,
             quick_rotate_double_tap_reset: true,
             pan_inertia: true,
+            edge_autoscroll: true,
             flash_selected_layer: true,
             pick_loupe: true,
             pick_loupe_size: 86.0,
@@ -776,6 +780,7 @@ pub struct PaintSettings {
     pub brush: BrushSettings,
     pub pencil: BrushSettings,
     pub eraser: BrushSettings,
+    pub select_brush: BrushSettings,
     pub presets: Vec<BrushSettings>,
     pub foreground: Rgba8,
     pub background: Rgba8,
@@ -790,6 +795,14 @@ impl Default for PaintSettings {
             brush: BrushSettings::preset("Hard Round"),
             pencil: BrushSettings::preset("Pixel"),
             eraser: BrushSettings { name: "Eraser".into(), ..BrushSettings::preset("Hard Round") },
+            select_brush: BrushSettings {
+                name: "Selection".into(),
+                size: 24.0,
+                hardness: 1.0,
+                opacity: 1.0,
+                flow: 1.0,
+                ..BrushSettings::preset("Hard Round")
+            },
             presets: BrushSettings::presets(),
             foreground: Rgba8::BLACK,
             background: Rgba8::WHITE,
@@ -908,6 +921,7 @@ impl Settings {
         self.paint.brush.clamp();
         self.paint.pencil.clamp();
         self.paint.eraser.clamp();
+        self.paint.select_brush.clamp();
         for p in &mut self.paint.presets {
             p.clamp();
         }

@@ -55,6 +55,10 @@ impl QSketchApp {
         theme::install_fonts(&cc.egui_ctx, settings.ui.icon_set.filled());
         crate::ui::iconset::configure(settings.ui.icon_set, &settings.ui.icon_overrides);
         theme::apply(&cc.egui_ctx, &settings.ui.palette(), settings.ui.scale);
+        // egui grows/shrinks the whole UI on Ctrl+= / Ctrl+- by default, on
+        // top of the canvas zoom those keys mean here; the UI scale lives in
+        // Preferences instead.
+        cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         let applied_theme = (settings.ui.clone(), settings.ui.scale);
         let applied_native_frame = settings.ui.native_frame;
         let app_icon = {

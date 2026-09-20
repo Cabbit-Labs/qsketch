@@ -618,6 +618,11 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             "A fast hand-tool (Space) drag keeps gliding briefly after release instead of stopping dead.",
         );
         ui.end_row();
+        ui.label("Auto-scroll at edges");
+        ui.checkbox(&mut c.edge_autoscroll, "").on_hover_text(
+            "Dragging a selection, shape or move against the edge of the view scrolls the canvas along with it.",
+        );
+        ui.end_row();
         ui.label("Brush cursor");
         ui.horizontal(|ui| {
             ui.selectable_value(&mut c.brush_cursor, BrushCursor::Outline, "Outline");

@@ -173,6 +173,8 @@ pub struct AppState {
     pub brush: BrushSettings,
     pub pencil: BrushSettings,
     pub eraser: BrushSettings,
+    /// Brush used by the Selection Brush tool (paints selection, not pixels).
+    pub select_brush: BrushSettings,
     pub presets: Vec<BrushSettings>,
 
     pub clipboard: Option<ClipImage>,
@@ -251,6 +253,7 @@ impl AppState {
             brush: paint.brush,
             pencil: paint.pencil,
             eraser: paint.eraser,
+            select_brush: paint.select_brush,
             presets: paint.presets,
             clipboard: None,
             settings,
@@ -379,6 +382,7 @@ impl AppState {
             ToolKind::Brush | ToolKind::Line => Some(&self.brush),
             ToolKind::Pencil => Some(&self.pencil),
             ToolKind::Eraser => Some(&self.eraser),
+            ToolKind::SelectBrush => Some(&self.select_brush),
             _ => None,
         }
     }
@@ -393,6 +397,7 @@ impl AppState {
             ToolKind::Brush | ToolKind::Line => Some(&mut self.brush),
             ToolKind::Pencil => Some(&mut self.pencil),
             ToolKind::Eraser => Some(&mut self.eraser),
+            ToolKind::SelectBrush => Some(&mut self.select_brush),
             _ => None,
         }
     }
@@ -422,6 +427,7 @@ impl AppState {
         self.settings.paint.brush = self.brush.clone();
         self.settings.paint.pencil = self.pencil.clone();
         self.settings.paint.eraser = self.eraser.clone();
+        self.settings.paint.select_brush = self.select_brush.clone();
         self.settings.paint.presets = self.presets.clone();
         self.settings.paint.foreground = self.fg;
         self.settings.paint.background = self.bg;

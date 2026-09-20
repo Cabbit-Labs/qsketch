@@ -5,7 +5,7 @@ pub mod flash;
 pub mod render;
 pub mod view;
 
-use egui::{Color32, Pos2, Sense, Stroke, Ui};
+use egui::{Color32, Pos2, Sense, Stroke, Ui, Vec2};
 use qsketch_core::{Pt, TILE, TILE_BYTES};
 
 use crate::settings::{BrushCursor, WheelBehavior};
@@ -137,7 +137,12 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                     if state.brush_popup.is_some() {
                         state.brush_popup = None;
                     }
-                    if hovered && rect.contains(*pos) && state.session.is_none() {
+                    // The polygonal lasso keeps its session open between
+                    // clicks, so its later vertices arrive as presses while
+                    // a session exists.
+                    let poly_open = matches!(state.session, Some(ToolSession::PolyLasso { .. }))
+                        && state.session_doc == Some(doc_id);
+                    if hovered && rect.contains(*pos) && (state.session.is_none() || poly_open) {
                         // A pick chord without modifiers (bare right-click, say)
                         // can't arm the temporary eyedropper, so pick here.
                         if state.temp_tool.is_none() && state.tool.uses_color() {
@@ -151,6 +156,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                         // the Move tool whatever tool is active (a chord
                         // without modifiers arms the Move tool only now).
                         if mouse.is_quick_move(*modifiers, *button)
+                            && !poly_open
                             && !tools::floating::selection_hit(state, doc_id, *pos)
                             && !matches!(
                                 state.tool,
@@ -169,7 +175,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                         }
                         match *button {
                             // Middle-drag: temporary Hand with any tool.
-                            egui::PointerButton::Middle if mouse.middle_drag_pans => {
+                            egui::PointerButton::Middle if mouse.middle_drag_pans && !poly_open => {
                                 state.temp_tool = Some((ToolKind::Hand, TempReason::Middle));
                                 let inp = make_input(state, *pos, *button, *modifiers);
                                 tools::handle(state, doc_id, CanvasEvent::Press(inp));
@@ -302,6 +308,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         );
     }
     tools::text::refresh(state);
+
+    edge_autoscroll(ui, state, doc_id, rect, last_pos, mods, &make_input);
 
     let capturing = state.session.is_some() && state.session_doc == Some(doc_id);
     if capturing || state.floating.as_ref().is_some_and(|f| f.drag.is_some()) || tools::text::dragging(state, doc_id) {
@@ -809,4 +817,72 @@ fn draw_brush_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, h
             painter.line_segment([pos + a, pos + b], Stroke::new(1.0, Color32::WHITE));
         }
     }
+}
+
+/// Photoshop/SAI-style auto-scroll: while a selection, shape or move drag is
+/// held near (or past) the edge of the viewport, pan the view that way and
+/// re-feed the drag so the rubber band follows the newly revealed canvas.
+/// Paint strokes are deliberately excluded: a brush against the edge should
+/// paint there, not fly the view away.
+#[allow(clippy::too_many_arguments)]
+fn edge_autoscroll(
+    ui: &egui::Ui,
+    state: &mut AppState,
+    doc_id: DocId,
+    rect: egui::Rect,
+    last_pos: Option<Pos2>,
+    mods: egui::Modifiers,
+    make_input: &dyn Fn(&AppState, Pos2, egui::PointerButton, egui::Modifiers) -> CanvasInput,
+) {
+    if !state.settings.canvas.edge_autoscroll {
+        return;
+    }
+    let session_scrolls = state.session_doc == Some(doc_id)
+        && matches!(
+            state.session,
+            Some(ToolSession::DragRect { .. })
+                | Some(ToolSession::Lasso { .. })
+                | Some(ToolSession::PolyLasso { .. })
+                | Some(ToolSession::Shape { .. })
+                | Some(ToolSession::Moving { .. })
+        );
+    // A transform box (paste / Free Transform / lifted selection) being moved.
+    let float_scrolls = state.floating.as_ref().is_some_and(|f| f.doc == doc_id && f.drag.is_some());
+    let scrolls = session_scrolls || float_scrolls;
+    if !scrolls || !ui.input(|i| i.pointer.any_down()) {
+        return;
+    }
+    let Some(pos) = last_pos.or(ui.input(|i| i.pointer.latest_pos())) else { return };
+    // Band inside the viewport where scrolling ramps up; anything past the
+    // edge scrolls at full speed (plus a little extra the further out it is).
+    const BAND: f32 = 28.0;
+    const MAX_SPEED: f32 = 900.0; // screen points per second at the edge
+    let push = |lo: f32, hi: f32, p: f32| -> f32 {
+        if p < lo + BAND {
+            -((lo + BAND - p) / BAND).min(2.0)
+        } else if p > hi - BAND {
+            ((p - (hi - BAND)) / BAND).min(2.0)
+        } else {
+            0.0
+        }
+    };
+    let dir = Vec2::new(push(rect.min.x, rect.max.x, pos.x), push(rect.min.y, rect.max.y, pos.y));
+    if dir == Vec2::ZERO {
+        return;
+    }
+    let dt = ui.input(|i| i.stable_dt).clamp(0.0, 0.1);
+    let Some(entry) = state.doc_mut(doc_id) else { return };
+    let (w, h) = (entry.doc.width(), entry.doc.height());
+    let before = entry.view.center;
+    // Pointer at the top edge: drag the content down to reveal what is above.
+    entry.view.pan_by_screen(-dir * MAX_SPEED * dt);
+    entry.view.clamp_to_document(w, h);
+    if entry.view.center.x == before.x && entry.view.center.y == before.y {
+        return;
+    }
+    // Same screen position now maps to a new document point; let the tool
+    // pick it up so the band / shape / moved pixels track the scroll.
+    let inp = make_input(state, pos, egui::PointerButton::Primary, mods);
+    tools::handle(state, doc_id, CanvasEvent::Drag(inp));
+    ui.ctx().request_repaint();
 }

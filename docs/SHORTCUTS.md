@@ -164,6 +164,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Lasso | `L` |
 | Polygonal Lasso | `Shift+L` |
 | Magic Wand | `W` |
+| Selection Brush | — |
 | Crop | — |
 | Eyedropper | `I` |
 | Brush | `B` |

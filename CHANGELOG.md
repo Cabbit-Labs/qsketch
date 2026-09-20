@@ -2,6 +2,29 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Fixed: Ctrl+= / Ctrl+- also scaled the whole UI (egui's built-in zoom) on
+  top of zooming the canvas. Only the canvas zooms now; the UI scale stays
+  under Preferences ▸ Interface.
+- Fixed: the Polygonal Lasso only ever took its first vertex. The canvas
+  dropped every press while a tool session was open, and the polygon's session
+  stays open between clicks; clicks now reach the lasso until it closes.
+  Holding Ctrl snaps the rubber band back to the first vertex and Ctrl+click
+  closes the loop, alongside Enter, double-click and clicking the first vertex.
+- Selection Brush: a new tool in the selection group that paints selection
+  the way SAI's SelPen does. Strokes add to the selection; the Deselect toggle
+  in the options bar (or holding Alt) makes them take away, like SelErs. It
+  has its own brush (size, hardness, opacity, flow, pressure, stabilizer,
+  symmetry, tip shape via Brush Settings), the selection updates live under
+  the stroke, and each stroke is one undo step. No default shortcut: bind one
+  under Preferences ▸ Keyboard Shortcuts.
+- Canvas: auto-scroll at the edges. Dragging a marquee, lasso, shape, transform box or a
+  Move-tool drag against (or past) the edge of the view scrolls the canvas in
+  that direction, so a selection can grow past what is on screen when zoomed
+  in. Ramps up over the last 28 points before the edge; brush strokes never
+  scroll. Preferences ▸ Canvas ▸ "Auto-scroll at edges" turns it off.
+
 ## 0.26.3 — 2026-09-19
 
 - Shortcuts: the Move tool now defaults to `A` (was `C`) and the Ellipse tool

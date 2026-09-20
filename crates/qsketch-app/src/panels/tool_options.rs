@@ -49,6 +49,28 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
             | ToolKind::Line
             | ToolKind::Rect
             | ToolKind::Ellipse => brush_options(ui, state, tool),
+            ToolKind::SelectBrush => {
+                group(ui, &theme, Section::Tools, |ui| {
+                    let erase = state.tool_opts.select_brush_erase;
+                    if icon_button(ui, icons::SELECTION_PLUS, "Select: strokes add to the selection", 22.0, !erase)
+                        .clicked()
+                    {
+                        state.tool_opts.select_brush_erase = false;
+                    }
+                    if icon_button(
+                        ui,
+                        icons::SELECTION_SLASH,
+                        "Deselect: strokes take away from the selection (or hold Alt)",
+                        22.0,
+                        erase,
+                    )
+                    .clicked()
+                    {
+                        state.tool_opts.select_brush_erase = true;
+                    }
+                });
+                brush_options(ui, state, tool);
+            }
             ToolKind::Contour => {
                 group(ui, &theme, Section::Tools, |ui| {
                     ui.checkbox(&mut state.tool_opts.contour_outline, "Outline with brush")
@@ -360,7 +382,7 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                     b.antialias = !b.antialias;
                 }
             }
-            if tool.is_paint() {
+            if tool.is_paint() || tool.is_selection_brush() {
                 stabilizer_options(ui, b);
             }
         }

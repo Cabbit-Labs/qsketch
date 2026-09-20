@@ -33,6 +33,7 @@ pub enum ToolKind {
     Lasso,
     PolyLasso,
     MagicWand,
+    SelectBrush,
     Crop,
     Eyedropper,
     Brush,
@@ -51,13 +52,14 @@ pub enum ToolKind {
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 21] = [
+    pub const ALL: [ToolKind; 22] = [
         ToolKind::Move,
         ToolKind::RectSelect,
         ToolKind::EllipseSelect,
         ToolKind::Lasso,
         ToolKind::PolyLasso,
         ToolKind::MagicWand,
+        ToolKind::SelectBrush,
         ToolKind::Crop,
         ToolKind::Eyedropper,
         ToolKind::Brush,
@@ -83,6 +85,7 @@ impl ToolKind {
             ToolKind::Lasso => "Lasso",
             ToolKind::PolyLasso => "Polygonal Lasso",
             ToolKind::MagicWand => "Magic Wand",
+            ToolKind::SelectBrush => "Selection Brush",
             ToolKind::Crop => "Crop",
             ToolKind::Eyedropper => "Eyedropper",
             ToolKind::Brush => "Brush",
@@ -115,6 +118,7 @@ impl ToolKind {
             ToolKind::Lasso => icons::LASSO,
             ToolKind::PolyLasso => icons::POLYGON,
             ToolKind::MagicWand => icons::MAGIC_WAND,
+            ToolKind::SelectBrush => icons::HIGHLIGHTER,
             ToolKind::Crop => icons::CROP,
             ToolKind::Eyedropper => icons::EYEDROPPER,
             ToolKind::Brush => icons::PAINT_BRUSH,
@@ -141,7 +145,8 @@ impl ToolKind {
             | ToolKind::EllipseSelect
             | ToolKind::Lasso
             | ToolKind::PolyLasso
-            | ToolKind::MagicWand => 1,
+            | ToolKind::MagicWand
+            | ToolKind::SelectBrush => 1,
             ToolKind::Crop | ToolKind::Eyedropper => 2,
             ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => 3,
             ToolKind::Fill | ToolKind::Gradient => 4,
@@ -170,13 +175,18 @@ impl ToolKind {
     /// Tools that lay down brush dabs. The Rectangle and Ellipse tools do not:
     /// they paint hard pixels in the foreground color.
     pub fn uses_brush(self) -> bool {
-        matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Line)
+        matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Line | ToolKind::SelectBrush)
+    }
+
+    /// Strokes that go into the selection instead of a layer.
+    pub fn is_selection_brush(self) -> bool {
+        self == ToolKind::SelectBrush
     }
 
     /// Tools that paint with the foreground/background color, so a pick
     /// chord over the canvas should grab a color for them.
     pub fn uses_color(self) -> bool {
-        self.uses_brush()
+        (self.uses_brush() && !self.is_selection_brush())
             || matches!(
                 self,
                 ToolKind::Fill
@@ -208,6 +218,8 @@ pub struct ToolOptions {
     pub wand_tolerance: u8,
     pub wand_contiguous: bool,
     pub wand_sample_merged: bool,
+    /// Selection Brush: strokes take away from the selection (SAI's SelErs).
+    pub select_brush_erase: bool,
     pub fill_tolerance: u8,
     pub fill_contiguous: bool,
     pub fill_sample_merged: bool,
@@ -235,6 +247,7 @@ impl Default for ToolOptions {
             wand_tolerance: 32,
             wand_contiguous: true,
             wand_sample_merged: false,
+            select_brush_erase: false,
             fill_tolerance: 32,
             fill_contiguous: true,
             fill_sample_merged: false,
@@ -420,7 +433,9 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         }
     }
     match tool {
-        ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => paint::handle_stroke(state, doc_id, tool, ev),
+        ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::SelectBrush => {
+            paint::handle_stroke(state, doc_id, tool, ev)
+        }
         ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse => paint::handle_shape(state, doc_id, tool, ev),
         ToolKind::Contour => contour::handle(state, doc_id, ev),
         ToolKind::Text => text::handle(state, doc_id, ev),

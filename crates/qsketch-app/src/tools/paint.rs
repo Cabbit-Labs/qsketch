@@ -2,9 +2,12 @@
 //! which go through the core stroke engine.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use qsketch_core::shape::Spans;
-use qsketch_core::{BrushSettings, IRect, PaintMode, Pt, Rgba8, StabilizerMode, StrokeEngine, StrokeSample};
+use qsketch_core::{
+    BrushSettings, IRect, Layer, Mask, PaintMode, Pt, Raster, Rgba8, StabilizerMode, StrokeEngine, StrokeSample,
+};
 
 use super::symmetry::Transform;
 use super::{rect_from_drag, CanvasEvent, CanvasInput, ToolKind, ToolSession};
@@ -20,6 +23,19 @@ pub struct StrokeExtra {
     pub stabilizer: Option<Stabilizer>,
     /// Last raw pointer sample, for the rope catch-up on release.
     pub last_raw: Option<StrokeSample>,
+    pub target: StrokeTarget,
+}
+
+/// Where a stroke's dabs land.
+#[derive(Default)]
+pub enum StrokeTarget {
+    /// The active layer's raster (`ToolSession::Stroke::layer`).
+    #[default]
+    Layer,
+    /// The Selection Brush: dabs go into a scratch raster whose alpha is
+    /// merged live into the selection on top of `base` (the selection before
+    /// the stroke), adding by default or taking away when `erase` is set.
+    Selection { scratch: Raster, base: Option<Arc<Mask>>, erase: bool },
 }
 
 /// Input stabilizer for freehand strokes (see `StabilizerMode`).
@@ -101,6 +117,7 @@ fn brush_for(state: &AppState, tool: ToolKind) -> (BrushSettings, PaintMode, Rgb
     match tool {
         ToolKind::Pencil => (state.pencil.clone(), PaintMode::Paint, state.fg),
         ToolKind::Eraser => (state.eraser.clone(), PaintMode::Erase, state.bg),
+        ToolKind::SelectBrush => (state.select_brush.clone(), PaintMode::Paint, Rgba8::WHITE),
         _ => (state.brush.clone(), PaintMode::Paint, state.fg),
     }
 }
@@ -115,27 +132,41 @@ pub(super) fn begin_engine_with(
     let (settings, mode, color) = brush_for(state, tool);
     let (tip, texture) = state.library.resolve(&settings);
     let bg = if mode == PaintMode::Erase { state.fg } else { state.bg };
-    if mode == PaintMode::Paint {
+    let to_selection = tool.is_selection_brush();
+    if mode == PaintMode::Paint && !to_selection {
         state.note_color_used(color);
     }
     let symmetry = state.symmetry;
     let zoom = state.doc(doc_id).map(|d| d.view.zoom).unwrap_or(1.0);
+    let erase_sel = state.tool_opts.select_brush_erase;
     let entry = state.doc_mut(doc_id)?;
     let (w, h) = (entry.doc.width(), entry.doc.height());
     let s = entry.doc.state();
     let li = s.active;
-    let layer = &s.layers[li];
-    if !layer.props.visible {
+    // The selection brush paints into a blank scratch layer, unclipped by
+    // the selection it is editing and regardless of layer locks.
+    let scratch_layer = to_selection.then(|| Layer::new(u64::MAX, "selection", w, h));
+    let layer = match &scratch_layer {
+        Some(l) => l,
+        None => &s.layers[li],
+    };
+    if !to_selection && !layer.props.visible {
         state.toasts.push(Level::Info, "The active layer is hidden.");
         return None;
     }
-    if layer.props.locked {
+    if !to_selection && layer.props.locked {
         state.toasts.push(Level::Info, "The active layer is locked.");
         return None;
     }
     let erase_alpha_locked = mode == PaintMode::Erase && layer.props.alpha_locked;
+    let clip = if to_selection { None } else { s.selection.clone() };
+    let target = if to_selection {
+        StrokeTarget::Selection { scratch: Raster::new(w, h), base: s.selection.clone(), erase: erase_sel }
+    } else {
+        StrokeTarget::Layer
+    };
     let make = |seed: u64| {
-        StrokeEngine::new(settings.clone(), mode, color, layer, s.selection.clone())
+        StrokeEngine::new(settings.clone(), mode, color, layer, clip.clone())
             .with_tip(tip.clone())
             .with_texture(texture.clone())
             .with_background(bg)
@@ -156,13 +187,14 @@ pub(super) fn begin_engine_with(
     if erase_alpha_locked {
         state.toasts.push(Level::Info, "Transparency is locked on this layer: the eraser paints the background color.");
     }
-    Some((Box::new(engine), li, StrokeExtra { mirrors, stabilizer: None, last_raw: None }))
+    Some((Box::new(engine), li, StrokeExtra { mirrors, stabilizer: None, last_raw: None, target }))
 }
 
 fn stroke_label(tool: ToolKind) -> &'static str {
     match tool {
         ToolKind::Pencil => "Pencil",
         ToolKind::Eraser => "Eraser",
+        ToolKind::SelectBrush => "Selection Brush",
         ToolKind::Line => "Line",
         ToolKind::Rect => "Rectangle",
         ToolKind::Ellipse => "Ellipse",
@@ -174,7 +206,11 @@ pub(super) fn feed(state: &mut AppState, doc_id: DocId, sample: StrokeSample) {
     let Some(ToolSession::Stroke { engine, layer, extra }) = &mut state.session else { return };
     let Some(entry) = state.docs.iter_mut().find(|d| d.id == doc_id) else { return };
     let li = *layer;
-    let raster = &mut entry.doc.state_mut().layers[li].raster;
+    let doc_state = entry.doc.state_mut();
+    let raster = match &mut extra.target {
+        StrokeTarget::Layer => &mut doc_state.layers[li].raster,
+        StrokeTarget::Selection { scratch, .. } => scratch,
+    };
     let mut dirty = engine.extend(raster, sample);
     for (t, m) in extra.mirrors.iter_mut() {
         let d = m.extend(raster, StrokeSample { pos: t.apply(sample.pos), pressure: sample.pressure });
@@ -186,8 +222,42 @@ pub(super) fn feed(state: &mut AppState, doc_id: DocId, sample: StrokeSample) {
             dirty.union(&d)
         };
     }
-    if !dirty.is_empty() {
-        entry.doc.mark_dirty_rect(dirty);
+    if dirty.is_empty() {
+        return;
+    }
+    match &extra.target {
+        StrokeTarget::Layer => entry.doc.mark_dirty_rect(dirty),
+        StrokeTarget::Selection { scratch, base, erase } => {
+            merge_selection_stroke(doc_state, scratch, base.as_deref(), *erase, dirty);
+            entry.sel_outline = None;
+        }
+    }
+}
+
+/// Copy the scratch raster's alpha inside `dirty` into the working
+/// selection, on top of `base`: adding (max) or, with `erase`, cutting (min
+/// with the inverse), so a stroke can never eat into what it did not cover.
+fn merge_selection_stroke(
+    doc_state: &mut qsketch_core::DocState,
+    scratch: &Raster,
+    base: Option<&Mask>,
+    erase: bool,
+    dirty: IRect,
+) {
+    let (w, h) = (scratch.width(), scratch.height());
+    let sel = doc_state.selection.get_or_insert_with(|| Arc::new(Mask::new(w, h)));
+    let m = Arc::make_mut(sel);
+    let r = dirty.intersect(&m.rect());
+    for y in r.y..r.y + r.h {
+        for x in r.x..r.x + r.w {
+            let v = scratch.get_pixel(x, y).a;
+            let b = base.map(|b| b.get(x, y)).unwrap_or(0);
+            let out = if erase { b.min(255 - v) } else { b.max(v) };
+            m.set(x, y, out);
+        }
+    }
+    if !erase {
+        m.expand_bounds(r);
     }
 }
 
@@ -223,7 +293,11 @@ pub(super) fn finish_with(state: &mut AppState, doc_id: DocId, label: &str) {
     let Some(ToolSession::Stroke { mut engine, layer, mut extra }) = state.session.take() else { return };
     state.session_doc = None;
     let Some(entry) = state.docs.iter_mut().find(|d| d.id == doc_id) else { return };
-    let raster = &mut entry.doc.state_mut().layers[layer].raster;
+    let doc_state = entry.doc.state_mut();
+    let raster = match &mut extra.target {
+        StrokeTarget::Layer => &mut doc_state.layers[layer].raster,
+        StrokeTarget::Selection { scratch, .. } => scratch,
+    };
     let mut dirty = engine.finish(raster);
     for (_, m) in extra.mirrors.iter_mut() {
         let d = m.finish(raster);
@@ -235,8 +309,26 @@ pub(super) fn finish_with(state: &mut AppState, doc_id: DocId, label: &str) {
             dirty.union(&d)
         };
     }
-    if !dirty.is_empty() {
-        entry.doc.mark_dirty_rect(dirty);
+    match &extra.target {
+        StrokeTarget::Layer => {
+            if !dirty.is_empty() {
+                entry.doc.mark_dirty_rect(dirty);
+            }
+        }
+        StrokeTarget::Selection { scratch, base, erase } => {
+            if !dirty.is_empty() {
+                merge_selection_stroke(doc_state, scratch, base.as_deref(), *erase, dirty);
+            }
+            // Exact bounds (an erase stroke may have shrunk them), and an
+            // all-clear selection is no selection.
+            if let Some(sel) = &mut doc_state.selection {
+                Arc::make_mut(sel).recompute_bounds();
+                if sel.is_empty() {
+                    doc_state.selection = None;
+                }
+            }
+            entry.sel_outline = None;
+        }
     }
     if engine.dab_count() > 0 {
         entry.doc.commit(label);
@@ -261,6 +353,13 @@ pub fn handle_stroke(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: Ca
                 None
             };
             let Some((engine, layer, mut extra)) = begin_engine_with(state, doc_id, tool) else { return };
+            // Alt flips the selection brush between select and deselect for
+            // this one stroke, the way Alt means subtract for the marquees.
+            if let StrokeTarget::Selection { erase, .. } = &mut extra.target {
+                if inp.mods.alt {
+                    *erase = !*erase;
+                }
+            }
             if shift_line.is_none() {
                 let zoom = state.doc(doc_id).map(|d| d.view.zoom).unwrap_or(1.0);
                 extra.stabilizer = Stabilizer::new(engine.settings(), zoom);

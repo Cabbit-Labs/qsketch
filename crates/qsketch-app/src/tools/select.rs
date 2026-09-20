@@ -117,7 +117,10 @@ pub fn handle_poly_lasso(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 Some(ToolSession::PolyLasso { pts, cur, mods }) => {
                     *cur = inp.doc;
                     *mods = inp.mods;
-                    if pts.len() >= 3 && pts[0].dist(inp.doc) <= POLY_CLOSE_PX / zoom {
+                    // Ctrl+click closes the loop from wherever the pointer is
+                    // (the band already snaps to the first vertex while Ctrl
+                    // is held), as does clicking near the first vertex.
+                    if pts.len() >= 3 && (inp.mods.command || pts[0].dist(inp.doc) <= POLY_CLOSE_PX / zoom) {
                         close = true;
                     } else if pts.last().is_none_or(|l| l.dist(inp.doc) > 1.0 / zoom) {
                         pts.push(inp.doc);
@@ -130,8 +133,8 @@ pub fn handle_poly_lasso(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             }
         }
         CanvasEvent::Drag(inp) | CanvasEvent::Hover(inp) => {
-            if let Some(ToolSession::PolyLasso { cur, mods, .. }) = &mut state.session {
-                *cur = inp.doc;
+            if let Some(ToolSession::PolyLasso { pts, cur, mods }) = &mut state.session {
+                *cur = if inp.mods.command && pts.len() >= 3 { pts[0] } else { inp.doc };
                 *mods = inp.mods;
             }
         }

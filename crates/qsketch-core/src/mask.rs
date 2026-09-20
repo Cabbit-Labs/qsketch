@@ -82,6 +82,16 @@ impl Mask {
         }
     }
 
+    /// Grow the cached bounds to include `r` (for callers that `set` pixels
+    /// inside a known rect and don't want a full `recompute_bounds` scan).
+    pub fn expand_bounds(&mut self, r: IRect) {
+        let r = r.intersect(&self.rect());
+        if r.is_empty() {
+            return;
+        }
+        self.bounds = if self.bounds.is_empty() { r } else { self.bounds.union(&r) };
+    }
+
     pub fn recompute_bounds(&mut self) {
         let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
         for y in 0..self.height as i32 {
