@@ -850,32 +850,50 @@ fn edge_autoscroll(
     let float_scrolls = state.floating.as_ref().is_some_and(|f| f.doc == doc_id && f.drag.is_some());
     let scrolls = session_scrolls || float_scrolls;
     if !scrolls || !ui.input(|i| i.pointer.any_down()) {
+        state.edge_scroll_hold = 0.0;
         return;
     }
     let Some(pos) = last_pos.or(ui.input(|i| i.pointer.latest_pos())) else { return };
-    // Band inside the viewport where scrolling ramps up; anything past the
-    // edge scrolls at full speed (plus a little extra the further out it is).
-    const BAND: f32 = 28.0;
-    const MAX_SPEED: f32 = 900.0; // screen points per second at the edge
+    // Band inside the viewport where scrolling ramps up. The response is
+    // squared so a light touch on the band barely creeps and only the last
+    // few points before the edge move at full speed; past the edge it keeps
+    // growing, up to double, the further out the pointer goes.
+    const BAND: f32 = 32.0;
     let push = |lo: f32, hi: f32, p: f32| -> f32 {
-        if p < lo + BAND {
-            -((lo + BAND - p) / BAND).min(2.0)
+        if p < lo {
+            -(1.0 + ((lo - p) / BAND).min(1.0))
+        } else if p < lo + BAND {
+            -((lo + BAND - p) / BAND).powi(2)
+        } else if p > hi {
+            1.0 + ((p - hi) / BAND).min(1.0)
         } else if p > hi - BAND {
-            ((p - (hi - BAND)) / BAND).min(2.0)
+            ((p - (hi - BAND)) / BAND).powi(2)
         } else {
             0.0
         }
     };
     let dir = Vec2::new(push(rect.min.x, rect.max.x, pos.x), push(rect.min.y, rect.max.y, pos.y));
     if dir == Vec2::ZERO {
+        state.edge_scroll_hold = 0.0;
         return;
     }
     let dt = ui.input(|i| i.stable_dt).clamp(0.0, 0.1);
+    // Velocity build-up: the first moments at the edge are slow so the view
+    // can be nudged by a few pixels; full speed arrives after ~0.8 s of
+    // holding there.
+    const RAMP_SECS: f32 = 0.8;
+    state.edge_scroll_hold += dt;
+    let t = (state.edge_scroll_hold / RAMP_SECS).clamp(0.0, 1.0);
+    let ramp = 0.12 + 0.88 * (t * t * (3.0 - 2.0 * t));
+    let max_speed = state.settings.canvas.edge_autoscroll_speed;
     let Some(entry) = state.doc_mut(doc_id) else { return };
     let (w, h) = (entry.doc.width(), entry.doc.height());
+    // Zoomed in, the same screen speed sweeps the document too fast to aim
+    // with; ease it down as the zoom climbs (about 0.7x at 8x, 0.55x at 32x).
+    let zoom_ease = 1.0 / (1.0 + 0.15 * entry.view.zoom.max(1.0).log2());
     let before = entry.view.center;
     // Pointer at the top edge: drag the content down to reveal what is above.
-    entry.view.pan_by_screen(-dir * MAX_SPEED * dt);
+    entry.view.pan_by_screen(-dir * max_speed * ramp * zoom_ease * dt);
     entry.view.clamp_to_document(w, h);
     if entry.view.center.x == before.x && entry.view.center.y == before.y {
         return;

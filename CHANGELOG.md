@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Canvas auto-scroll is slower and precise: it starts at a crawl and builds
+  up to full speed over ~0.8 s of holding at the edge, the inner band responds
+  quadratically (a light touch barely moves, the last few points before the
+  edge go full speed), it eases down as the zoom climbs, and the top speed is
+  a slider under Preferences ▸ Canvas (default 240 pt/s, was a fixed 900).
+
 ## 0.27.0 — 2026-09-20
 
 - Fixed: Ctrl+= / Ctrl+- also scaled the whole UI (egui's built-in zoom) on

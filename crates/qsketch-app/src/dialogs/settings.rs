@@ -623,6 +623,13 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             "Dragging a selection, shape or move against the edge of the view scrolls the canvas along with it.",
         );
         ui.end_row();
+        ui.label("Auto-scroll speed");
+        ui.add_enabled(
+            c.edge_autoscroll,
+            egui::Slider::new(&mut c.edge_autoscroll_speed, 60.0..=800.0).suffix(" pt/s").fixed_decimals(0),
+        )
+        .on_hover_text("Top speed once the pointer has been held at the edge for a moment; it starts slow and builds up.");
+        ui.end_row();
         ui.label("Brush cursor");
         ui.horizontal(|ui| {
             ui.selectable_value(&mut c.brush_cursor, BrushCursor::Outline, "Outline");

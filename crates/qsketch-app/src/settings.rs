@@ -472,6 +472,8 @@ pub struct CanvasSettings {
     /// Dragging a selection, shape or move past the edge of the viewport
     /// scrolls the canvas in that direction.
     pub edge_autoscroll: bool,
+    /// Auto-scroll speed at the viewport edge, screen points per second.
+    pub edge_autoscroll_speed: f32,
     /// Briefly light up a layer's pixels on the canvas when it becomes active.
     pub flash_selected_layer: bool,
     /// Smooth (bilinear) or Pixel (nearest) resampling for the transform box;
@@ -506,6 +508,7 @@ impl Default for CanvasSettings {
             quick_rotate_double_tap_reset: true,
             pan_inertia: true,
             edge_autoscroll: true,
+            edge_autoscroll_speed: 240.0,
             flash_selected_layer: true,
             pick_loupe: true,
             pick_loupe_size: 86.0,

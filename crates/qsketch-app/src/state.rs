@@ -206,6 +206,8 @@ pub struct AppState {
     pub hover_color: Option<Rgba8>,
     /// A color pick in progress: drives the zoomed loupe over the canvas.
     pub pick_preview: Option<PickPreview>,
+    /// Seconds the pointer has been held in the auto-scroll band (velocity build-up).
+    pub edge_scroll_hold: f32,
 
     /// Pen samples (screen pos, pressure) delivered by the tablet backend this frame.
     pub tablet_samples: Vec<(Pos2, f32)>,
@@ -276,6 +278,7 @@ impl AppState {
             hover_screen_pos: None,
             hover_color: None,
             pick_preview: None,
+            edge_scroll_hold: 0.0,
             tablet_samples: Vec::new(),
             render_state: None,
             thumbs: Default::default(),
