@@ -50,6 +50,7 @@ pub fn handle_marquee(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: C
                 ToolKind::EllipseSelect => Mask::from_ellipse(w, h, r),
                 _ => Mask::from_rect(w, h, r),
             };
+            let mask = feather_new(state, mask);
             apply_selection(state, doc_id, mask, op, "Select");
         }
         _ => {}
@@ -90,6 +91,7 @@ pub fn handle_lasso(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 return;
             }
             let mask = Mask::from_polygon(w, h, &pts);
+            let mask = feather_new(state, mask);
             apply_selection(state, doc_id, mask, op, "Lasso");
         }
         _ => {}
@@ -169,7 +171,7 @@ pub fn close_poly_lasso(state: &mut AppState, doc_id: DocId, mods: egui::Modifie
     let op = op_from_mods(state.tool_opts.selection_op, mods);
     let Some(entry) = state.doc(doc_id) else { return };
     let (w, h) = (entry.doc.width(), entry.doc.height());
-    let mask = Mask::from_polygon(w, h, &pts);
+    let mask = feather_new(state, Mask::from_polygon(w, h, &pts));
     apply_selection(state, doc_id, mask, op, "Polygonal Lasso");
 }
 
@@ -198,6 +200,26 @@ pub fn handle_wand(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         return;
     }
     apply_selection(state, doc_id, mask, op, "Magic Wand");
+}
+
+/// The options-bar Feather radius, applied to a freshly drawn selection.
+fn feather_new(state: &AppState, mask: Mask) -> Mask {
+    let r = state.tool_opts.selection_feather;
+    if r > 0.0 {
+        mask.feathered(r)
+    } else {
+        mask
+    }
+}
+
+/// Select ▸ Feather…: soften the current selection's edge in place.
+pub fn feather_selection(state: &mut AppState, doc_id: DocId, radius: f32) {
+    let Some(entry) = state.doc_mut(doc_id) else { return };
+    let Some(sel) = entry.doc.state().selection.clone() else { return };
+    let m = sel.feathered(radius);
+    entry.doc.state_mut().selection = if m.is_empty() { None } else { Some(std::sync::Arc::new(m)) };
+    entry.doc.commit("Feather");
+    entry.sel_outline = None;
 }
 
 /// Select all / deselect / invert helpers used by actions.

@@ -429,6 +429,67 @@ impl Mask {
         m
     }
 
+    /// Photoshop-style feather: a Gaussian blur of the coverage with
+    /// `radius` px (sigma = radius / 2, so the edge fades over about
+    /// ±radius). Only the neighbourhood of the current bounds is touched.
+    pub fn feathered(&self, radius: f32) -> Mask {
+        use rayon::prelude::*;
+        if radius <= 0.0 || self.is_empty() {
+            return self.clone();
+        }
+        let sigma = radius * 0.5;
+        let k = (sigma * 3.0).ceil() as i32;
+        let kernel: Vec<f32> = (-k..=k).map(|i| (-(i * i) as f32 / (2.0 * sigma * sigma)).exp()).collect();
+        let norm: f32 = kernel.iter().sum();
+        let kernel: Vec<f32> = kernel.into_iter().map(|v| v / norm).collect();
+        let region = self.bounds.expand(k).intersect(&self.rect());
+        let (rw, rh) = (region.w as usize, region.h as usize);
+        let w = self.width as usize;
+        // Horizontal pass into a float buffer covering the region.
+        let mut tmp = vec![0.0f32; rw * rh];
+        tmp.par_chunks_mut(rw).enumerate().for_each(|(ry, row)| {
+            let y = region.y as usize + ry;
+            let src = &self.data[y * w..(y + 1) * w];
+            for (rx, out) in row.iter_mut().enumerate() {
+                let x = region.x + rx as i32;
+                let mut acc = 0.0;
+                for (i, kv) in kernel.iter().enumerate() {
+                    let sx = x + i as i32 - k;
+                    if sx >= 0 && (sx as usize) < w {
+                        acc += src[sx as usize] as f32 * kv;
+                    }
+                }
+                *out = acc;
+            }
+        });
+        // Vertical pass back into bytes.
+        let mut m = self.clone();
+        let mut out_rows: Vec<Vec<u8>> = (0..rh)
+            .into_par_iter()
+            .map(|ry| {
+                let mut row = vec![0u8; rw];
+                for (rx, o) in row.iter_mut().enumerate() {
+                    let mut acc = 0.0;
+                    for (i, kv) in kernel.iter().enumerate() {
+                        let sy = ry as i32 + i as i32 - k;
+                        if sy >= 0 && (sy as usize) < rh {
+                            acc += tmp[sy as usize * rw + rx] * kv;
+                        }
+                    }
+                    *o = (acc + 0.5).clamp(0.0, 255.0) as u8;
+                }
+                row
+            })
+            .collect();
+        for (ry, row) in out_rows.drain(..).enumerate() {
+            let y = region.y as usize + ry;
+            let x0 = region.x as usize;
+            m.data[y * w + x0..y * w + x0 + rw].copy_from_slice(&row);
+        }
+        m.recompute_bounds();
+        m
+    }
+
     /// Outline segments (pixel-edge coordinates) between selected (>127) and
     /// unselected pixels, for drawing marching ants. Each segment is
     /// `[start, end]` in document pixel space.
@@ -468,6 +529,22 @@ impl Mask {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feather_softens_edges_symmetrically() {
+        let m = Mask::from_rect(64, 64, IRect::new(16, 16, 32, 32));
+        assert_eq!(m.feathered(0.0).data(), m.data());
+        let f = m.feathered(6.0);
+        assert_eq!(f.get(32, 32), 255, "deep inside stays fully selected");
+        assert_eq!(f.get(2, 2), 0, "far outside stays unselected");
+        let inside = f.get(20, 32);
+        let edge_in = f.get(15, 32);
+        let edge_out = f.get(16, 32);
+        assert!(inside > edge_out && edge_out > 60 && edge_out < 200, "{inside} {edge_out}");
+        // Symmetric falloff across the edge (pixel centers at 15.5 and 16.5).
+        assert!((edge_in as i32 + edge_out as i32 - 255).abs() <= 2, "{edge_in} + {edge_out}");
+        assert!(f.bounds().w > m.bounds().w, "bounds grow with the feather");
+    }
 
     #[test]
     fn rect_ops() {

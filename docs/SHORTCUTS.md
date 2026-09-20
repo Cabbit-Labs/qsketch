@@ -91,6 +91,7 @@ reachable from its menu until you assign one.
 | All | `Ctrl+A` |
 | Deselect | `Ctrl+D` |
 | Inverse | `Ctrl+Shift+I` |
+| Feather… | `Shift+F6` |
 | Select Layer Content | — |
 
 ### Moving a selection

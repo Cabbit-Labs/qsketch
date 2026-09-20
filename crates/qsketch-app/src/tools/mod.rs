@@ -22,7 +22,7 @@ use crate::state::{AppState, DocId};
 use crate::ui::icons;
 
 pub use fill::sample_color as sample_color_public;
-pub use select::{deselect, invert as invert_selection, select_all, select_layer_content};
+pub use select::{deselect, feather_selection, invert as invert_selection, select_all, select_layer_content};
 pub use transform::{commit_crop, nudge};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -215,6 +215,10 @@ impl ToolKind {
 #[serde(default)]
 pub struct ToolOptions {
     pub selection_op: SelectionOp,
+    /// Feather radius (px) applied to new marquee / lasso selections.
+    pub selection_feather: f32,
+    /// Last radius used in Select ▸ Feather….
+    pub feather_last: f32,
     pub wand_tolerance: u8,
     pub wand_contiguous: bool,
     pub wand_sample_merged: bool,
@@ -244,6 +248,8 @@ impl Default for ToolOptions {
     fn default() -> Self {
         Self {
             selection_op: SelectionOp::Replace,
+            selection_feather: 0.0,
+            feather_last: 5.0,
             wand_tolerance: 32,
             wand_contiguous: true,
             wand_sample_merged: false,

@@ -146,6 +146,7 @@ actions! {
     SelectAll => (Select, "All", ["Ctrl+A"]),
     Deselect => (Select, "Deselect", ["Ctrl+D"]),
     InvertSelection => (Select, "Inverse", ["Ctrl+Shift+I"]),
+    FeatherSelection => (Select, "Feather…", ["Shift+F6"]),
     SelectLayerContent => (Select, "Select Layer Content", []),
     // View
     ZoomIn => (View, "Zoom In", ["Ctrl+=", "Ctrl++"]),

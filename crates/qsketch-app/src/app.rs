@@ -762,6 +762,8 @@ impl QSketchApp {
                 self.menu_item(ui, Action::Deselect, has_sel);
                 self.menu_item(ui, Action::InvertSelection, has_doc);
                 self.menu_item(ui, Action::SelectLayerContent, sel_or_content);
+                ui.separator();
+                self.menu_item(ui, Action::FeatherSelection, has_sel);
             });
             top_menu(ui, "View", |ui| {
                 self.menu_item(ui, Action::ZoomIn, has_doc);
@@ -1377,6 +1379,7 @@ impl QSketchApp {
                     crate::tools::invert_selection(&mut self.state, id);
                 }
             }
+            Action::FeatherSelection => dialogs::open_feather(&mut self.state),
             Action::SelectLayerContent => {
                 self.state.settle();
                 if let Some(id) = active {

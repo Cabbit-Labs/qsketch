@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Selection feathering, Photoshop style. The marquee and lasso tools have a
+  Feather field in the options bar that softens new selections by that many
+  pixels, and Select ▸ Feather… (Shift+F6) softens the current selection with
+  a Gaussian falloff (sigma = radius / 2). Everything that honors partial
+  selection — painting, fills, filters, transforms — fades across the
+  feathered edge; the marching ants follow the 50% line.
+
 ## 0.28.0 — 2026-09-20
 
 - Save As can now target any format qsketch writes: qsketch `.qsk`, Aseprite

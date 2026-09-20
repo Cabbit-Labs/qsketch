@@ -82,6 +82,10 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
             ToolKind::Text => text_options(ui, state),
             ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso | ToolKind::PolyLasso => {
                 group(ui, &theme, Section::Tools, |ui| selection_ops(ui, state));
+                group(ui, &theme, Section::Tools, |ui| {
+                    param(ui, "Feather", &mut state.tool_opts.selection_feather, 0.0..=250.0, " px", false, 1)
+                        .on_hover_text("Soften the edge of new selections by this many pixels (0 = hard edge)");
+                });
             }
             ToolKind::MagicWand => {
                 group(ui, &theme, Section::Tools, |ui| selection_ops(ui, state));
