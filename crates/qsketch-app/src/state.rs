@@ -208,6 +208,9 @@ pub struct AppState {
     pub pick_preview: Option<PickPreview>,
     /// Seconds the pointer has been held in the auto-scroll band (velocity build-up).
     pub edge_scroll_hold: f32,
+    /// Photoshop-style eye sweep: the visibility every eye the pointer
+    /// crosses gets while the button pressed on an eye stays down.
+    pub eye_drag: Option<bool>,
 
     /// Pen samples (screen pos, pressure) delivered by the tablet backend this frame.
     pub tablet_samples: Vec<(Pos2, f32)>,
@@ -279,6 +282,7 @@ impl AppState {
             hover_color: None,
             pick_preview: None,
             edge_scroll_hold: 0.0,
+            eye_drag: None,
             tablet_samples: Vec::new(),
             render_state: None,
             thumbs: Default::default(),

@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Layers: press an eye and drag across other layers' eyes to show or hide
+  them all in one sweep, Photoshop style. Every eye the pointer crosses takes
+  the state the first one switched to. The eye now flips on press rather
+  than on release.
+
 ## 0.27.2 — 2026-09-20
 
 - Elliptical Marquee: while dragging, the preview is the ellipse the marquee

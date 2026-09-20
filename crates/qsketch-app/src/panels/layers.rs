@@ -52,7 +52,16 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     };
     let ctx = ui.ctx().clone();
     let mut changed_props = false;
-    let mut toggle_vis: Option<(LayerId, bool)> = None;
+    let mut toggle_vis: Vec<(LayerId, bool)> = Vec::new();
+    // Eye sweep: pressing an eye and dragging over others sets them all to
+    // the same state (the opposite of the first one's). Ends on release.
+    let (primary_down, primary_pressed) = ui.input(|i| (i.pointer.primary_down(), i.pointer.primary_pressed()));
+    if !primary_down {
+        state.eye_drag = None;
+    }
+    let eye_sweep = state.eye_drag;
+    let pointer = ui.input(|i| i.pointer.latest_pos());
+    let mut start_sweep: Option<bool> = None;
     let mut toggle_expand: Option<usize> = None;
     let mut rename_target: Option<(LayerId, String)> = None;
     let mut click: Option<Click> = None;
@@ -299,7 +308,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             // Visibility toggle
             let eye_rect =
                 egui::Rect::from_min_size(row_rect.min + egui::vec2(4.0, (row_h - 20.0) / 2.0), egui::vec2(20.0, 20.0));
-            let eye = ui.interact(eye_rect, ui.id().with(("eye", layer_id)), Sense::click());
+            // click_and_drag so the sweep is ours and the scroll area does
+            // not start drag-scrolling the list.
+            let eye = ui.interact(eye_rect, ui.id().with(("eye", layer_id)), Sense::click_and_drag());
             ui.painter().text(
                 eye_rect.center(),
                 egui::Align2::CENTER_CENTER,
@@ -307,8 +318,16 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 egui::FontId::new(14.0, ICON_FAMILY()),
                 if vis && !dim { ui.visuals().text_color() } else { hidden_eye_color(ui) },
             );
-            if eye.on_hover_text("Toggle visibility").clicked() {
-                toggle_vis = Some((layer_id, !vis));
+            eye.on_hover_text("Toggle visibility (drag across eyes to set several)");
+            // Acts on press, not release, so the layer flips the moment the
+            // eye is hit and a sweep over other eyes can start right away.
+            if primary_pressed && pointer.is_some_and(|p| eye_rect.contains(p)) {
+                start_sweep = Some(!vis);
+                toggle_vis.push((layer_id, !vis));
+            } else if let Some(t) = eye_sweep {
+                if vis != t && pointer.is_some_and(|p| eye_rect.contains(p)) {
+                    toggle_vis.push((layer_id, t));
+                }
             }
 
             // Expand caret (groups) + thumbnail / folder glyph
@@ -559,8 +578,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         });
     }
     // Visibility is a view toggle, not an undoable edit.
-    if let Some((id, visible)) = toggle_vis {
+    for (id, visible) in toggle_vis {
         entry.doc.set_layer_visible(id, visible);
+    }
+    if start_sweep.is_some() {
+        state.eye_drag = start_sweep;
     }
 
     // --- footer --------------------------------------------------------------
