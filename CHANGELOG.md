@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.27.1 — 2026-09-20
 
 - Canvas auto-scroll is slower and precise: it starts at a crawl and builds
   up to full speed over ~0.8 s of holding at the edge, the inner band responds
