@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.29.0 — 2026-09-20
 
 - Selection feathering, Photoshop style. The marquee and lasso tools have a
   Feather field in the options bar that softens new selections by that many
