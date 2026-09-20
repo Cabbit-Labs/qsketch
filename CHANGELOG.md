@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.28.0 — 2026-09-20
 
 - Save As can now target any format qsketch writes: qsketch `.qsk`, Aseprite
   `.ase`/`.aseprite`, Photoshop `.psd`, or a flat PNG / JPEG / WebP / BMP /
