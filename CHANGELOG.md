@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.31.0 — 2026-09-23
 
 - The update dialog reads properly: the new version stands out, the release
   notes sit in their own panel as bullet points instead of one cramped
