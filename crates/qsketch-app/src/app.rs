@@ -32,6 +32,10 @@ pub struct QSketchApp {
     last_settings_save: Instant,
     /// Last plain `Q` press, for the double-tap view reset.
     last_q_press: Option<Instant>,
+    /// Attempts made to get a fullscreen window to actually cover the
+    /// monitor, and when the last one was sent.
+    fullscreen_tries: u8,
+    fullscreen_fix_at: Option<Instant>,
     last_title: String,
     /// A text field had focus during the previous frame (shortcuts are suspended).
     text_editing: bool,
@@ -107,6 +111,8 @@ impl QSketchApp {
             wintab,
             applied_theme,
             applied_native_frame,
+            fullscreen_tries: 0,
+            fullscreen_fix_at: None,
             app_icon,
             last_settings_save: Instant::now(),
             last_q_press: None,
@@ -518,6 +524,55 @@ impl QSketchApp {
                 }
             });
         }
+    }
+
+    /// Fullscreen has to cover the whole monitor. Some window managers only
+    /// maximize an undecorated window when asked, which leaves the strip
+    /// where the taskbar sits uncovered, so check the result and insist.
+    fn enforce_fullscreen(&mut self, ctx: &Context) {
+        if !self.state.fullscreen {
+            self.fullscreen_tries = 0;
+            self.fullscreen_fix_at = None;
+            return;
+        }
+        let (inner, monitor) = ctx.input(|i| (i.viewport().inner_rect, i.viewport().monitor_size));
+        let (Some(inner), Some(monitor)) = (inner, monitor) else { return };
+        // A few points of slack: window managers round sizes.
+        let short = monitor.x - inner.width() > 4.0 || monitor.y - inner.height() > 4.0;
+        if !short {
+            self.fullscreen_tries = 0;
+            return;
+        }
+        // Give the window manager a moment between attempts, and stop after
+        // a few so we never fight it in a loop.
+        if self.fullscreen_tries >= 3
+            || self.fullscreen_fix_at.is_some_and(|t| t.elapsed() < Duration::from_millis(400))
+        {
+            return;
+        }
+        self.fullscreen_tries += 1;
+        self.fullscreen_fix_at = Some(Instant::now());
+        log::warn!(
+            "fullscreen window is {:.0}x{:.0} on a {:.0}x{:.0} monitor (attempt {})",
+            inner.width(),
+            inner.height(),
+            monitor.x,
+            monitor.y,
+            self.fullscreen_tries
+        );
+        if self.fullscreen_tries < 3 {
+            // Maximized and fullscreen together confuse some window
+            // managers; drop the first, then ask again.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        } else if inner.min.x.abs() < 2.0 && inner.min.y.abs() < 2.0 {
+            // Last resort, and only when the window sits at the origin (so a
+            // second monitor can't be dragged into): place it over the whole
+            // screen by hand.
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(0.0, 0.0)));
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(monitor));
+        }
+        resize_settled(ctx);
     }
 
     fn handle_dropped_files(&mut self, ctx: &Context) {
@@ -1471,13 +1526,11 @@ impl QSketchApp {
                 self.state.settings.canvas.show_pixel_grid = !self.state.settings.canvas.show_pixel_grid
             }
             Action::ToggleFullscreen => {
-                // Toggle from what the window actually is: the flag alone
-                // desyncs whenever the window manager changes the state
-                // behind our back (its own fullscreen key, Escape, a tiling
-                // rule), and the next F11 would then send the state it is
-                // already in.
-                let now = ctx.input(|i| i.viewport().fullscreen).unwrap_or(self.state.fullscreen);
-                self.state.fullscreen = !now;
+                // The flag is the source of truth: the viewport's own
+                // `fullscreen` is unreliable here (it reports true for a
+                // plainly windowed window at startup), and trusting it made
+                // the first F11 of a session a no-op.
+                self.state.fullscreen = !self.state.fullscreen;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.state.fullscreen));
                 resize_settled(ctx);
             }
@@ -1717,6 +1770,7 @@ impl eframe::App for QSketchApp {
         }
         self.handle_dropped_files(&ctx);
         self.handle_keyboard(&ctx);
+        self.enforce_fullscreen(&ctx);
         self.state.autosave.tick(&self.state.docs, &self.state.settings.general, self.state.session.is_some(), &ctx);
         if self.state.updater.ctx.is_none() {
             self.state.updater.ctx = Some(ctx.clone());

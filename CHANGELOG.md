@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Fixed: Fullscreen (F11) left the strip where the taskbar sits uncovered on
+  some desktops. qsketch now checks what the window manager actually did: if
+  the window does not cover the monitor it asks again, and failing that puts
+  the window over the whole screen itself.
+- Fixed: the first F11 of a session did nothing (0.31.1 regression). The
+  window reports itself as fullscreen at startup even when it plainly is not,
+  and trusting that inverted the first toggle.
+
 ## 0.32.0 — 2026-09-23
 
 - Fixed: a shortcut bound to the mouse wheel also moved the canvas. Binding
