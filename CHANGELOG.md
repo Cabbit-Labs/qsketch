@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.31.1 — 2026-09-23
 
 - Fixed: Fullscreen (F11) could leave an unpainted strip along the bottom
   instead of extending the window down. The new size arrives from the window
