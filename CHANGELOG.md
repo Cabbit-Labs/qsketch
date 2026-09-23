@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.30.0 — 2026-09-23
 
 - Levels (Image ▸ Adjustments ▸ Levels…, Ctrl+L), Photoshop style: a
   histogram of the selected layers, per-channel (RGB / Red / Green / Blue)
