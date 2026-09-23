@@ -683,9 +683,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 /// eye's text color (toward the row background) so the two states read at a
 /// glance.
 fn hidden_eye_color(ui: &Ui) -> Color32 {
-    if ui.visuals().dark_mode {
-        Color32::from_gray(80)
-    } else {
-        Color32::from_gray(165)
-    }
+    // The palette's dim text, not a fixed gray: on tinted chrome (a pink
+    // theme, say) a gray is both off-palette and hard to see. The glyph
+    // itself already says hidden (eye vs eye-slash), so it can be legible.
+    crate::ui::theme::dim_text(ui.visuals())
 }

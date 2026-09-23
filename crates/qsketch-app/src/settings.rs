@@ -94,12 +94,14 @@ impl CustomPalette {
         let shade = |t: f32| c(mix(self.primary, t));
         let text = if dark { [230, 233, 245] } else { [30, 30, 36] };
         let text_mix = |t: f32| c(mix_to(self.primary, text, t));
-        // Dim text is the panel color mixed toward the text color, pushed just
-        // far enough to keep a readable contrast (WCAG >= 4.5:1) against the
-        // panel. A fixed gray fails on mid-tone chrome such as a pink theme.
+        // Dim text is the panel color mixed toward the text color, pushed far
+        // enough to stay comfortably readable against the panel — well past
+        // the 4.5:1 minimum, because this color also carries "greyed out"
+        // text (hidden layers, disabled rows) that still has to be read. A
+        // fixed gray fails on mid-tone chrome such as a pink theme.
         let text_dim = {
             let mut t = 0.55;
-            while t < 1.0 && contrast(mix_to(self.primary, text, t), self.primary) < 4.5 {
+            while t < 1.0 && contrast(mix_to(self.primary, text, t), self.primary) < DIM_TEXT_CONTRAST {
                 t += 0.05;
             }
             c(mix_to(self.primary, text, t))
@@ -121,6 +123,11 @@ impl CustomPalette {
         }
     }
 }
+
+/// Contrast the dim/secondary text aims for against the panel it sits on.
+/// The WCAG floor for body text is 4.5:1; dim text goes further because it
+/// doubles as the "greyed out" color.
+pub const DIM_TEXT_CONTRAST: f32 = 7.0;
 
 /// WCAG contrast ratio (1..21) between two sRGB triples.
 fn contrast(a: [u8; 3], b: [u8; 3]) -> f32 {
@@ -147,9 +154,27 @@ mod palette_tests {
             let p = CustomPalette { primary, secondary: [90, 140, 220] }.to_palette();
             let dim = [p.text_dim.r(), p.text_dim.g(), p.text_dim.b()];
             let best = contrast([p.text.r(), p.text.g(), p.text.b()], primary);
-            // Mid-gray chrome can't reach 4.5:1 with any text; then dim text
-            // must at least match the primary text.
-            assert!(contrast(dim, primary) >= 4.4f32.min(best - 0.01), "{primary:?} -> {dim:?} (best {best})");
+            // Mid-gray chrome can't reach the target with any text; then dim
+            // text must at least match the primary text.
+            let want = DIM_TEXT_CONTRAST.min(best - 0.01);
+            assert!(contrast(dim, primary) >= want, "{primary:?} -> {dim:?} (want {want}, best {best})");
+        }
+    }
+
+    /// Every built-in theme's dim text must be readable on its own panel too,
+    /// not just the generated custom ones.
+    #[test]
+    fn builtin_dim_text_is_readable() {
+        use crate::ui::theme::Palette;
+        for (name, p) in [
+            ("ink", Palette::ink()),
+            ("graphite", Palette::graphite()),
+            ("light", Palette::light()),
+            ("sepia", Palette::sepia()),
+        ] {
+            let rgb = |c: egui::Color32| [c.r(), c.g(), c.b()];
+            let dim = contrast(rgb(p.text_dim), rgb(p.panel));
+            assert!(dim >= 4.5, "{name}: dim text only {dim:.1}:1 on the panel");
         }
     }
 }

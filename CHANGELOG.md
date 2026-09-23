@@ -2,6 +2,21 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Fixed: Fullscreen (F11) could leave an unpainted strip along the bottom
+  instead of extending the window down. The new size arrives from the window
+  manager a moment after the request, and an otherwise idle window kept
+  showing the frame it drew at the old size; qsketch now keeps painting
+  across the transition (same for maximize and restore). F11 also reads the
+  window's real state, so it stays in step when the window manager changes
+  fullscreen behind the app's back.
+- Secondary and "greyed out" text is readable on tinted themes. The dim text
+  color now targets 7:1 contrast against its panel rather than the 4.5:1
+  minimum, weak text no longer fades halfway into the panel (which washed out
+  on a pink or other mid-tone chrome), and hidden layers are drawn in the
+  palette's dim color instead of a fixed gray that ignored the theme.
+
 ## 0.31.0 — 2026-09-23
 
 - The update dialog reads properly: the new version stands out, the release

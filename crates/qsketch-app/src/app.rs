@@ -44,6 +44,17 @@ pub struct QSketchApp {
     auto_update_checked: bool,
 }
 
+/// Keep painting for a moment after asking the window manager to resize the
+/// window (fullscreen, maximize). The new size arrives asynchronously and a
+/// window that is otherwise idle would keep showing the frame it drew at the
+/// old size, leaving the newly exposed strip unpainted.
+fn resize_settled(ctx: &Context) {
+    ctx.request_repaint();
+    for ms in [16, 50, 120, 250, 500] {
+        ctx.request_repaint_after(std::time::Duration::from_millis(ms));
+    }
+}
+
 impl QSketchApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
@@ -536,6 +547,7 @@ impl QSketchApp {
         let drag = ui.interact(strip, ui.id().with("title_drag"), egui::Sense::click_and_drag());
         if drag.double_clicked() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+            resize_settled(&ctx);
         } else if drag.drag_started_by(egui::PointerButton::Primary) {
             ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
@@ -580,6 +592,7 @@ impl QSketchApp {
                 let (glyph, tip) = if maximized { (icons::CORNERS_IN, "Restore") } else { (icons::SQUARE, "Maximize") };
                 if btn(ui, glyph, tip, false) {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                    resize_settled(&ctx);
                 }
                 if btn(ui, icons::MINUS, "Minimize", false) {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
@@ -1453,8 +1466,15 @@ impl QSketchApp {
                 self.state.settings.canvas.show_pixel_grid = !self.state.settings.canvas.show_pixel_grid
             }
             Action::ToggleFullscreen => {
-                self.state.fullscreen = !self.state.fullscreen;
+                // Toggle from what the window actually is: the flag alone
+                // desyncs whenever the window manager changes the state
+                // behind our back (its own fullscreen key, Escape, a tiling
+                // rule), and the next F11 would then send the state it is
+                // already in.
+                let now = ctx.input(|i| i.viewport().fullscreen).unwrap_or(self.state.fullscreen);
+                self.state.fullscreen = !now;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.state.fullscreen));
+                resize_settled(ctx);
             }
             Action::TogglePanels => self.state.panels_hidden = !self.state.panels_hidden,
             Action::ToggleSymmetryHorizontal => self.state.symmetry.horizontal = !self.state.symmetry.horizontal,

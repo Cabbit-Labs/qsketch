@@ -195,6 +195,10 @@ pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32) {
     visuals.widgets.noninteractive.weak_bg_fill = p.panel;
     visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, p.border);
     visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, p.text_dim);
+    // `.weak()` text otherwise fades the text color halfway into the panel,
+    // which is unreadable on mid-tone chrome (a pink theme, say). Use the
+    // palette's dim color, which is held to a contrast floor.
+    visuals.weak_text_color = Some(p.text_dim);
     visuals.widgets.noninteractive.corner_radius = r;
     visuals.widgets.inactive.bg_fill = p.widget;
     visuals.widgets.inactive.weak_bg_fill = p.widget;
