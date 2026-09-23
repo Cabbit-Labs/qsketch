@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.32.0 — 2026-09-23
 
 - Fixed: a shortcut bound to the mouse wheel also moved the canvas. Binding
   Ctrl+Wheel Up to a bigger brush, for instance, resized the brush and zoomed
