@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.32.1 — 2026-09-23
 
 - Fixed: Fullscreen (F11) left the strip where the taskbar sits uncovered on
   some desktops. qsketch now checks what the window manager actually did: if
