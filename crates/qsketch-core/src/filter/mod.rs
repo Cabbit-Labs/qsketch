@@ -964,6 +964,38 @@ mod tests {
         d
     }
 
+    /// The dialog previews by reverting the working state and re-running the
+    /// filter for every parameter change. However many times that happens,
+    /// the result must equal one application of the final parameters.
+    #[test]
+    fn preview_revert_cycle_does_not_accumulate() {
+        use crate::document::Document;
+        let base = checker(64, 48);
+        let seq = [
+            Filter::HueSaturation { hue: 40.0, saturation: 10.0, lightness: 0.0, colorize: false },
+            Filter::HueSaturation { hue: -120.0, saturation: -60.0, lightness: 25.0, colorize: false },
+            Filter::HueSaturation { hue: 200.0, saturation: 80.0, lightness: -30.0, colorize: true },
+            Filter::HueSaturation { hue: 15.0, saturation: 5.0, lightness: 5.0, colorize: false },
+        ];
+        let last = seq.last().unwrap();
+
+        let mut doc = Document::from_state(base.clone(), "t", None, "Open");
+        let mut applied = false;
+        for f in &seq {
+            if applied {
+                doc.revert_working();
+            }
+            apply_filter(doc.state_mut(), 0, f);
+            applied = true;
+        }
+        let dragged = doc.state().layers[0].raster.to_rgba();
+
+        let mut once = Document::from_state(base, "t", None, "Open");
+        apply_filter(once.state_mut(), 0, last);
+        assert_eq!(dragged, once.state().layers[0].raster.to_rgba(), "preview cycle drifted");
+        assert!(dragged.chunks_exact(4).any(|p| p[3] > 0), "layer went fully transparent");
+    }
+
     #[test]
     fn region_roundtrip() {
         let d = checker(70, 50);

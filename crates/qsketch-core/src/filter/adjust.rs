@@ -105,4 +105,27 @@ mod tests {
         let g = hsl_to_rgb(h + 120.0, s, l);
         assert!(g[1] > 0.99 && g[0] < 0.01 && g[2] < 0.01);
     }
+
+    /// Hue/Saturation at its neutral settings must not move any color, or
+    /// repeatedly opening it drifts the art.
+    #[test]
+    fn hsl_roundtrip_is_identity() {
+        let mut worst = (0i32, [0u8; 3]);
+        for r in (0..=255).step_by(5) {
+            for g in (0..=255).step_by(5) {
+                for b in (0..=255).step_by(5) {
+                    let c = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0];
+                    let [h, s, l] = rgb_to_hsl(c);
+                    let back = hsl_to_rgb(h, s, l);
+                    for k in 0..3 {
+                        let d = ((back[k] - c[k]) * 255.0).round() as i32;
+                        if d.abs() > worst.0.abs() {
+                            worst = (d, [r as u8, g as u8, b as u8]);
+                        }
+                    }
+                }
+            }
+        }
+        assert!(worst.0.abs() <= 1, "rgb->hsl->rgb drifts by {} at {:?}", worst.0, worst.1);
+    }
 }

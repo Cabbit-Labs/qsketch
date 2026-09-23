@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use egui::{Context, Key, RichText, Ui};
 use qsketch_core::filter::{self, DitherPattern, Filter, Levels, LevelsChannel, OffsetEdge, RadialMode};
-use qsketch_core::Rgba8;
+use qsketch_core::{LayerId, Rgba8};
 
 use crate::actions::Action;
 use crate::state::{AppState, DocEntry, DocId};
@@ -19,8 +19,9 @@ use crate::ui::toasts::Level;
 pub struct FilterDialog {
     pub doc: DocId,
     /// Every layer the filter applies to (the selected layers, groups
-    /// expanded to their members).
-    pub layers: Vec<usize>,
+    /// expanded to their members). By id: inserting or deleting a layer
+    /// while the dialog is open would shift indices onto other layers.
+    pub layers: Vec<LayerId>,
     pub filter: Filter,
     /// The parameters currently rendered into the working state as a preview.
     pub applied: Option<Filter>,
@@ -28,6 +29,10 @@ pub struct FilterDialog {
     /// How long the last preview took; cheap filters re-render while a slider
     /// is still being dragged, expensive ones wait for the release.
     pub last_ms: f32,
+    /// History entry the preview was rendered on top of. If something else
+    /// commits underneath, the preview is part of that commit now and must
+    /// not be re-applied on top of itself.
+    pub base: u64,
     /// Luma / R / G / B histograms of the target pixels (Levels only),
     /// taken from the committed state when the dialog opened.
     pub hist: Option<Box<[[u32; 256]; 4]>>,
@@ -130,6 +135,7 @@ pub fn open_with(state: &mut AppState, f: Filter) {
         Filter::Levels(_) => state.doc(target.0).map(|e| histogram(e, &target.1)),
         _ => None,
     };
+    let base = state.doc(target.0).map(|e| e.doc.history.current_id()).unwrap_or(0);
     state.dialogs.filter = Some(FilterDialog {
         doc: target.0,
         layers: target.1,
@@ -137,18 +143,25 @@ pub fn open_with(state: &mut AppState, f: Filter) {
         applied: None,
         preview: true,
         last_ms: 0.0,
+        base,
         hist,
     });
 }
 
+/// Resolve target layer ids to current indices, dropping any that are gone.
+fn indices(e: &DocEntry, ids: &[LayerId]) -> Vec<usize> {
+    let s = e.doc.state();
+    ids.iter().filter_map(|id| s.index_of(*id)).collect()
+}
+
 /// Luma / R / G / B histograms over the target layers, within the
 /// selection's bounds, ignoring fully transparent pixels.
-fn histogram(e: &DocEntry, layers: &[usize]) -> Box<[[u32; 256]; 4]> {
+fn histogram(e: &DocEntry, layers: &[LayerId]) -> Box<[[u32; 256]; 4]> {
     let s = e.doc.state();
     let mut h = Box::new([[0u32; 256]; 4]);
     let full = qsketch_core::IRect::new(0, 0, s.width as i32, s.height as i32);
     let rect = s.selection_mask().map(|m| m.bounds().intersect(&full)).unwrap_or(full);
-    for &li in layers {
+    for li in indices(e, layers) {
         let Some(l) = s.layers.get(li) else { continue };
         for y in rect.y..rect.bottom() {
             for x in rect.x..rect.right() {
@@ -199,9 +212,9 @@ pub fn reopen_last(state: &mut AppState) {
 
 /// The active document and the editable raster layers among the selected
 /// ones (groups expanded), if there are any.
-fn target_layer(state: &mut AppState) -> Option<(DocId, Vec<usize>)> {
+fn target_layer(state: &mut AppState) -> Option<(DocId, Vec<LayerId>)> {
     let e = state.active()?;
-    let (id, layers) = (e.id, e.target_layers());
+    let (id, layers) = (e.id, e.target_layer_ids());
     if layers.is_empty() {
         let msg = if e.selected_ids().len() > 1 || e.doc.state().active_layer().is_group() {
             "None of the selected layers can be edited (locked, hidden or empty groups)."
@@ -221,9 +234,9 @@ fn remember(state: &mut AppState, f: Filter) {
 
 /// Run a filter on every target layer of the working state and mark the
 /// result dirty. Returns the union of the dirty rects.
-fn run(e: &mut DocEntry, layers: &[usize], f: &Filter) -> qsketch_core::IRect {
+fn run(e: &mut DocEntry, layers: &[LayerId], f: &Filter) -> qsketch_core::IRect {
     let mut acc = qsketch_core::IRect::EMPTY;
-    for &li in layers {
+    for li in indices(e, layers) {
         let r = filter::apply_filter(e.doc.state_mut(), li, f);
         e.doc.mark_dirty_rect(r);
         acc = acc.union(&r);
@@ -247,6 +260,33 @@ pub fn show(ctx: &Context, state: &mut AppState) {
     let Some(mut d) = state.dialogs.filter.take() else { return };
     if state.doc(d.doc).is_none() {
         return;
+    }
+    // Follow the Layers panel: picking a different layer while the dialog is
+    // open re-targets it (and re-reads the histogram), after taking the
+    // preview back off the layers it was rendered into.
+    // Something else committed under the preview (a stroke, a layer change):
+    // the preview is part of that commit now, so start again from it rather
+    // than filtering an already-filtered image.
+    let now_base = state.doc(d.doc).map(|e| e.doc.history.current_id()).unwrap_or(d.base);
+    if now_base != d.base {
+        d.base = now_base;
+        d.applied = None;
+        if matches!(d.filter, Filter::Levels(_)) {
+            d.hist = state.doc(d.doc).map(|e| histogram(e, &d.layers));
+        }
+    }
+    let targets: Vec<LayerId> = state.doc(d.doc).map(|e| e.target_layer_ids()).unwrap_or_default();
+    if !targets.is_empty() && targets != d.layers {
+        if d.applied.is_some() {
+            if let Some(e) = state.doc_mut(d.doc) {
+                e.doc.revert_working();
+            }
+            d.applied = None;
+        }
+        d.layers = targets;
+        if matches!(d.filter, Filter::Levels(_)) {
+            d.hist = state.doc(d.doc).map(|e| histogram(e, &d.layers));
+        }
     }
     let (mut ok, mut cancel, mut open) = (false, false, true);
     let screen = ctx.content_rect();

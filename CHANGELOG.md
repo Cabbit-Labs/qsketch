@@ -2,6 +2,23 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- The update dialog reads properly: the new version stands out, the release
+  notes sit in their own panel as bullet points instead of one cramped
+  paragraph, the panel grows with the window rather than clipping mid-
+  sentence, and the buttons are separated from the text.
+- Fixed: Hue/Saturation (and every other filter dialog) could go wrong after
+  a while — the preview stopped following the sliders, or the wrong layer
+  changed. A filter preview lives in the working image, so painting or
+  changing layers underneath it baked the preview into that edit and the next
+  slider move filtered an already-filtered image. Now the canvas is
+  navigation-only while a filter dialog is open, the preview is taken off
+  before anything else commits, and the dialog tracks its layers by identity
+  so adding or deleting a layer can't point it at the wrong one.
+- Filter dialogs follow the Layers panel: pick a different layer and the
+  dialog re-targets it, with Levels re-reading its histogram.
+
 ## 0.30.0 — 2026-09-23
 
 - Levels (Image ▸ Adjustments ▸ Levels…, Ctrl+L), Photoshop style: a

@@ -63,6 +63,96 @@ pub struct Manifest {
     pub platforms: std::collections::HashMap<String, PlatformEntry>,
 }
 
+/// Split release notes into display blocks for the update dialog.
+///
+/// Notes written as a bullet list (lines starting with `-`, `*` or `•`) keep
+/// their bullets; blank-line paragraphs stay paragraphs; and one long
+/// paragraph — what older releases shipped — is broken at sentence ends so
+/// it doesn't render as a wall of text.
+pub fn notes_blocks(notes: &str) -> Vec<String> {
+    let notes = notes.trim();
+    if notes.is_empty() {
+        return Vec::new();
+    }
+    let is_bullet = |l: &str| {
+        let t = l.trim_start();
+        t.starts_with("- ") || t.starts_with("* ") || t.starts_with("• ")
+    };
+    if notes.lines().any(is_bullet) {
+        // Keep bullets; a line that continues one is appended to it.
+        let mut out: Vec<String> = Vec::new();
+        for line in notes.lines() {
+            let t = line.trim();
+            if t.is_empty() {
+                continue;
+            }
+            if is_bullet(t) {
+                out.push(t[t.find(' ').unwrap_or(0)..].trim().to_string());
+            } else if let Some(last) = out.last_mut() {
+                last.push(' ');
+                last.push_str(t);
+            } else {
+                out.push(t.to_string());
+            }
+        }
+        return out;
+    }
+    if notes.contains("\n\n") {
+        return notes
+            .split("\n\n")
+            .map(|p| p.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|p| !p.is_empty())
+            .collect();
+    }
+    split_sentences(&notes.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// Break a paragraph after sentence-ending punctuation, leaving version
+/// numbers (`0.30.0`), ellipses (`Levels...`) and initials intact.
+fn split_sentences(p: &str) -> Vec<String> {
+    let chars: Vec<char> = p.chars().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut start = 0usize;
+    for i in 0..chars.len() {
+        if !matches!(chars[i], '.' | '!' | '?') {
+            continue;
+        }
+        // Must be followed by a space, and then by the start of something new.
+        let Some(&next) = chars.get(i + 1) else { continue };
+        if !next.is_whitespace() {
+            continue;
+        }
+        // Not an ellipsis, and not the dot inside a number like "0.30.0".
+        let prev = if i > 0 { chars[i - 1] } else { ' ' };
+        if prev == '.' || prev.is_ascii_digit() {
+            continue;
+        }
+        let Some(&after) = chars[i + 1..].iter().find(|c| !c.is_whitespace()) else { continue };
+        if !(after.is_uppercase() || after.is_ascii_digit() || after == '"') {
+            continue;
+        }
+        let s: String = chars[start..=i].iter().collect();
+        let s = s.trim().to_string();
+        // Very short fragments read worse on their own line.
+        if s.chars().count() < 16 {
+            if let Some(last) = out.last_mut() {
+                last.push(' ');
+                last.push_str(&s);
+                start = i + 1;
+                continue;
+            }
+        }
+        out.push(s);
+        start = i + 1;
+    }
+    let tail: String = chars[start..].iter().collect();
+    let tail = tail.trim();
+    if !tail.is_empty() {
+        out.push(tail.to_string());
+    }
+    out
+}
+
 /// A newer release the user can install.
 #[derive(Clone, Debug)]
 pub struct UpdateInfo {
@@ -503,6 +593,31 @@ fn install_linux(artifact: &Path, reopen: &[PathBuf]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notes_split_into_readable_blocks() {
+        // One long paragraph (how releases before 0.31 shipped).
+        let one = "qsketch 0.30.0 is here. Levels (Image > Adjustments > Levels..., Ctrl+L) \
+                   has a histogram. Fixed: Dust & Scratches did nothing at its default of 24.0 levels. \
+                   Save first.";
+        let b = notes_blocks(one);
+        assert_eq!(b.len(), 4, "{b:#?}");
+        assert!(b[0].ends_with("is here."));
+        assert!(b[1].contains("Levels...") && b[1].ends_with("histogram."));
+        assert!(b[2].starts_with("Fixed:") && b[2].contains("24.0 levels."));
+        assert_eq!(b[3], "Save first.");
+
+        // A bullet list keeps its own structure, continuation lines joined.
+        let bullets = "- Levels, with a histogram\n  and live preview\n- Fixed: Dust & Scratches\n";
+        assert_eq!(notes_blocks(bullets), ["Levels, with a histogram and live preview", "Fixed: Dust & Scratches"]);
+
+        assert!(notes_blocks("   ").is_empty());
+        // A short trailing fragment joins the sentence before it.
+        assert_eq!(
+            notes_blocks("Something happened. OK. And then more text followed here."),
+            ["Something happened. OK.", "And then more text followed here."]
+        );
+    }
 
     fn manifest(version: &str) -> Manifest {
         let mut platforms = std::collections::HashMap::new();

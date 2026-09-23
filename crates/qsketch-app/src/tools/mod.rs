@@ -377,6 +377,13 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         return;
     }
     let tool = state.effective_tool();
+    // A filter dialog previews by holding its result in the working state;
+    // editing underneath would bake that preview into the next undo step and
+    // the following parameter change would then filter an already-filtered
+    // image. Navigation stays live so the preview can be inspected.
+    if state.dialogs.filter.is_some() && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView) {
+        return;
+    }
     // Symmetry "set center": the next canvas press places the axes.
     if state.symmetry_pick_center {
         match ev {

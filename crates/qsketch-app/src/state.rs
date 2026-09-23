@@ -88,6 +88,13 @@ impl DocEntry {
     pub fn target_layers(&self) -> Vec<usize> {
         self.doc.state().raster_layers_in(&self.selected_ids())
     }
+
+    /// `target_layers` as layer ids, for callers that outlive a single frame
+    /// (indices shift when layers are added, deleted or reordered).
+    pub fn target_layer_ids(&self) -> Vec<qsketch_core::LayerId> {
+        let s = self.doc.state();
+        self.target_layers().into_iter().filter_map(|i| s.layers.get(i).map(|l| l.props.id)).collect()
+    }
 }
 
 /// Latest stylus information gathered from input events.
@@ -326,6 +333,17 @@ impl AppState {
     /// point them at the wrong layer and snapshot the preview into history —
     /// where Esc could no longer take it back.
     pub fn settle(&mut self) {
+        // A live filter preview lives in the working state: take it off
+        // before anything else commits, or it is baked into that undo step
+        // (and the next parameter change filters an already-filtered image).
+        if let Some(d) = self.dialogs.filter.as_mut() {
+            if d.applied.take().is_some() {
+                let doc = d.doc;
+                if let Some(e) = self.docs.iter_mut().find(|x| x.id == doc) {
+                    e.doc.revert_working();
+                }
+            }
+        }
         self.cancel_session();
         crate::tools::floating::commit(self);
         crate::tools::text::commit(self);

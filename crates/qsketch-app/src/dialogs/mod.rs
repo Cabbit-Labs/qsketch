@@ -112,6 +112,20 @@ impl Dialogs {
     }
 }
 
+/// A bulleted line whose wrapped text hangs under itself, not under the dot.
+fn bullet(ui: &mut Ui, text: &str) {
+    ui.horizontal_top(|ui| {
+        ui.add_space(2.0);
+        ui.label(RichText::new("•").weak());
+        ui.add_space(4.0);
+        let w = ui.available_width();
+        ui.allocate_ui_with_layout(egui::vec2(w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+            ui.label(text);
+        });
+    });
+}
+
 fn modal<R>(ctx: &Context, id: &str, title: &str, width: f32, add: impl FnOnce(&mut Ui) -> R) -> (R, bool) {
     let mut closed = false;
     let resp = egui::Modal::new(egui::Id::new(id)).show(ctx, |ui| {
@@ -248,7 +262,7 @@ fn show_update(ctx: &Context, state: &mut AppState) {
         Status::Ready(_) => "Update ready to install",
         _ => "Update available",
     };
-    let (_, closed) = modal(ctx, "update", title, 440.0, |ui| {
+    let (_, closed) = modal(ctx, "update", title, 520.0, |ui| {
         match &status {
             Status::UpToDate => {
                 ui.label(format!("You are running the latest version ({}).", crate::update::CURRENT_VERSION));
@@ -262,16 +276,37 @@ fn show_update(ctx: &Context, state: &mut AppState) {
             }
             _ => {
                 if let Some(i) = &info {
-                    ui.label(format!(
-                        "qsketch {} is available (you have {}).",
-                        i.version,
-                        crate::update::CURRENT_VERSION
-                    ));
-                    if !i.notes.trim().is_empty() {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("qsketch {}", i.version)).strong().size(16.0));
+                        ui.label(
+                            RichText::new(format!("· you have {}", crate::update::CURRENT_VERSION)).weak().size(13.0),
+                        );
+                    });
+                    let blocks = crate::update::notes_blocks(&i.notes);
+                    if !blocks.is_empty() {
+                        ui.add_space(10.0);
+                        ui.label(RichText::new("WHAT'S NEW").weak().small().strong());
                         ui.add_space(4.0);
-                        egui::ScrollArea::vertical().max_height(160.0).show(ui, |ui| {
-                            ui.label(RichText::new(i.notes.trim()).weak());
-                        });
+                        // Grows with the window, so a long changelog is
+                        // readable instead of clipped after a few lines.
+                        let max_h = (ctx.content_rect().height() * 0.45).clamp(140.0, 420.0);
+                        egui::Frame::new()
+                            .fill(ui.visuals().extreme_bg_color)
+                            .inner_margin(egui::Margin::symmetric(10, 8))
+                            .corner_radius(4)
+                            .show(ui, |ui| {
+                                egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(
+                                    ui,
+                                    |ui| {
+                                        for (n, block) in blocks.iter().enumerate() {
+                                            if n > 0 {
+                                                ui.add_space(6.0);
+                                            }
+                                            bullet(ui, block);
+                                        }
+                                    },
+                                );
+                            });
                     }
                 }
                 match &status {
@@ -287,12 +322,13 @@ fn show_update(ctx: &Context, state: &mut AppState) {
                         ctx.request_repaint_after(std::time::Duration::from_millis(100));
                     }
                     Status::Available => {
-                        ui.add_space(6.0);
+                        ui.add_space(10.0);
                         ui.label(
                             RichText::new(
                                 "Update and Restart downloads the release, verifies its signature, then closes qsketch, installs and reopens it. Save your work first.",
                             )
-                            .weak(),
+                            .weak()
+                            .small(),
                         );
                     }
                     Status::Ready(_) => {
@@ -310,10 +346,12 @@ fn show_update(ctx: &Context, state: &mut AppState) {
                 }
             }
         }
-        ui.add_space(10.0);
+        ui.add_space(12.0);
+        ui.separator();
+        ui.add_space(8.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| match &status {
             Status::Available => {
-                if ui.button("Update and Restart").clicked() {
+                if ui.button(RichText::new("Update and Restart").strong()).clicked() {
                     action = Some("download");
                 }
                 if ui.button("Later").clicked() {
@@ -327,7 +365,7 @@ fn show_update(ctx: &Context, state: &mut AppState) {
                 ui.add_enabled(false, egui::Button::new("Updating…"));
             }
             Status::Ready(_) => {
-                if ui.button("Install and Restart").clicked() {
+                if ui.button(RichText::new("Install and Restart").strong()).clicked() {
                     action = Some("install");
                 }
                 if ui.button("Later").clicked() {
