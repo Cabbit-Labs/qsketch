@@ -8,7 +8,7 @@ pub mod view;
 use egui::{Color32, Pos2, Sense, Stroke, Ui, Vec2};
 use qsketch_core::{Pt, TILE, TILE_BYTES};
 
-use crate::settings::{BrushCursor, WheelBehavior};
+use crate::settings::{BrushCursor, WheelAction};
 use crate::state::{AppState, BrushPopup, DocId, TempReason};
 use crate::tools::{self, CanvasEvent, CanvasInput, ToolKind, ToolSession};
 use render::{CanvasCallback, TileUpload, Uniforms};
@@ -46,9 +46,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
 
     // --- wheel / pinch ----------------------------------------------------
     if hovered && !capturing {
-        let wheel_mode = state.settings.canvas.wheel;
         let invert = state.settings.canvas.invert_wheel_zoom;
         let zoom_to_cursor = state.settings.canvas.zoom_to_cursor;
+        // What the wheel does per modifier (Preferences ▸ Canvas). A wheel
+        // chord bound to a command never reaches here: `handle_keyboard`
+        // takes the event out of the frame's input first, so one notch can't
+        // both run a command and move the canvas.
+        let wheel = state.settings.canvas.wheel_map();
         let pointer = ui.input(|i| i.pointer.hover_pos());
         if let Some(entry) = state.doc_mut(doc_id) {
             for ev in &events {
@@ -59,22 +63,19 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                             egui::MouseWheelUnit::Line => (delta.x * 40.0, delta.y * 40.0),
                             egui::MouseWheelUnit::Page => (delta.x * 400.0, delta.y * 400.0),
                         };
-                        let want_zoom = match wheel_mode {
-                            WheelBehavior::Zoom => !modifiers.command && !modifiers.shift,
-                            WheelBehavior::Scroll => modifiers.command || modifiers.alt,
-                        };
-                        if want_zoom {
-                            let mut steps = dy / 40.0;
-                            if invert {
-                                steps = -steps;
+                        match wheel.action(*modifiers) {
+                            WheelAction::Zoom => {
+                                let mut steps = dy / 40.0;
+                                if invert {
+                                    steps = -steps;
+                                }
+                                let factor = 1.2f32.powf(steps);
+                                let anchor = if zoom_to_cursor { pointer } else { None };
+                                entry.view.zoom_by(factor, anchor);
                             }
-                            let factor = 1.2f32.powf(steps);
-                            let anchor = if zoom_to_cursor { pointer } else { None };
-                            entry.view.zoom_by(factor, anchor);
-                        } else if modifiers.shift {
-                            entry.view.pan_by_screen(egui::vec2(dy + dx, 0.0));
-                        } else {
-                            entry.view.pan_by_screen(egui::vec2(dx, dy));
+                            WheelAction::ScrollHorizontal => entry.view.pan_by_screen(egui::vec2(dy + dx, 0.0)),
+                            WheelAction::ScrollVertical => entry.view.pan_by_screen(egui::vec2(dx, dy)),
+                            WheelAction::Nothing => {}
                         }
                     }
                     egui::Event::Zoom(f) => {

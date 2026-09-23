@@ -6,7 +6,7 @@ use egui::{Context, RichText, Ui};
 use crate::actions::{Action, Category, Shortcut, Trigger};
 use crate::settings::{
     BrushCursor, ChromeTexture, CustomPalette, IconSet, MouseChord, NewDocBackground, SelectionTintMode, Settings,
-    Theme, WheelBehavior,
+    Theme, WheelAction,
 };
 use crate::state::AppState;
 use crate::tools::ToolKind;
@@ -588,9 +588,29 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(6.0);
     egui::Grid::new("canvas_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
         ui.label("Mouse wheel");
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut c.wheel, WheelBehavior::Zoom, "Zooms (Shift/Ctrl pan)");
-            ui.selectable_value(&mut c.wheel, WheelBehavior::Scroll, "Scrolls (Ctrl/Alt zoom)");
+        ui.vertical(|ui| {
+            let row = |ui: &mut Ui, name: &str, v: &mut WheelAction| {
+                ui.horizontal(|ui| {
+                    ui.add_sized([86.0, 18.0], egui::Label::new(name));
+                    egui::ComboBox::from_id_salt(name).selected_text(v.label()).width(150.0).show_ui(ui, |ui| {
+                        for a in WheelAction::ALL {
+                            ui.selectable_value(v, a, a.label());
+                        }
+                    });
+                });
+            };
+            row(ui, "Wheel", &mut c.wheel_plain);
+            row(ui, "Shift + wheel", &mut c.wheel_shift);
+            row(ui, "Ctrl + wheel", &mut c.wheel_ctrl);
+            row(ui, "Alt + wheel", &mut c.wheel_alt);
+            ui.label(
+                egui::RichText::new(
+                    "A wheel chord bound under Keyboard Shortcuts runs that command instead, \
+                     whatever is set here.",
+                )
+                .weak()
+                .small(),
+            );
         });
         ui.end_row();
         ui.label("Invert wheel zoom direction");

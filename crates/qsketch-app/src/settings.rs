@@ -148,6 +148,36 @@ fn contrast(a: [u8; 3], b: [u8; 3]) -> f32 {
 mod palette_tests {
     use super::*;
 
+    /// Old settings keep the behavior they had, and the most specific
+    /// modifier held wins.
+    #[test]
+    fn wheel_migrates_and_picks_the_specific_chord() {
+        let m =
+            |ctrl: bool, alt: bool, shift: bool| egui::Modifiers { command: ctrl, ctrl, alt, shift, mac_cmd: false };
+        // The old default: wheel zooms, Shift/Ctrl pan.
+        let mut c = CanvasSettings { wheel: WheelBehavior::Zoom, wheel_migrated: false, ..Default::default() };
+        c.migrate_wheel();
+        let w = c.wheel_map();
+        assert_eq!(w.action(m(false, false, false)), WheelAction::Zoom);
+        assert_eq!(w.action(m(false, false, true)), WheelAction::ScrollHorizontal);
+        assert_eq!(w.action(m(true, false, false)), WheelAction::ScrollVertical);
+        // Ctrl outranks the others when several are held.
+        assert_eq!(w.action(m(true, true, true)), WheelAction::ScrollVertical);
+
+        // The other old mode: wheel scrolls, Ctrl/Alt zoom.
+        let mut c = CanvasSettings { wheel: WheelBehavior::Scroll, wheel_migrated: false, ..Default::default() };
+        c.migrate_wheel();
+        let w = c.wheel_map();
+        assert_eq!(w.action(m(false, false, false)), WheelAction::ScrollVertical);
+        assert_eq!(w.action(m(true, false, false)), WheelAction::Zoom);
+        assert_eq!(w.action(m(false, true, false)), WheelAction::Zoom);
+
+        // Migration runs once: a later edit is not overwritten.
+        c.wheel_ctrl = WheelAction::Nothing;
+        c.migrate_wheel();
+        assert_eq!(c.wheel_ctrl, WheelAction::Nothing);
+    }
+
     #[test]
     fn custom_dim_text_stays_readable() {
         for primary in [[232u8, 150, 190], [40, 44, 70], [245, 245, 240], [120, 120, 120], [200, 60, 60]] {
@@ -253,6 +283,85 @@ pub enum SelectionTintMode {
     Always,
 }
 
+/// The four wheel bindings, copied out of the settings so the canvas can
+/// read them without holding a borrow on the whole settings struct.
+#[derive(Clone, Copy, Debug)]
+pub struct WheelMap {
+    pub plain: WheelAction,
+    pub shift: WheelAction,
+    pub ctrl: WheelAction,
+    pub alt: WheelAction,
+}
+
+impl WheelMap {
+    /// Checked ctrl, then alt, then shift, then plain, so the most specific
+    /// chord held wins.
+    pub fn action(&self, m: egui::Modifiers) -> WheelAction {
+        if m.command || m.ctrl || m.mac_cmd {
+            self.ctrl
+        } else if m.alt {
+            self.alt
+        } else if m.shift {
+            self.shift
+        } else {
+            self.plain
+        }
+    }
+}
+
+impl CanvasSettings {
+    pub fn wheel_map(&self) -> WheelMap {
+        WheelMap { plain: self.wheel_plain, shift: self.wheel_shift, ctrl: self.wheel_ctrl, alt: self.wheel_alt }
+    }
+
+    /// One-time migration of the old two-mode wheel setting into the
+    /// per-modifier map, so existing installs keep the behavior they had.
+    pub fn migrate_wheel(&mut self) {
+        if self.wheel_migrated {
+            return;
+        }
+        self.wheel_migrated = true;
+        let (plain, shift, ctrl, alt) = match self.wheel {
+            WheelBehavior::Zoom => {
+                (WheelAction::Zoom, WheelAction::ScrollHorizontal, WheelAction::ScrollVertical, WheelAction::Zoom)
+            }
+            WheelBehavior::Scroll => {
+                (WheelAction::ScrollVertical, WheelAction::ScrollHorizontal, WheelAction::Zoom, WheelAction::Zoom)
+            }
+        };
+        self.wheel_plain = plain;
+        self.wheel_shift = shift;
+        self.wheel_ctrl = ctrl;
+        self.wheel_alt = alt;
+    }
+}
+
+/// What one turn of the mouse wheel does on the canvas, per modifier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum WheelAction {
+    #[default]
+    Zoom,
+    ScrollVertical,
+    ScrollHorizontal,
+    Nothing,
+}
+
+impl WheelAction {
+    pub const ALL: [WheelAction; 4] =
+        [WheelAction::Zoom, WheelAction::ScrollVertical, WheelAction::ScrollHorizontal, WheelAction::Nothing];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            WheelAction::Zoom => "Zoom",
+            WheelAction::ScrollVertical => "Scroll up / down",
+            WheelAction::ScrollHorizontal => "Scroll left / right",
+            WheelAction::Nothing => "Nothing",
+        }
+    }
+}
+
+/// Legacy two-mode setting, kept only to migrate old settings files into
+/// the per-modifier map below.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum WheelBehavior {
     /// Aseprite / Krita style: wheel zooms at cursor, Shift+wheel pans.
@@ -493,6 +602,14 @@ pub struct CanvasSettings {
     pub show_grid: bool,
     pub grid_size: u32,
     pub wheel: WheelBehavior,
+    /// What the wheel does per modifier. Checked ctrl, then alt, then shift,
+    /// then plain, so the most specific chord held wins.
+    pub wheel_plain: WheelAction,
+    pub wheel_shift: WheelAction,
+    pub wheel_ctrl: WheelAction,
+    pub wheel_alt: WheelAction,
+    /// Whether the one-time migration from `wheel` has run.
+    pub wheel_migrated: bool,
     pub invert_wheel_zoom: bool,
     pub zoom_to_cursor: bool,
     pub brush_cursor: BrushCursor,
@@ -540,6 +657,11 @@ impl Default for CanvasSettings {
             grid_size: 16,
             transform_filter: qsketch_core::raster::ResizeFilter::Bilinear,
             wheel: WheelBehavior::Zoom,
+            wheel_plain: WheelAction::Zoom,
+            wheel_shift: WheelAction::ScrollHorizontal,
+            wheel_ctrl: WheelAction::ScrollVertical,
+            wheel_alt: WheelAction::Zoom,
+            wheel_migrated: false,
             invert_wheel_zoom: false,
             zoom_to_cursor: true,
             brush_cursor: BrushCursor::Outline,
@@ -954,6 +1076,7 @@ impl Settings {
     }
 
     pub fn sanitize(&mut self) {
+        self.canvas.migrate_wheel();
         self.general.undo_limit = self.general.undo_limit.clamp(2, 2000);
         self.ui.scale = self.ui.scale.clamp(0.5, 3.0);
         self.tablet.pressure_gamma = self.tablet.pressure_gamma.clamp(0.2, 5.0);

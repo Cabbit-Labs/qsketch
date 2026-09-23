@@ -2,6 +2,19 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Fixed: a shortcut bound to the mouse wheel also moved the canvas. Binding
+  Ctrl+Wheel Up to a bigger brush, for instance, resized the brush and zoomed
+  or scrolled at the same time, because the canvas reads the raw input the
+  shortcut layer had only partly cleared. A wheel chord bound to a command now
+  belongs to that command alone.
+- The mouse wheel is configurable per modifier. Preferences ▸ Canvas has a row
+  each for Wheel, Shift+wheel, Ctrl+wheel and Alt+wheel, set to Zoom, Scroll
+  up/down, Scroll left/right or Nothing, replacing the old two-mode choice.
+  Existing settings migrate to the same behavior they had. When several
+  modifiers are held, the most specific wins: Ctrl, then Alt, then Shift.
+
 ## 0.31.1 — 2026-09-23
 
 - Fixed: Fullscreen (F11) could leave an unpainted strip along the bottom

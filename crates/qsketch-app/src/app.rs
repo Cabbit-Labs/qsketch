@@ -500,14 +500,19 @@ impl QSketchApp {
             }
         }
         if consume_wheel || consume_extra {
+            // Both lists: `i.events` is what most widgets read, `i.raw.events`
+            // is what the canvas reads. Leaving the raw copy in place is why a
+            // wheel chord used to run its command and move the canvas too.
+            let keep = |e: &egui::Event| match e {
+                egui::Event::MouseWheel { .. } | egui::Event::Zoom(_) => !consume_wheel,
+                egui::Event::PointerButton { button, .. } => {
+                    !(consume_extra && Trigger::from_pointer_button(*button).is_some())
+                }
+                _ => true,
+            };
             ctx.input_mut(|i| {
-                i.events.retain(|e| match e {
-                    egui::Event::MouseWheel { .. } => !consume_wheel,
-                    egui::Event::PointerButton { button, .. } => {
-                        !(consume_extra && Trigger::from_pointer_button(*button).is_some())
-                    }
-                    _ => true,
-                });
+                i.events.retain(keep);
+                i.raw.events.retain(keep);
                 if consume_wheel {
                     i.smooth_scroll_delta = egui::Vec2::ZERO;
                 }
