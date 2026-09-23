@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.33.0 — 2026-09-23
 
 - Select ▸ Modify, the set every other editor has: **Expand…** and
   **Contract…** grow or shrink the selection by a number of pixels,
