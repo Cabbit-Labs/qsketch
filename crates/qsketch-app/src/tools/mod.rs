@@ -22,7 +22,9 @@ use crate::state::{AppState, DocId};
 use crate::ui::icons;
 
 pub use fill::sample_color as sample_color_public;
-pub use select::{deselect, feather_selection, invert as invert_selection, select_all, select_layer_content};
+pub use select::{
+    deselect, invert as invert_selection, modify_selection, reselect, select_all, select_layer_content, ModifyKind,
+};
 pub use transform::{commit_crop, nudge};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -217,8 +219,12 @@ pub struct ToolOptions {
     pub selection_op: SelectionOp,
     /// Feather radius (px) applied to new marquee / lasso selections.
     pub selection_feather: f32,
-    /// Last radius used in Select ▸ Feather….
+    /// Last amount used in each Select ▸ Modify command.
     pub feather_last: f32,
+    pub expand_last: f32,
+    pub contract_last: f32,
+    pub border_last: f32,
+    pub smooth_last: f32,
     pub wand_tolerance: u8,
     pub wand_contiguous: bool,
     pub wand_sample_merged: bool,
@@ -250,6 +256,10 @@ impl Default for ToolOptions {
             selection_op: SelectionOp::Replace,
             selection_feather: 0.0,
             feather_last: 5.0,
+            expand_last: 4.0,
+            contract_last: 4.0,
+            border_last: 6.0,
+            smooth_last: 3.0,
             wand_tolerance: 32,
             wand_contiguous: true,
             wand_sample_merged: false,
@@ -681,6 +691,31 @@ pub fn rect_from_drag(start: Pt, cur: Pt, square: bool) -> IRect {
 }
 
 /// Selection op from modifiers (Shift = add, Alt = subtract, both = intersect).
+impl ToolOptions {
+    /// The amount a Select ▸ Modify command last used.
+    pub fn modify_last(&self, kind: select::ModifyKind) -> f32 {
+        match kind {
+            select::ModifyKind::Feather => self.feather_last,
+            select::ModifyKind::Expand => self.expand_last,
+            select::ModifyKind::Contract => self.contract_last,
+            select::ModifyKind::Border => self.border_last,
+            select::ModifyKind::Smooth => self.smooth_last,
+            _ => 0.0,
+        }
+    }
+
+    pub fn set_modify_last(&mut self, kind: select::ModifyKind, amount: f32) {
+        match kind {
+            select::ModifyKind::Feather => self.feather_last = amount,
+            select::ModifyKind::Expand => self.expand_last = amount,
+            select::ModifyKind::Contract => self.contract_last = amount,
+            select::ModifyKind::Border => self.border_last = amount,
+            select::ModifyKind::Smooth => self.smooth_last = amount,
+            _ => {}
+        }
+    }
+}
+
 pub fn op_from_mods(base: SelectionOp, mods: Modifiers) -> SelectionOp {
     match (mods.shift, mods.alt) {
         (true, true) => SelectionOp::Intersect,

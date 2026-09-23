@@ -12,6 +12,7 @@ use crate::canvas::render::CanvasRenderer;
 use crate::dialogs::{self, AfterClose, CloseConfirm};
 use crate::settings::{NewDocBackground, Settings};
 use crate::state::{AppState, DocId, TempReason};
+use crate::tools::ModifyKind;
 use crate::tools::ToolKind;
 use crate::ui::toasts::Level;
 use crate::ui::{icons, theme};
@@ -874,10 +875,20 @@ impl QSketchApp {
             top_menu(ui, "Select", |ui| {
                 self.menu_item(ui, Action::SelectAll, has_doc);
                 self.menu_item(ui, Action::Deselect, has_sel);
+                self.menu_item(ui, Action::Reselect, !has_sel);
                 self.menu_item(ui, Action::InvertSelection, has_doc);
                 self.menu_item(ui, Action::SelectLayerContent, sel_or_content);
                 ui.separator();
-                self.menu_item(ui, Action::FeatherSelection, has_sel);
+                ui.menu_button("Modify", |ui| {
+                    self.menu_item(ui, Action::BorderSelection, has_sel);
+                    self.menu_item(ui, Action::SmoothSelection, has_sel);
+                    self.menu_item(ui, Action::ExpandSelection, has_sel);
+                    self.menu_item(ui, Action::ContractSelection, has_sel);
+                    self.menu_item(ui, Action::FeatherSelection, has_sel);
+                    ui.separator();
+                    self.menu_item(ui, Action::SharpenSelection, has_sel);
+                    self.menu_item(ui, Action::RemoveSelectionHoles, has_sel);
+                });
             });
             top_menu(ui, "View", |ui| {
                 self.menu_item(ui, Action::ZoomIn, has_doc);
@@ -1494,7 +1505,19 @@ impl QSketchApp {
                     crate::tools::invert_selection(&mut self.state, id);
                 }
             }
-            Action::FeatherSelection => dialogs::open_feather(&mut self.state),
+            Action::FeatherSelection => dialogs::open_modify(&mut self.state, ModifyKind::Feather),
+            Action::ExpandSelection => dialogs::open_modify(&mut self.state, ModifyKind::Expand),
+            Action::ContractSelection => dialogs::open_modify(&mut self.state, ModifyKind::Contract),
+            Action::BorderSelection => dialogs::open_modify(&mut self.state, ModifyKind::Border),
+            Action::SmoothSelection => dialogs::open_modify(&mut self.state, ModifyKind::Smooth),
+            Action::SharpenSelection => dialogs::open_modify(&mut self.state, ModifyKind::Sharpen),
+            Action::RemoveSelectionHoles => dialogs::open_modify(&mut self.state, ModifyKind::RemoveHoles),
+            Action::Reselect => {
+                self.state.settle();
+                if let Some(id) = active {
+                    crate::tools::reselect(&mut self.state, id);
+                }
+            }
             Action::SelectLayerContent => {
                 self.state.settle();
                 if let Some(id) = active {

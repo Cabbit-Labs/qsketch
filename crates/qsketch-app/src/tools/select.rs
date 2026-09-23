@@ -5,6 +5,7 @@ use qsketch_core::{Mask, Pt, Rgba8};
 
 use super::{apply_selection, op_from_mods, rect_from_drag, CanvasEvent, ToolKind, ToolSession};
 use crate::state::{AppState, DocId};
+use crate::ui::toasts::Level;
 
 pub fn handle_marquee(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: CanvasEvent) {
     match ev {
@@ -212,13 +213,91 @@ fn feather_new(state: &AppState, mask: Mask) -> Mask {
     }
 }
 
-/// Select ▸ Feather…: soften the current selection's edge in place.
-pub fn feather_selection(state: &mut AppState, doc_id: DocId, radius: f32) {
+/// What Select ▸ Modify can do to the current selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModifyKind {
+    Feather,
+    Expand,
+    Contract,
+    Border,
+    Smooth,
+    /// No amount: drop feathering and anti-aliasing.
+    Sharpen,
+    /// No amount: select the enclosed pockets.
+    RemoveHoles,
+}
+
+impl ModifyKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            ModifyKind::Feather => "Feather",
+            ModifyKind::Expand => "Expand",
+            ModifyKind::Contract => "Contract",
+            ModifyKind::Border => "Border",
+            ModifyKind::Smooth => "Smooth",
+            ModifyKind::Sharpen => "Sharpen",
+            ModifyKind::RemoveHoles => "Remove Holes",
+        }
+    }
+
+    /// Whether the command asks for a pixel amount first.
+    pub fn takes_amount(self) -> bool {
+        !matches!(self, ModifyKind::Sharpen | ModifyKind::RemoveHoles)
+    }
+
+    pub fn describe(self) -> &'static str {
+        match self {
+            ModifyKind::Feather => "Softens the edge; the marching ants follow the 50% line.",
+            ModifyKind::Expand => "Grows the selection outward by this many pixels.",
+            ModifyKind::Contract => "Pulls the selection inward by this many pixels.",
+            ModifyKind::Border => "Keeps a band this wide centered on the current edge.",
+            ModifyKind::Smooth => "Rounds off corners and drops specks smaller than this.",
+            ModifyKind::Sharpen => "",
+            ModifyKind::RemoveHoles => "",
+        }
+    }
+}
+
+/// Select ▸ Modify: replace the selection with a reshaped version of itself.
+pub fn modify_selection(state: &mut AppState, doc_id: DocId, kind: ModifyKind, amount: f32) {
     let Some(entry) = state.doc_mut(doc_id) else { return };
     let Some(sel) = entry.doc.state().selection.clone() else { return };
-    let m = sel.feathered(radius);
-    entry.doc.state_mut().selection = if m.is_empty() { None } else { Some(std::sync::Arc::new(m)) };
-    entry.doc.commit("Feather");
+    let m = match kind {
+        ModifyKind::Feather => sel.feathered(amount),
+        ModifyKind::Expand => sel.expanded(amount),
+        ModifyKind::Contract => sel.contracted(amount),
+        ModifyKind::Border => sel.bordered(amount),
+        ModifyKind::Smooth => sel.smoothed(amount.max(0.0) as u32),
+        ModifyKind::Sharpen => sel.sharpened(),
+        ModifyKind::RemoveHoles => sel.without_holes(),
+    };
+    let empty = m.is_empty();
+    let s = entry.doc.state_mut();
+    if empty {
+        s.selection = None;
+    } else {
+        s.selection = Some(std::sync::Arc::new(m));
+    }
+    entry.doc.commit(kind.label());
+    entry.sel_outline = None;
+    if empty {
+        entry.last_selection = Some(sel);
+        state.toasts.push(Level::Info, format!("{} left nothing selected.", kind.label()));
+    }
+}
+
+/// Select ▸ Reselect: bring back the selection that was last cleared.
+pub fn reselect(state: &mut AppState, doc_id: DocId) {
+    let Some(entry) = state.doc_mut(doc_id) else { return };
+    let Some(prev) = entry.last_selection.clone() else {
+        state.toasts.push(Level::Info, "There is no previous selection to restore.");
+        return;
+    };
+    if entry.doc.state().selection.is_some() {
+        return;
+    }
+    entry.doc.state_mut().selection = Some(prev);
+    entry.doc.commit("Reselect");
     entry.sel_outline = None;
 }
 
@@ -233,7 +312,9 @@ pub fn select_all(state: &mut AppState, doc_id: DocId) {
 
 pub fn deselect(state: &mut AppState, doc_id: DocId) {
     let Some(entry) = state.doc_mut(doc_id) else { return };
-    if entry.doc.state().selection.is_some() {
+    if let Some(prev) = entry.doc.state().selection.clone() {
+        // Remembered so Reselect can bring it back.
+        entry.last_selection = Some(prev);
         entry.doc.state_mut().selection = None;
         entry.doc.commit("Deselect");
         entry.sel_outline = None;

@@ -37,7 +37,10 @@ keyboard.
   merge-down/merge-visible/flatten.
 - **A real selection system.** Rectangle, ellipse, lasso, polygonal lasso and magic-wand
   selections with add/subtract/intersect modifiers, anti-aliased edges,
-  marching-ants outlines, and move/lift/drop of floating selections.
+  marching-ants outlines, and move/lift/drop of floating selections. A
+  selection brush paints the selection directly, and Select ▸ Modify has the
+  usual reshaping: Border, Smooth, Expand, Contract, Feather, Sharpen and
+  Remove Holes, plus Reselect.
 - **A Filter menu with live preview.** 43 filters in Photoshop's groups
   (Blur, Distort, Noise, Pixelate, Render, Sharpen, Stylize, Other) plus an
   Experimental set (Outline, Glow, Vignette, Pencil Sketch, Dither,

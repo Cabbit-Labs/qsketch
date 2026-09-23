@@ -39,6 +39,8 @@ pub struct DocEntry {
     /// Path whose format warnings (flattening, dropped features) the user
     /// has accepted, so plain Save there doesn't ask again.
     pub format_ack: Option<std::path::PathBuf>,
+    /// The selection that was last cleared, for Select ▸ Reselect.
+    pub last_selection: Option<std::sync::Arc<qsketch_core::Mask>>,
     /// Selection tint texture keyed by the selection's allocation address.
     pub sel_tint: Option<(usize, egui::TextureHandle, qsketch_core::IRect)>,
 }
@@ -54,6 +56,7 @@ impl DocEntry {
             needs_full_upload: true,
             selected: Vec::new(),
             format_ack: None,
+            last_selection: None,
             sel_tint: None,
             flash_seen_active: None,
             layer_flash: None,

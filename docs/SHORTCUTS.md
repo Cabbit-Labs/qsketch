@@ -92,7 +92,14 @@ reachable from its menu until you assign one.
 | All | `Ctrl+A` |
 | Deselect | `Ctrl+D` |
 | Inverse | `Ctrl+Shift+I` |
+| Reselect | `Ctrl+Shift+D` |
 | Feather… | `Shift+F6` |
+| Expand… | — |
+| Contract… | — |
+| Border… | — |
+| Smooth… | — |
+| Sharpen | — |
+| Remove Holes | — |
 | Select Layer Content | `Ctrl+Alt+A` |
 
 ### Moving a selection

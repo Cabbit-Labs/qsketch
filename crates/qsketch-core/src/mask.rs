@@ -429,6 +429,167 @@ impl Mask {
         m
     }
 
+    /// Signed distance from the selection edge over `region`, in pixels:
+    /// negative inside, positive outside, zero on the boundary. Coverage of
+    /// 128 or more counts as inside, so a feathered edge is treated as the
+    /// shape it outlines.
+    fn signed_distance(&self, region: IRect) -> Vec<f32> {
+        let (w, h) = (region.w as usize, region.h as usize);
+        let inside: Vec<bool> = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .map(|(x, y)| self.get(region.x + x as i32, region.y + y as i32) >= 128)
+            .collect();
+        let far = f32::MAX / 4.0;
+        // Distance to the nearest selected pixel, and to the nearest
+        // unselected one; their difference is the signed distance.
+        let mut out: Vec<f32> = inside.iter().map(|&i| if i { 0.0 } else { far }).collect();
+        let mut into: Vec<f32> = inside.iter().map(|&i| if i { far } else { 0.0 }).collect();
+        edt(&mut out, w, h);
+        edt(&mut into, w, h);
+        out.iter().zip(&into).map(|(&a, &b)| a.sqrt() - b.sqrt()).collect()
+    }
+
+    /// The region a distance-based edit has to touch: the current bounds plus
+    /// the radius, clipped to the mask.
+    fn edit_region(&self, radius: f32) -> IRect {
+        self.bounds.expand(radius.abs().ceil() as i32 + 2).intersect(&self.rect())
+    }
+
+    /// Grow the selection by `px` pixels in every direction (Photoshop's
+    /// Select ▸ Modify ▸ Expand). A negative amount contracts it.
+    pub fn expanded(&self, px: f32) -> Mask {
+        if px == 0.0 || self.is_empty() {
+            return self.clone();
+        }
+        let region = self.edit_region(px + 1.0);
+        if region.is_empty() {
+            return self.clone();
+        }
+        let dist = self.signed_distance(region);
+        let mut m = Mask::new(self.width, self.height);
+        for (i, d) in dist.iter().enumerate() {
+            let (x, y) = (region.x + (i % region.w as usize) as i32, region.y + (i / region.w as usize) as i32);
+            // Half a pixel of feathering across the new edge, as the shape
+            // tools do, so an expanded circle stays a circle.
+            let a = (0.5 + px - d).clamp(0.0, 1.0);
+            if a > 0.0 {
+                m.set(x, y, (a * 255.0 + 0.5) as u8);
+            }
+        }
+        m.recompute_bounds();
+        m
+    }
+
+    /// Shrink the selection by `px` pixels (Select ▸ Modify ▸ Contract).
+    pub fn contracted(&self, px: f32) -> Mask {
+        self.expanded(-px)
+    }
+
+    /// Keep only a band `px` wide centered on the selection's edge
+    /// (Select ▸ Modify ▸ Border).
+    pub fn bordered(&self, px: f32) -> Mask {
+        if px <= 0.0 || self.is_empty() {
+            return Mask::new(self.width, self.height);
+        }
+        let half = px / 2.0;
+        let region = self.edit_region(half + 1.0);
+        let dist = self.signed_distance(region);
+        let mut m = Mask::new(self.width, self.height);
+        for (i, d) in dist.iter().enumerate() {
+            let (x, y) = (region.x + (i % region.w as usize) as i32, region.y + (i / region.w as usize) as i32);
+            let a = (0.5 + half - d.abs()).clamp(0.0, 1.0);
+            if a > 0.0 {
+                m.set(x, y, (a * 255.0 + 0.5) as u8);
+            }
+        }
+        m.recompute_bounds();
+        m
+    }
+
+    /// Round off corners and drop specks: a pixel ends up selected when most
+    /// of the pixels within `radius` are (Select ▸ Modify ▸ Smooth).
+    pub fn smoothed(&self, radius: u32) -> Mask {
+        if radius == 0 || self.is_empty() {
+            return self.clone();
+        }
+        let r = radius as i32;
+        let region = self.edit_region(r as f32);
+        // Offsets inside the disc, so corners round rather than square off.
+        let disc: Vec<(i32, i32)> = (-r..=r)
+            .flat_map(|dy| (-r..=r).map(move |dx| (dx, dy)))
+            .filter(|(dx, dy)| dx * dx + dy * dy <= r * r)
+            .collect();
+        let mut m = Mask::new(self.width, self.height);
+        for y in region.y..region.bottom() {
+            for x in region.x..region.right() {
+                let hits = disc.iter().filter(|(dx, dy)| self.get(x + dx, y + dy) >= 128).count();
+                if hits * 2 > disc.len() {
+                    m.set(x, y, 255);
+                }
+            }
+        }
+        m.recompute_bounds();
+        m
+    }
+
+    /// Make every pixel fully selected or not at all, dropping feathered and
+    /// anti-aliased edges (GIMP's Select ▸ Sharpen).
+    pub fn sharpened(&self) -> Mask {
+        let data = self.data.iter().map(|&v| if v >= 128 { 255 } else { 0 }).collect();
+        let mut m = Mask { width: self.width, height: self.height, data, bounds: IRect::EMPTY };
+        m.recompute_bounds();
+        m
+    }
+
+    /// Select the unselected pockets fully enclosed by the selection
+    /// (GIMP's Select ▸ Remove Holes).
+    pub fn without_holes(&self) -> Mask {
+        if self.is_empty() {
+            return self.clone();
+        }
+        let (w, h) = (self.width as usize, self.height as usize);
+        // Flood the unselected area inward from the edges of the image; what
+        // it never reaches is enclosed.
+        let mut outside = vec![false; w * h];
+        let mut stack: Vec<(i32, i32)> = Vec::new();
+        let push = |x: i32, y: i32, outside: &mut Vec<bool>, stack: &mut Vec<(i32, i32)>| {
+            if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
+                return;
+            }
+            let i = y as usize * w + x as usize;
+            if outside[i] || self.get(x, y) >= 128 {
+                return;
+            }
+            outside[i] = true;
+            stack.push((x, y));
+        };
+        for x in 0..self.width as i32 {
+            push(x, 0, &mut outside, &mut stack);
+            push(x, self.height as i32 - 1, &mut outside, &mut stack);
+        }
+        for y in 0..self.height as i32 {
+            push(0, y, &mut outside, &mut stack);
+            push(self.width as i32 - 1, y, &mut outside, &mut stack);
+        }
+        while let Some((x, y)) = stack.pop() {
+            push(x + 1, y, &mut outside, &mut stack);
+            push(x - 1, y, &mut outside, &mut stack);
+            push(x, y + 1, &mut outside, &mut stack);
+            push(x, y - 1, &mut outside, &mut stack);
+        }
+        let mut m = self.clone();
+        for y in 0..h {
+            for x in 0..w {
+                let i = y * w + x;
+                if !outside[i] && m.data[i] < 255 {
+                    m.data[i] = 255;
+                }
+            }
+        }
+        m.recompute_bounds();
+        m
+    }
+
     /// Photoshop-style feather: a Gaussian blur of the coverage with
     /// `radius` px (sigma = radius / 2, so the edge fades over about
     /// ±radius). Only the neighbourhood of the current bounds is touched.
@@ -526,9 +687,154 @@ impl Mask {
     }
 }
 
+/// Exact squared Euclidean distance transform, in place
+/// (Felzenszwalb & Huttenlocher 2012). Seeds hold 0, everything else a large
+/// value; afterwards each cell holds the squared distance to the nearest seed.
+fn edt(f: &mut [f32], w: usize, h: usize) {
+    if w == 0 || h == 0 {
+        return;
+    }
+    let mut col = vec![0.0f32; h.max(w)];
+    // Columns, then rows: the 1-D transform is separable.
+    for x in 0..w {
+        for y in 0..h {
+            col[y] = f[y * w + x];
+        }
+        dt_1d(&mut col[..h]);
+        for y in 0..h {
+            f[y * w + x] = col[y];
+        }
+    }
+    for y in 0..h {
+        col[..w].copy_from_slice(&f[y * w..y * w + w]);
+        dt_1d(&mut col[..w]);
+        f[y * w..y * w + w].copy_from_slice(&col[..w]);
+    }
+}
+
+/// One-dimensional squared distance transform of a sampled function.
+fn dt_1d(f: &mut [f32]) {
+    let n = f.len();
+    if n == 0 {
+        return;
+    }
+    let mut d = vec![0.0f32; n];
+    // v: parabola vertices, z: the boundaries between them.
+    let mut v = vec![0usize; n];
+    let mut z = vec![0.0f32; n + 1];
+    let mut k = 0usize;
+    z[0] = f32::NEG_INFINITY;
+    z[1] = f32::INFINITY;
+    for q in 1..n {
+        loop {
+            let p = v[k];
+            let s = ((f[q] + (q * q) as f32) - (f[p] + (p * p) as f32)) / (2.0 * q as f32 - 2.0 * p as f32);
+            if s <= z[k] {
+                if k == 0 {
+                    k = usize::MAX; // signals "replace the first parabola"
+                    break;
+                }
+                k -= 1;
+            } else {
+                k += 1;
+                v[k] = q;
+                z[k] = s;
+                z[k + 1] = f32::INFINITY;
+                break;
+            }
+        }
+        if k == usize::MAX {
+            k = 0;
+            v[0] = q;
+            z[0] = f32::NEG_INFINITY;
+            z[1] = f32::INFINITY;
+        }
+    }
+    let mut k = 0usize;
+    for (q, out) in d.iter_mut().enumerate() {
+        while z[k + 1] < q as f32 {
+            k += 1;
+        }
+        let p = v[k];
+        let dx = q as f32 - p as f32;
+        *out = dx * dx + f[p];
+    }
+    f.copy_from_slice(&d);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Expanding a single pixel gives a disc of that radius, not a square:
+    /// the distance field has to be Euclidean.
+    #[test]
+    fn expand_is_round_and_exact() {
+        let mut m = Mask::new(41, 41);
+        m.set(20, 20, 255);
+        m.recompute_bounds();
+        let e = m.expanded(8.0);
+        // The edge lands on the radius, half covered, as an anti-aliased
+        // circle would; a pixel inside it is solid and one past it is clear.
+        assert_eq!(e.get(27, 20), 255, "7 px right is solid");
+        assert_eq!(e.get(28, 20), 128, "the edge at 8 px is half covered");
+        assert_eq!(e.get(30, 20), 0, "10 px right is outside");
+        assert_eq!(e.get(20, 12), 128, "same distance upward, same coverage");
+        // A square dilation would still be solid 8 px out diagonally.
+        assert_eq!(e.get(27, 27), 0, "the corner of the bounding square is not selected");
+        assert_eq!(e.get(25, 25), 255, "inside the diagonal radius is");
+        assert_eq!(e.bounds().w, 17, "bounds grew by the radius on both sides");
+    }
+
+    #[test]
+    fn contract_border_and_smooth() {
+        let m = Mask::from_rect(64, 64, IRect::new(16, 16, 32, 32));
+        let c = m.contracted(4.0);
+        assert_eq!(c.get(32, 32), 255, "middle stays selected");
+        assert_eq!(c.get(17, 32), 0, "the old edge is gone");
+        assert_eq!(c.get(21, 32), 255, "4 px in is still selected");
+        // Contracting past the shape empties the selection.
+        assert!(m.contracted(40.0).is_empty());
+
+        // Border keeps a band centered on the edge and drops the middle.
+        let b = m.bordered(6.0);
+        assert_eq!(b.get(32, 32), 0, "the interior is not in the border");
+        assert_eq!(b.get(16, 32), 255, "the edge is");
+        assert_eq!(b.get(14, 32), 255, "and so is just outside it");
+        assert_eq!(b.get(10, 32), 0, "but not far outside");
+
+        // Smooth removes a lone speck and fills a lone gap.
+        let mut speckled = m.clone();
+        speckled.set(2, 2, 255);
+        speckled.set(32, 32, 0);
+        speckled.recompute_bounds();
+        let sm = speckled.smoothed(3);
+        assert_eq!(sm.get(2, 2), 0, "speck removed");
+        assert_eq!(sm.get(32, 32), 255, "pinhole filled");
+        assert_eq!(sm.get(32, 20), 255, "the shape itself survives");
+    }
+
+    #[test]
+    fn sharpen_and_remove_holes() {
+        let mut m = Mask::new(32, 32);
+        m.set(5, 5, 100);
+        m.set(6, 5, 200);
+        m.recompute_bounds();
+        let s = m.sharpened();
+        assert_eq!(s.get(5, 5), 0, "under half coverage drops out");
+        assert_eq!(s.get(6, 5), 255, "over half becomes solid");
+
+        // A ring: the hole in the middle is enclosed, the outside is not.
+        let ring = Mask::from_rect(32, 32, IRect::new(8, 8, 16, 16)).subtract(&Mask::from_rect(
+            32,
+            32,
+            IRect::new(12, 12, 8, 8),
+        ));
+        assert_eq!(ring.get(16, 16), 0);
+        let filled = ring.without_holes();
+        assert_eq!(filled.get(16, 16), 255, "hole filled");
+        assert_eq!(filled.get(1, 1), 0, "outside untouched");
+    }
 
     #[test]
     fn feather_softens_edges_symmetrically() {

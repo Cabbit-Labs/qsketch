@@ -41,9 +41,10 @@ pub struct CanvasSizeDialog {
     pub anchor: Anchor,
 }
 
-pub struct FeatherDialog {
+pub struct ModifyDialog {
     pub doc: DocId,
-    pub radius: f32,
+    pub kind: crate::tools::ModifyKind,
+    pub amount: f32,
 }
 
 pub struct ImageSizeDialog {
@@ -84,7 +85,7 @@ pub struct Dialogs {
     pub color_target: Option<ColorTarget>,
     pub new_doc: Option<NewDocDialog>,
     pub canvas_size: Option<CanvasSizeDialog>,
-    pub feather: Option<FeatherDialog>,
+    pub modify: Option<ModifyDialog>,
     pub image_size: Option<ImageSizeDialog>,
     pub filter: Option<filter::FilterDialog>,
     pub layer_props: Option<LayerPropsDialog>,
@@ -100,7 +101,7 @@ impl Dialogs {
     pub fn any_open(&self) -> bool {
         self.new_doc.is_some()
             || self.canvas_size.is_some()
-            || self.feather.is_some()
+            || self.modify.is_some()
             || self.image_size.is_some()
             || self.filter.is_some()
             || self.layer_props.is_some()
@@ -145,7 +146,7 @@ fn modal<R>(ctx: &Context, id: &str, title: &str, width: f32, add: impl FnOnce(&
 pub fn show_all(ctx: &Context, state: &mut AppState) {
     show_new_doc(ctx, state);
     show_canvas_size(ctx, state);
-    show_feather(ctx, state);
+    show_modify(ctx, state);
     show_image_size(ctx, state);
     filter::show(ctx, state);
     show_layer_props(ctx, state);
@@ -583,26 +584,47 @@ fn show_canvas_size(ctx: &Context, state: &mut AppState) {
     }
 }
 
-pub fn open_feather(state: &mut AppState) {
+pub fn open_modify(state: &mut AppState, kind: crate::tools::ModifyKind) {
     state.settle();
     let Some(e) = state.active() else { return };
     if e.doc.state().selection.is_none() {
         state.toasts.push(Level::Info, "Nothing is selected.");
         return;
     }
-    state.dialogs.feather = Some(FeatherDialog { doc: e.id, radius: state.tool_opts.feather_last.max(0.1) });
+    let doc = e.id;
+    if !kind.takes_amount() {
+        crate::tools::modify_selection(state, doc, kind, 0.0);
+        return;
+    }
+    let amount = state.tool_opts.modify_last(kind);
+    state.dialogs.modify = Some(ModifyDialog { doc, kind, amount });
 }
 
-fn show_feather(ctx: &Context, state: &mut AppState) {
-    let Some(d) = state.dialogs.feather.as_mut() else { return };
+fn show_modify(ctx: &Context, state: &mut AppState) {
+    let Some(d) = state.dialogs.modify.as_mut() else { return };
+    let kind = d.kind;
+    let (title, unit) = match kind {
+        crate::tools::ModifyKind::Feather => ("Feather Selection", "Feather radius"),
+        crate::tools::ModifyKind::Expand => ("Expand Selection", "Expand by"),
+        crate::tools::ModifyKind::Contract => ("Contract Selection", "Contract by"),
+        crate::tools::ModifyKind::Border => ("Border Selection", "Border width"),
+        crate::tools::ModifyKind::Smooth => ("Smooth Selection", "Sample radius"),
+        _ => ("Modify Selection", "Amount"),
+    };
+    let whole = kind == crate::tools::ModifyKind::Smooth;
     let mut apply = false;
-    let (_, closed) = modal(ctx, "feather", "Feather Selection", 300.0, |ui| {
+    let (_, closed) = modal(ctx, "modify_selection", title, 320.0, |ui| {
         ui.horizontal(|ui| {
-            ui.label("Feather radius");
-            ui.add(egui::DragValue::new(&mut d.radius).range(0.1..=250.0).speed(0.1).suffix(" px").fixed_decimals(1));
+            ui.label(unit);
+            let drag = if whole {
+                egui::DragValue::new(&mut d.amount).range(1.0..=100.0).speed(0.2).suffix(" px").fixed_decimals(0)
+            } else {
+                egui::DragValue::new(&mut d.amount).range(0.1..=500.0).speed(0.2).suffix(" px").fixed_decimals(1)
+            };
+            ui.add(drag);
         });
         ui.add_space(4.0);
-        ui.label(RichText::new("Softens the selection edge; the marching ants follow the 50% line.").weak());
+        ui.label(RichText::new(kind.describe()).weak());
         ui.add_space(10.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -614,11 +636,11 @@ fn show_feather(ctx: &Context, state: &mut AppState) {
         });
     });
     if apply {
-        let d = state.dialogs.feather.take().unwrap();
-        state.tool_opts.feather_last = d.radius;
-        crate::tools::feather_selection(state, d.doc, d.radius);
+        let d = state.dialogs.modify.take().unwrap();
+        state.tool_opts.set_modify_last(d.kind, d.amount);
+        crate::tools::modify_selection(state, d.doc, d.kind, d.amount);
     } else if closed {
-        state.dialogs.feather = None;
+        state.dialogs.modify = None;
     }
 }
 

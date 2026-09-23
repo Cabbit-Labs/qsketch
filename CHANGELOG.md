@@ -2,6 +2,19 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Select ▸ Modify, the set every other editor has: **Expand…** and
+  **Contract…** grow or shrink the selection by a number of pixels,
+  **Border…** keeps a band of a given width centered on the current edge,
+  **Smooth…** rounds off corners and drops specks, **Feather…** moved in here
+  (same `Shift+F6`), **Sharpen** drops feathered and anti-aliased edges, and
+  **Remove Holes** selects the pockets enclosed by the selection. Expand and
+  contract measure true Euclidean distance, so a circle grows into a circle
+  rather than an octagon, and the new edge is anti-aliased.
+- **Select ▸ Reselect** (`Ctrl+Shift+D`) brings back the selection you last
+  cleared.
+
 ## 0.32.1 — 2026-09-23
 
 - Fixed: Fullscreen (F11) left the strip where the taskbar sits uncovered on
