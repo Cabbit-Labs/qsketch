@@ -56,6 +56,7 @@ reachable from its menu until you assign one.
 | Invert | `Ctrl+I` |
 | Desaturate | `Ctrl+Shift+U` |
 | Brightness/Contrast… | — |
+| Levels… | `Ctrl+L` |
 | Hue/Saturation… | `Ctrl+H` (also `Ctrl+U`) |
 
 ## Layer
@@ -92,7 +93,7 @@ reachable from its menu until you assign one.
 | Deselect | `Ctrl+D` |
 | Inverse | `Ctrl+Shift+I` |
 | Feather… | `Shift+F6` |
-| Select Layer Content | — |
+| Select Layer Content | `Ctrl+Alt+A` |
 
 ### Moving a selection
 

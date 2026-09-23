@@ -1,7 +1,29 @@
 //! Color adjustments that run through the filter pipeline so they get the
 //! same live preview, selection handling and multi-layer application.
 
-use super::{map_rgb, Img, Src};
+use super::{map_rgb, Img, Levels, Src};
+
+/// Photoshop-style Brightness/Contrast, both -100..=100.
+pub fn brightness_contrast(src: &Src, brightness: f32, contrast: f32) -> Img {
+    let b = (brightness / 100.0).clamp(-1.0, 1.0);
+    let k = (1.0 + contrast / 100.0).max(0.0);
+    src.map(|x, y| {
+        map_rgb(src.at(x, y), |c| {
+            let m = |v: f32| ((v - 0.5) * k + 0.5 + b).clamp(0.0, 1.0);
+            [m(c[0]), m(c[1]), m(c[2])]
+        })
+    })
+}
+
+/// Levels: per-channel curves first, then the master RGB curve, through
+/// 256-entry lookup tables.
+pub fn levels(src: &Src, l: &Levels) -> Img {
+    let lut =
+        |ch: &super::LevelsCurve| -> Vec<f32> { (0..256).map(|i| l.rgb.apply(ch.apply(i as f32 / 255.0))).collect() };
+    let (lr, lg, lb) = (lut(&l.red), lut(&l.green), lut(&l.blue));
+    let idx = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as usize;
+    src.map(|x, y| map_rgb(src.at(x, y), |c| [lr[idx(c[0])], lg[idx(c[1])], lb[idx(c[2])]]))
+}
 
 /// RGB (straight, 0..=1) to HSL with hue in degrees.
 #[inline]

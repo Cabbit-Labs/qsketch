@@ -56,18 +56,6 @@ pub struct ImageSizeDialog {
     pub filter: ResizeFilter,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum AdjustKind {
-    BrightnessContrast,
-}
-
-pub struct AdjustDialog {
-    pub doc: DocId,
-    pub kind: AdjustKind,
-    pub a: f32,
-    pub b: f32,
-}
-
 pub struct LayerPropsDialog {
     pub doc: DocId,
     /// By id: the dialog is modeless enough that the layer list can change
@@ -98,7 +86,6 @@ pub struct Dialogs {
     pub canvas_size: Option<CanvasSizeDialog>,
     pub feather: Option<FeatherDialog>,
     pub image_size: Option<ImageSizeDialog>,
-    pub adjust: Option<AdjustDialog>,
     pub filter: Option<filter::FilterDialog>,
     pub layer_props: Option<LayerPropsDialog>,
     pub close_confirm: Option<CloseConfirm>,
@@ -115,7 +102,6 @@ impl Dialogs {
             || self.canvas_size.is_some()
             || self.feather.is_some()
             || self.image_size.is_some()
-            || self.adjust.is_some()
             || self.filter.is_some()
             || self.layer_props.is_some()
             || self.close_confirm.is_some()
@@ -147,7 +133,6 @@ pub fn show_all(ctx: &Context, state: &mut AppState) {
     show_canvas_size(ctx, state);
     show_feather(ctx, state);
     show_image_size(ctx, state);
-    show_adjust(ctx, state);
     filter::show(ctx, state);
     show_layer_props(ctx, state);
     show_close_confirm(ctx, state);
@@ -673,60 +658,6 @@ fn show_image_size(ctx: &Context, state: &mut AppState) {
         }
     } else if closed {
         state.dialogs.image_size = None;
-    }
-}
-
-pub fn open_adjust(state: &mut AppState, kind: AdjustKind) {
-    state.settle();
-    if let Some(e) = state.active() {
-        let (a, b) = match kind {
-            AdjustKind::BrightnessContrast => (0.0, 0.0),
-        };
-        state.dialogs.adjust = Some(AdjustDialog { doc: e.id, kind, a, b });
-    }
-}
-
-fn show_adjust(ctx: &Context, state: &mut AppState) {
-    let Some(d) = state.dialogs.adjust.as_mut() else { return };
-    let mut apply = false;
-    let title = match d.kind {
-        AdjustKind::BrightnessContrast => "Brightness / Contrast",
-    };
-    let (_, closed) = modal(ctx, "adjust", title, 340.0, |ui| {
-        match d.kind {
-            AdjustKind::BrightnessContrast => {
-                ui.add(egui::Slider::new(&mut d.a, -1.0..=1.0).text("Brightness"));
-                ui.add(egui::Slider::new(&mut d.b, -1.0..=1.0).text("Contrast"));
-            }
-        }
-        ui.label(RichText::new("Applies to the selected layers (within the selection).").weak().small());
-        ui.add_space(10.0);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                apply = true;
-            }
-            if ui.button("Cancel").clicked() {
-                ui.close();
-            }
-        });
-    });
-    if apply {
-        let d = state.dialogs.adjust.take().unwrap();
-        if let Some(entry) = state.doc_mut(d.doc) {
-            let mut any = false;
-            for li in entry.target_layers() {
-                let dirty = match d.kind {
-                    AdjustKind::BrightnessContrast => ops::brightness_contrast(entry.doc.state_mut(), li, d.a, d.b),
-                };
-                entry.doc.mark_dirty_rect(dirty);
-                any = true;
-            }
-            if any {
-                entry.doc.commit(title);
-            }
-        }
-    } else if closed {
-        state.dialogs.adjust = None;
     }
 }
 

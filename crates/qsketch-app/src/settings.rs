@@ -219,6 +219,15 @@ pub enum BrushCursor {
     Hidden,
 }
 
+/// When the selected area is tinted on the canvas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum SelectionTintMode {
+    /// Only while a selection tool (or Move) is active.
+    #[default]
+    SelectionTools,
+    Always,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum WheelBehavior {
     /// Aseprite / Krita style: wheel zooms at cursor, Shift+wheel pans.
@@ -474,6 +483,12 @@ pub struct CanvasSettings {
     pub edge_autoscroll: bool,
     /// Auto-scroll speed at the viewport edge, screen points per second.
     pub edge_autoscroll_speed: f32,
+    /// Tint the selected area on the canvas (besides the marching ants).
+    pub selection_tint: bool,
+    pub selection_tint_mode: SelectionTintMode,
+    pub selection_tint_color: [u8; 3],
+    /// 0..=1 overlay opacity at full selection coverage.
+    pub selection_tint_opacity: f32,
     /// Briefly light up a layer's pixels on the canvas when it becomes active.
     pub flash_selected_layer: bool,
     /// Smooth (bilinear) or Pixel (nearest) resampling for the transform box;
@@ -509,6 +524,10 @@ impl Default for CanvasSettings {
             pan_inertia: true,
             edge_autoscroll: true,
             edge_autoscroll_speed: 240.0,
+            selection_tint: false,
+            selection_tint_mode: SelectionTintMode::SelectionTools,
+            selection_tint_color: [40, 90, 220],
+            selection_tint_opacity: 0.35,
             flash_selected_layer: true,
             pick_loupe: true,
             pick_loupe_size: 86.0,

@@ -391,63 +391,267 @@ pub enum DitherPattern {
     Noise,
 }
 
+/// Which Levels curve a control edits. `Rgb` is the master curve applied
+/// after the per-channel ones, as in Photoshop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LevelsChannel {
+    #[default]
+    Rgb,
+    Red,
+    Green,
+    Blue,
+}
+
+/// One Levels curve: input black / gamma / white remap to output black /
+/// white. Values are 0..=255 except gamma (0.1..=9.99, 1 = unchanged).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LevelsCurve {
+    pub in_black: f32,
+    pub in_gamma: f32,
+    pub in_white: f32,
+    pub out_black: f32,
+    pub out_white: f32,
+}
+
+impl Default for LevelsCurve {
+    fn default() -> Self {
+        Self { in_black: 0.0, in_gamma: 1.0, in_white: 255.0, out_black: 0.0, out_white: 255.0 }
+    }
+}
+
+impl LevelsCurve {
+    pub fn is_identity(&self) -> bool {
+        *self == Self::default()
+    }
+    /// Map one 0..=1 value through the curve.
+    pub fn apply(&self, v: f32) -> f32 {
+        let (ib, iw) = (self.in_black / 255.0, self.in_white / 255.0);
+        let t = ((v - ib) / (iw - ib).max(1.0 / 255.0)).clamp(0.0, 1.0);
+        let t = t.powf(1.0 / self.in_gamma.max(0.01));
+        let (ob, ow) = (self.out_black / 255.0, self.out_white / 255.0);
+        (ob + t * (ow - ob)).clamp(0.0, 1.0)
+    }
+}
+
+/// Levels parameters: a master curve plus one per channel. `channel` only
+/// records which curve the dialog is showing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub struct Levels {
+    pub channel: LevelsChannel,
+    pub rgb: LevelsCurve,
+    pub red: LevelsCurve,
+    pub green: LevelsCurve,
+    pub blue: LevelsCurve,
+}
+
+impl Levels {
+    pub fn curve_mut(&mut self, c: LevelsChannel) -> &mut LevelsCurve {
+        match c {
+            LevelsChannel::Rgb => &mut self.rgb,
+            LevelsChannel::Red => &mut self.red,
+            LevelsChannel::Green => &mut self.green,
+            LevelsChannel::Blue => &mut self.blue,
+        }
+    }
+    pub fn curve(&self, c: LevelsChannel) -> &LevelsCurve {
+        match c {
+            LevelsChannel::Rgb => &self.rgb,
+            LevelsChannel::Red => &self.red,
+            LevelsChannel::Green => &self.green,
+            LevelsChannel::Blue => &self.blue,
+        }
+    }
+}
+
 /// A filter with its parameters. Colors are straight-alpha 8-bit.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Filter {
     // Adjustments (Image ▸ Adjustments; see `adjust`)
-    HueSaturation { hue: f32, saturation: f32, lightness: f32, colorize: bool },
+    HueSaturation {
+        hue: f32,
+        saturation: f32,
+        lightness: f32,
+        colorize: bool,
+    },
+    /// Both -100..=100: brightness adds, contrast scales around mid-gray.
+    BrightnessContrast {
+        brightness: f32,
+        contrast: f32,
+    },
+    Levels(Levels),
     // Blur
-    GaussianBlur { radius: f32 },
-    BoxBlur { radius: u32 },
-    MotionBlur { angle: f32, distance: f32 },
-    RadialBlur { amount: f32, mode: RadialMode },
+    GaussianBlur {
+        radius: f32,
+    },
+    BoxBlur {
+        radius: u32,
+    },
+    MotionBlur {
+        angle: f32,
+        distance: f32,
+    },
+    RadialBlur {
+        amount: f32,
+        mode: RadialMode,
+    },
     // Distort
-    Ripple { amplitude: f32, wavelength: f32 },
-    Wave { wavelength: f32, amplitude: f32, angle: f32 },
-    Twirl { angle: f32 },
-    Spherize { amount: f32 },
-    ZigZag { amount: f32, ridges: u32 },
-    PolarCoordinates { to_polar: bool },
+    Ripple {
+        amplitude: f32,
+        wavelength: f32,
+    },
+    Wave {
+        wavelength: f32,
+        amplitude: f32,
+        angle: f32,
+    },
+    Twirl {
+        angle: f32,
+    },
+    Spherize {
+        amount: f32,
+    },
+    ZigZag {
+        amount: f32,
+        ridges: u32,
+    },
+    PolarCoordinates {
+        to_polar: bool,
+    },
     // Noise
-    AddNoise { amount: f32, monochrome: bool, gaussian: bool, seed: u32 },
-    Median { radius: u32 },
-    DustAndScratches { radius: u32, threshold: u32 },
+    AddNoise {
+        amount: f32,
+        monochrome: bool,
+        gaussian: bool,
+        seed: u32,
+    },
+    Median {
+        radius: u32,
+    },
+    DustAndScratches {
+        radius: u32,
+        threshold: u32,
+    },
     // Pixelate
-    Mosaic { cell: u32 },
-    Crystallize { cell: u32, seed: u32 },
+    Mosaic {
+        cell: u32,
+    },
+    Crystallize {
+        cell: u32,
+        seed: u32,
+    },
     Fragment,
-    ColorHalftone { radius: f32 },
-    Pointillize { cell: u32, seed: u32, background: Rgba8 },
+    ColorHalftone {
+        radius: f32,
+    },
+    Pointillize {
+        cell: u32,
+        seed: u32,
+        background: Rgba8,
+    },
     // Render
-    Clouds { scale: f32, seed: u32, color_a: Rgba8, color_b: Rgba8 },
-    DifferenceClouds { scale: f32, seed: u32, color_a: Rgba8, color_b: Rgba8 },
+    Clouds {
+        scale: f32,
+        seed: u32,
+        color_a: Rgba8,
+        color_b: Rgba8,
+    },
+    DifferenceClouds {
+        scale: f32,
+        seed: u32,
+        color_a: Rgba8,
+        color_b: Rgba8,
+    },
     // Sharpen
     Sharpen,
     SharpenMore,
-    UnsharpMask { amount: f32, radius: f32, threshold: u32 },
+    UnsharpMask {
+        amount: f32,
+        radius: f32,
+        threshold: u32,
+    },
     // Stylize
     FindEdges,
-    Emboss { angle: f32, height: f32, amount: f32 },
+    Emboss {
+        angle: f32,
+        height: f32,
+        amount: f32,
+    },
     Solarize,
-    Diffuse { distance: u32, seed: u32 },
-    OilPaint { radius: u32, levels: u32 },
-    Wind { strength: u32, from_left: bool, seed: u32 },
+    Diffuse {
+        distance: u32,
+        seed: u32,
+    },
+    OilPaint {
+        radius: u32,
+        levels: u32,
+    },
+    Wind {
+        strength: u32,
+        from_left: bool,
+        seed: u32,
+    },
     // Other
-    HighPass { radius: f32 },
-    Maximum { radius: u32 },
-    Minimum { radius: u32 },
-    Offset { dx: i32, dy: i32, edge: OffsetEdge },
+    HighPass {
+        radius: f32,
+    },
+    Maximum {
+        radius: u32,
+    },
+    Minimum {
+        radius: u32,
+    },
+    Offset {
+        dx: i32,
+        dy: i32,
+        edge: OffsetEdge,
+    },
     // Experimental
-    ChromaticAberration { amount: f32, radial: bool, angle: f32 },
-    Dither { levels: u32, pattern: DitherPattern },
-    PixelSort { threshold: f32, vertical: bool, reverse: bool },
-    Scanlines { spacing: u32, darkness: f32, rgb_mask: bool },
-    Vignette { amount: f32, softness: f32, color: Rgba8 },
-    Glow { radius: f32, intensity: f32, threshold: f32 },
-    Kaleidoscope { segments: u32, angle: f32 },
-    Outline { width: u32, color: Rgba8, inside: bool },
-    Glitch { amount: f32, seed: u32 },
-    PencilSketch { radius: f32, strength: f32 },
+    ChromaticAberration {
+        amount: f32,
+        radial: bool,
+        angle: f32,
+    },
+    Dither {
+        levels: u32,
+        pattern: DitherPattern,
+    },
+    PixelSort {
+        threshold: f32,
+        vertical: bool,
+        reverse: bool,
+    },
+    Scanlines {
+        spacing: u32,
+        darkness: f32,
+        rgb_mask: bool,
+    },
+    Vignette {
+        amount: f32,
+        softness: f32,
+        color: Rgba8,
+    },
+    Glow {
+        radius: f32,
+        intensity: f32,
+        threshold: f32,
+    },
+    Kaleidoscope {
+        segments: u32,
+        angle: f32,
+    },
+    Outline {
+        width: u32,
+        color: Rgba8,
+        inside: bool,
+    },
+    Glitch {
+        amount: f32,
+        seed: u32,
+    },
+    PencilSketch {
+        radius: f32,
+        strength: f32,
+    },
 }
 
 impl Filter {
@@ -456,6 +660,8 @@ impl Filter {
     pub fn id(&self) -> &'static str {
         match self {
             Filter::HueSaturation { .. } => "hue_saturation",
+            Filter::BrightnessContrast { .. } => "brightness_contrast",
+            Filter::Levels(_) => "levels",
             Filter::GaussianBlur { .. } => "gaussian_blur",
             Filter::BoxBlur { .. } => "box_blur",
             Filter::MotionBlur { .. } => "motion_blur",
@@ -506,6 +712,8 @@ impl Filter {
     pub fn name(&self) -> &'static str {
         match self {
             Filter::HueSaturation { .. } => "Hue/Saturation",
+            Filter::BrightnessContrast { .. } => "Brightness/Contrast",
+            Filter::Levels(_) => "Levels",
             Filter::GaussianBlur { .. } => "Gaussian Blur",
             Filter::BoxBlur { .. } => "Box Blur",
             Filter::MotionBlur { .. } => "Motion Blur",
@@ -557,11 +765,63 @@ impl Filter {
         !matches!(self, Filter::Fragment | Filter::Sharpen | Filter::SharpenMore | Filter::FindEdges | Filter::Solarize)
     }
 
+    /// One line saying what the filter does, shown in the dialog.
+    pub fn describe(&self) -> &'static str {
+        match self {
+            Filter::HueSaturation { .. } => "Shifts hue, saturation and lightness; Colorize tints everything one hue.",
+            Filter::BrightnessContrast { .. } => "Lightens or darkens, and pushes tones away from or toward mid-gray.",
+            Filter::Levels(_) => "Remaps black, midtones and white. Drag the input sliders to the ends of the histogram for contrast.",
+            Filter::GaussianBlur { .. } => "Smooth, even blur. The everyday one for softening.",
+            Filter::BoxBlur { .. } => "Averages a square of pixels: blockier than Gaussian, and faster.",
+            Filter::MotionBlur { .. } => "Smears in one direction, like a camera panning.",
+            Filter::RadialBlur { .. } => "Blurs around the center: Spin whirls, Zoom streaks outward.",
+            Filter::Ripple { .. } => "Ripples the image with small random waves, like water.",
+            Filter::Wave { .. } => "Pushes pixels along a sine wave; bigger and more regular than Ripple.",
+            Filter::Twirl { .. } => "Spins the middle more than the edges, like stirring paint.",
+            Filter::Spherize { .. } => "Bulges the image outward (or pinches it inward) as if wrapped on a ball.",
+            Filter::ZigZag { .. } => "Ripples outward from the center in rings, like a dropped stone.",
+            Filter::PolarCoordinates { .. } => "Bends the image around a circle, or unrolls a circular one flat.",
+            Filter::AddNoise { .. } => "Sprinkles random speckles; grain and texture.",
+            Filter::Median { .. } => "Replaces each pixel with the middle value nearby: kills speckles, keeps edges.",
+            Filter::DustAndScratches { .. } => "Cleans up specks and scratches: blurs a pixel into its neighbors only where it differs by more than the threshold, so flat areas get cleaned and detail stays. Raise Threshold to protect more detail.",
+            Filter::Mosaic { .. } => "Big square blocks of flat color; the classic pixelation.",
+            Filter::Crystallize { .. } => "Breaks the image into flat polygon crystals.",
+            Filter::Fragment => "Four offset copies averaged together, like a shaken camera.",
+            Filter::ColorHalftone { .. } => "Comic-print dots, one screen angle per color channel.",
+            Filter::Pointillize { .. } => "Scatters dots of color on a background, like pointillist painting.",
+            Filter::Clouds { .. } => "Replaces the area with soft random clouds between two colors.",
+            Filter::DifferenceClouds { .. } => "Clouds blended with what's there by difference; veiny, marbled results.",
+            Filter::Sharpen => "A quick edge-contrast boost.",
+            Filter::SharpenMore => "Same as Sharpen, stronger.",
+            Filter::UnsharpMask { .. } => "Controlled sharpening: Amount is strength, Radius is edge width, Threshold spares flat areas.",
+            Filter::FindEdges => "Keeps only the outlines, everything flat goes white.",
+            Filter::Emboss { .. } => "Flattens to gray and lights it from one angle, like stamped metal.",
+            Filter::Solarize => "Inverts only the bright half of the tones; a photographic darkroom effect.",
+            Filter::Diffuse { .. } => "Randomly swaps neighboring pixels; a frosted, grainy edge.",
+            Filter::OilPaint { .. } => "Clumps colors into brushy patches, like an oil painting.",
+            Filter::Wind { .. } => "Streaks pixels sideways off edges, like wind blowing them.",
+            Filter::HighPass { .. } => "Keeps only fine detail and flattens the rest to gray; used before sharpening.",
+            Filter::Maximum { .. } => "Spreads the brightest nearby pixel, growing light areas (a dilate).",
+            Filter::Minimum { .. } => "Spreads the darkest nearby pixel, growing dark areas (an erode).",
+            Filter::Offset { .. } => "Slides the layer by an amount, wrapping or clamping at the edges. Handy for seamless tiles.",
+            Filter::ChromaticAberration { .. } => "Pulls the red and blue channels apart, like a cheap lens.",
+            Filter::Dither { .. } => "Cuts the number of colors and fakes the rest with a dot pattern; retro and GIF looks.",
+            Filter::PixelSort { .. } => "Sorts runs of pixels by brightness; the melted glitch-art look.",
+            Filter::Scanlines { .. } => "Darkens every few rows, like a CRT screen.",
+            Filter::Vignette { .. } => "Darkens (or tints) the corners toward the edge of the frame.",
+            Filter::Glow { .. } => "Blurs the bright areas and adds them back, so highlights bloom.",
+            Filter::Kaleidoscope { .. } => "Mirrors a wedge of the image around the center into a symmetric pattern.",
+            Filter::Outline { .. } => "Traces a colored border around the layer's shapes, inside or outside.",
+            Filter::Glitch { .. } => "Randomly shifts horizontal slices and channels; datamosh look.",
+            Filter::PencilSketch { .. } => "Turns the image into graphite-like lines on white.",
+        }
+    }
+
     /// Context pixels the kernel reads beyond the target rect.
     pub fn margin(&self) -> i32 {
         let g = blur::gaussian_margin;
         match *self {
-            Filter::HueSaturation { .. } => 0,
+            Filter::HueSaturation { .. } | Filter::BrightnessContrast { .. } | Filter::Levels(_) => 0,
             Filter::GaussianBlur { radius } => g(radius),
             Filter::BoxBlur { radius } => radius as i32,
             Filter::MotionBlur { distance, .. } => (distance * 0.5).ceil() as i32 + 1,
@@ -606,6 +866,10 @@ impl Filter {
             Filter::HueSaturation { hue, saturation, lightness, colorize } => {
                 adjust::hue_saturation(src, *hue, *saturation, *lightness, *colorize)
             }
+            Filter::BrightnessContrast { brightness, contrast } => {
+                adjust::brightness_contrast(src, *brightness, *contrast)
+            }
+            Filter::Levels(l) => adjust::levels(src, l),
             Filter::GaussianBlur { radius } => blur::gaussian(src, *radius),
             Filter::BoxBlur { radius } => blur::box_blur(src, *radius),
             Filter::MotionBlur { angle, distance } => blur::motion(src, *angle, *distance),

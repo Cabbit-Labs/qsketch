@@ -9,7 +9,7 @@ use qsketch_core::BlendMode;
 use crate::actions::Action;
 use crate::state::{AppState, DocId};
 use crate::ui::icons;
-use crate::ui::widgets::{icon_button, icon_toggle, percent_slider};
+use crate::ui::widgets::{icon_button, icon_toggle, percent_slider_tip};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct DragLayer(usize);
@@ -89,16 +89,22 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         let combo =
             egui::ComboBox::from_id_salt("blend_mode").selected_text(blend.label()).width(combo_w).show_ui(ui, |ui| {
                 if is_group {
-                    ui.selectable_value(&mut blend, BlendMode::PassThrough, BlendMode::PassThrough.label());
+                    ui.selectable_value(&mut blend, BlendMode::PassThrough, BlendMode::PassThrough.label())
+                        .on_hover_text(BlendMode::PassThrough.describe());
                     ui.separator();
                 }
                 for m in BlendMode::ALL {
                     if m.starts_group() {
                         ui.separator();
                     }
-                    ui.selectable_value(&mut blend, m, m.label());
+                    ui.selectable_value(&mut blend, m, m.label()).on_hover_text(m.describe());
                 }
             });
+        combo.response.clone().on_hover_text(format!(
+            "Blend mode: how this layer's colors mix with the layers below.\n{}: {}\nUp / Down step through the modes.",
+            blend.label(),
+            blend.describe()
+        ));
         // Up / Down step through the modes while the combo has keyboard focus
         // (it keeps focus after a pick), so the popup need not reopen each time.
         if combo.response.clicked() {
@@ -134,7 +140,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             changed_props = true;
         }
         let mut op = layer.props.opacity;
-        if percent_slider(ui, "Opacity", &mut op) {
+        let op_tip = "How much of this layer shows: 100% is solid, lower lets the layers below through. \
+                      Scroll the wheel over it to nudge by 1%, or 10% with Shift.";
+        if percent_slider_tip(ui, "Opacity", &mut op, op_tip) {
             layer.props.opacity = op;
             changed_props = true;
         }
@@ -144,15 +152,26 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         ui.label(egui::RichText::new("Lock:").weak());
         if !layer.is_group() {
             let mut al = layer.props.alpha_locked;
-            if icon_toggle(ui, icons::CHECKERBOARD, icons::CHECKERBOARD, &mut al, "Lock transparent pixels", 20.0)
-                .changed()
+            if icon_toggle(
+                ui,
+                icons::CHECKERBOARD,
+                icons::CHECKERBOARD,
+                &mut al,
+                "Lock transparency: painting only lands on pixels that already have color, so you can shade or recolor a shape without going outside it. The eraser then paints the background color instead of clearing.",
+                20.0,
+            )
+            .changed()
             {
                 layer.props.alpha_locked = al;
                 changed_props = true;
             }
         }
         let mut lk = layer.props.locked;
-        let lock_tip = if layer.is_group() { "Lock group" } else { "Lock layer" };
+        let lock_tip = if layer.is_group() {
+            "Lock group: nothing inside can be painted, moved or edited until it's unlocked."
+        } else {
+            "Lock layer: no painting, moving or editing on this layer until it's unlocked. Handy for finished line art."
+        };
         if icon_toggle(ui, icons::LOCK_KEY, icons::LOCK_KEY_OPEN, &mut lk, lock_tip, 20.0).changed() {
             layer.props.locked = lk;
             changed_props = true;
@@ -163,7 +182,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             icons::ARROW_ELBOW_DOWN_RIGHT,
             icons::ARROW_ELBOW_DOWN_RIGHT,
             &mut cl,
-            "Clip to layer below",
+            "Clipping mask: this layer only shows where the layer directly below has pixels. Paint shading or color on it without going outside the base layer's shape.",
             20.0,
         )
         .changed()

@@ -119,6 +119,7 @@ actions! {
     InvertColors => (Image, "Invert", ["Ctrl+I"]),
     Desaturate => (Image, "Desaturate", ["Ctrl+Shift+U"]),
     BrightnessContrast => (Image, "Brightness/Contrast…", []),
+    Levels => (Image, "Levels…", ["Ctrl+L"]),
     HueSaturation => (Image, "Hue/Saturation…", ["Ctrl+H", "Ctrl+U"]),
     // Layer
     NewLayer => (Layer, "New Layer", ["Ctrl+Shift+N"]),
@@ -147,7 +148,7 @@ actions! {
     Deselect => (Select, "Deselect", ["Ctrl+D"]),
     InvertSelection => (Select, "Inverse", ["Ctrl+Shift+I"]),
     FeatherSelection => (Select, "Feather…", ["Shift+F6"]),
-    SelectLayerContent => (Select, "Select Layer Content", []),
+    SelectLayerContent => (Select, "Select Layer Content", ["Ctrl+Alt+A"]),
     // View
     ZoomIn => (View, "Zoom In", ["Ctrl+=", "Ctrl++"]),
     ZoomOut => (View, "Zoom Out", ["Ctrl+-"]),
@@ -339,11 +340,61 @@ impl Action {
     }
 }
 
-/// A key chord.
+/// What fires a shortcut: a key, a wheel notch, or one of the extra mouse
+/// buttons (the "back"/"forward" thumb buttons on most mice).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Trigger {
+    Key(Key),
+    WheelUp,
+    WheelDown,
+    Mouse4,
+    Mouse5,
+}
+
+impl Trigger {
+    pub fn from_pointer_button(b: egui::PointerButton) -> Option<Self> {
+        match b {
+            egui::PointerButton::Extra1 => Some(Trigger::Mouse4),
+            egui::PointerButton::Extra2 => Some(Trigger::Mouse5),
+            _ => None,
+        }
+    }
+    fn from_name(s: &str) -> Option<Self> {
+        let n: String =
+            s.chars().filter(|c| !c.is_whitespace() && *c != '_' && *c != '-').collect::<String>().to_ascii_lowercase();
+        Some(match n.as_str() {
+            "wheelup" | "scrollup" | "mousewheelup" => Trigger::WheelUp,
+            "wheeldown" | "scrolldown" | "mousewheeldown" => Trigger::WheelDown,
+            "mouse4" | "mousebutton4" | "back" | "xbutton1" => Trigger::Mouse4,
+            "mouse5" | "mousebutton5" | "forward" | "xbutton2" => Trigger::Mouse5,
+            _ => return None,
+        })
+    }
+    fn name(self) -> &'static str {
+        match self {
+            Trigger::Key(k) => key_display_name(k),
+            Trigger::WheelUp => "WheelUp",
+            Trigger::WheelDown => "WheelDown",
+            Trigger::Mouse4 => "Mouse4",
+            Trigger::Mouse5 => "Mouse5",
+        }
+    }
+    fn display(self) -> &'static str {
+        match self {
+            Trigger::Key(k) => key_display_name(k),
+            Trigger::WheelUp => "Wheel Up",
+            Trigger::WheelDown => "Wheel Down",
+            Trigger::Mouse4 => "Mouse 4",
+            Trigger::Mouse5 => "Mouse 5",
+        }
+    }
+}
+
+/// A key chord (or a modified wheel notch / extra mouse button).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Shortcut {
     pub mods: Modifiers,
-    pub key: Key,
+    pub trigger: Trigger,
 }
 
 impl Shortcut {
@@ -353,8 +404,12 @@ impl Shortcut {
     /// equal to the same chord parsed from text, so conflict detection and
     /// "is this the default?" quietly missed.
     pub fn new(mods: Modifiers, key: Key) -> Self {
+        Self::with_trigger(mods, Trigger::Key(key))
+    }
+
+    pub fn with_trigger(mods: Modifiers, trigger: Trigger) -> Self {
         let command = mods.command || mods.ctrl || mods.mac_cmd;
-        Self { mods: Modifiers { command, ctrl: false, mac_cmd: false, alt: mods.alt, shift: mods.shift }, key }
+        Self { mods: Modifiers { command, ctrl: false, mac_cmd: false, alt: mods.alt, shift: mods.shift }, trigger }
     }
 
     /// Parse `"Ctrl+Shift+Z"`, `"]"`, `"Alt+Backspace"`, `"F5"` etc.
@@ -379,6 +434,9 @@ impl Shortcut {
                 _ => return None,
             }
         }
+        if let Some(t) = Trigger::from_name(key_part.trim()) {
+            return Some(Self::with_trigger(mods, t));
+        }
         let key = key_from_name(key_part.trim())?;
         if is_modifier_key(key) {
             return None;
@@ -397,7 +455,7 @@ impl Shortcut {
         if self.mods.shift {
             parts.push("Shift");
         }
-        parts.push(key_display_name(self.key));
+        parts.push(self.trigger.display());
         parts.join("+")
     }
 
@@ -413,13 +471,13 @@ impl Shortcut {
         if self.mods.shift {
             parts.push("Shift".to_string());
         }
-        parts.push(key_display_name(self.key).to_string());
+        parts.push(self.trigger.name().to_string());
         parts.join("+")
     }
 
-    pub fn matches(&self, key: Key, mods: Modifiers) -> bool {
+    pub fn matches_trigger(&self, t: Trigger, mods: Modifiers) -> bool {
         let cmd = |m: Modifiers| m.command || m.ctrl || m.mac_cmd;
-        key == self.key && mods.alt == self.mods.alt && mods.shift == self.mods.shift && cmd(mods) == cmd(self.mods)
+        t == self.trigger && mods.alt == self.mods.alt && mods.shift == self.mods.shift && cmd(mods) == cmd(self.mods)
     }
 }
 
@@ -582,11 +640,15 @@ impl Keymap {
 
     /// Resolve a key press to an action.
     pub fn lookup(&self, key: Key, mods: Modifiers) -> Option<Action> {
+        self.lookup_trigger(Trigger::Key(key), mods)
+    }
+
+    pub fn lookup_trigger(&self, t: Trigger, mods: Modifiers) -> Option<Action> {
         // Prefer the most specific (most modifiers) match.
         let mut best: Option<(u32, Action)> = None;
         for &a in Action::ALL {
             for sc in self.shortcuts(a) {
-                if sc.matches(key, mods) {
+                if sc.matches_trigger(t, mods) {
                     let n = sc.mods.command as u32 + sc.mods.alt as u32 + sc.mods.shift as u32;
                     if best.is_none_or(|(bn, _)| n > bn) {
                         best = Some((n, a));
@@ -606,13 +668,21 @@ mod tests {
     fn parse_and_display() {
         let s = Shortcut::parse("Ctrl+Shift+Z").unwrap();
         assert!(s.mods.command && s.mods.shift && !s.mods.alt);
-        assert_eq!(s.key, Key::Z);
+        assert_eq!(s.trigger, Trigger::Key(Key::Z));
         assert_eq!(s.display(), "Ctrl+Shift+Z");
-        assert_eq!(Shortcut::parse("]").unwrap().key, Key::CloseBracket);
-        assert_eq!(Shortcut::parse("Ctrl++").unwrap().key, Key::Plus);
-        assert_eq!(Shortcut::parse("Ctrl+=").unwrap().key, Key::Equals);
-        assert_eq!(Shortcut::parse("F11").unwrap().key, Key::F11);
-        assert_eq!(Shortcut::parse("Alt+Backspace").unwrap().key, Key::Backspace);
+        assert_eq!(Shortcut::parse("]").unwrap().trigger, Trigger::Key(Key::CloseBracket));
+        assert_eq!(Shortcut::parse("Ctrl++").unwrap().trigger, Trigger::Key(Key::Plus));
+        assert_eq!(Shortcut::parse("Ctrl+=").unwrap().trigger, Trigger::Key(Key::Equals));
+        assert_eq!(Shortcut::parse("F11").unwrap().trigger, Trigger::Key(Key::F11));
+        assert_eq!(Shortcut::parse("Alt+Backspace").unwrap().trigger, Trigger::Key(Key::Backspace));
+        let w = Shortcut::parse("Shift+WheelUp").unwrap();
+        assert_eq!(w.trigger, Trigger::WheelUp);
+        assert!(w.mods.shift);
+        assert_eq!(w.display(), "Shift+Wheel Up");
+        assert_eq!(w.serialize(), "Shift+WheelUp");
+        assert_eq!(Shortcut::parse(&w.serialize()).unwrap(), w);
+        assert_eq!(Shortcut::parse("Mouse 4").unwrap().trigger, Trigger::Mouse4);
+        assert_eq!(Shortcut::parse("Ctrl+Mouse5").unwrap().trigger, Trigger::Mouse5);
         assert!(Shortcut::parse("ControlLeft").is_none());
         assert!(Shortcut::parse("Ctrl+ShiftLeft").is_none());
         assert!(Shortcut::parse("Hyper+Q").is_none());

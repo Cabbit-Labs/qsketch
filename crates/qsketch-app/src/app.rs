@@ -7,9 +7,9 @@ use egui::{Context, Key, RichText, Ui};
 use qsketch_core::ops;
 use qsketch_core::Document;
 
-use crate::actions::{Action, Category};
+use crate::actions::{Action, Category, Trigger};
 use crate::canvas::render::CanvasRenderer;
-use crate::dialogs::{self, AdjustKind, AfterClose, CloseConfirm};
+use crate::dialogs::{self, AfterClose, CloseConfirm};
 use crate::settings::{NewDocBackground, Settings};
 use crate::state::{AppState, DocId, TempReason};
 use crate::tools::ToolKind;
@@ -319,6 +319,7 @@ impl QSketchApp {
         if wants_text || dialog_open {
             return;
         }
+        let (mut consume_wheel, mut consume_extra) = (false, false);
         for ev in events {
             // Double-tap Q: reset the view rotation.
             if let egui::Event::Key { key: Key::Q, pressed: true, repeat: false, modifiers, .. } = &ev {
@@ -381,6 +382,31 @@ impl QSketchApp {
                 }
                 egui::Event::Key { key, pressed: true, .. } => {
                     self.keys_seen_pressed.insert(*key);
+                }
+                _ => {}
+            }
+            // Wheel notches and the extra mouse buttons are bindable too.
+            // A bound one is consumed so the canvas doesn't also zoom, pan or
+            // start a tool press with it.
+            match &ev {
+                egui::Event::MouseWheel { delta, modifiers, .. } => {
+                    if delta.y != 0.0 {
+                        let t = if delta.y > 0.0 { Trigger::WheelUp } else { Trigger::WheelDown };
+                        if let Some(action) = self.state.keymap.lookup_trigger(t, *modifiers) {
+                            consume_wheel = true;
+                            self.perform(action, ctx);
+                        }
+                    }
+                    continue;
+                }
+                egui::Event::PointerButton { button, pressed: true, modifiers, .. } => {
+                    if let Some(t) = Trigger::from_pointer_button(*button) {
+                        consume_extra = true;
+                        if let Some(action) = self.state.keymap.lookup_trigger(t, *modifiers) {
+                            self.perform(action, ctx);
+                        }
+                    }
+                    continue;
                 }
                 _ => {}
             }
@@ -461,6 +487,20 @@ impl QSketchApp {
                 }
                 self.perform(action, ctx);
             }
+        }
+        if consume_wheel || consume_extra {
+            ctx.input_mut(|i| {
+                i.events.retain(|e| match e {
+                    egui::Event::MouseWheel { .. } => !consume_wheel,
+                    egui::Event::PointerButton { button, .. } => {
+                        !(consume_extra && Trigger::from_pointer_button(*button).is_some())
+                    }
+                    _ => true,
+                });
+                if consume_wheel {
+                    i.smooth_scroll_delta = egui::Vec2::ZERO;
+                }
+            });
         }
     }
 
@@ -721,6 +761,7 @@ impl QSketchApp {
                 ui.separator();
                 ui.menu_button("Adjustments", |ui| {
                     self.menu_item(ui, Action::BrightnessContrast, has_doc);
+                    self.menu_item(ui, Action::Levels, has_doc);
                     self.menu_item(ui, Action::HueSaturation, has_doc);
                     ui.separator();
                     self.menu_item(ui, Action::Desaturate, has_doc);
@@ -1216,8 +1257,9 @@ impl QSketchApp {
             Action::Rotate180 => self.orient("Rotate 180°", ops::Orient::Rotate(2)),
             Action::InvertColors => self.edit_layer("Invert", ops::invert_colors),
             Action::Desaturate => self.edit_layer("Desaturate", ops::desaturate),
-            Action::BrightnessContrast => dialogs::open_adjust(&mut self.state, AdjustKind::BrightnessContrast),
-            Action::HueSaturation => dialogs::filter::open(&mut self.state, Action::HueSaturation),
+            Action::BrightnessContrast | Action::Levels | Action::HueSaturation => {
+                dialogs::filter::open(&mut self.state, action)
+            }
             Action::LastFilter => dialogs::filter::repeat_last(&mut self.state),
             Action::LastFilterDialog => dialogs::filter::reopen_last(&mut self.state),
             a if a.category() == Category::Filter => dialogs::filter::open(&mut self.state, a),

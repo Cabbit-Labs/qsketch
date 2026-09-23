@@ -2,6 +2,38 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Levels (Image ▸ Adjustments ▸ Levels…, Ctrl+L), Photoshop style: a
+  histogram of the selected layers, per-channel (RGB / Red / Green / Blue)
+  input black, gamma and white, output black and white, Auto (0.1% clip per
+  channel) and Reset, with live preview.
+- Brightness/Contrast now previews live like Hue/Saturation and the filters,
+  and remembers its last settings.
+- Shortcuts can be bound to the mouse wheel (Wheel Up / Wheel Down, with any
+  modifiers, e.g. Shift+Wheel Up) and the thumb buttons (Mouse 4 / Mouse 5).
+  Roll the wheel or press the button while capturing a shortcut in
+  Preferences ▸ Keyboard Shortcuts. A bound wheel chord no longer zooms or
+  scrolls the canvas as well.
+- Preferences ▸ Canvas ▸ "Tint selected area": shades the selected pixels
+  with a chosen color and strength, only while a selection tool (or Move) is
+  active or always. Off by default.
+- Every filter dialog now opens with a plain-language line saying what the
+  filter does and what its knobs mean, so you don't have to guess from the
+  name (Dust & Scratches, High Pass, Offset and friends).
+- The Layers panel explains itself on hover: the blend mode (each mode in the
+  list has its own description), opacity, transparency lock, layer lock and
+  clipping mask.
+- Fixed: Dust & Scratches did nothing at its default settings, because its
+  default threshold was high enough to protect the whole image. It now
+  defaults to a threshold that actually cleans specks.
+- Fixed: a crash when the active layer changed to one with pixels while the
+  layer flash was on (debug builds), and the same latent bug in the new
+  selection tint.
+- Select Layer Content now has a default shortcut, `Ctrl+Alt+A`.
+- A test now checks that every filter changes a test image at its default
+  settings and that no two filters give identical results.
+
 ## 0.29.0 — 2026-09-20
 
 - Selection feathering, Photoshop style. The marquee and lasso tools have a

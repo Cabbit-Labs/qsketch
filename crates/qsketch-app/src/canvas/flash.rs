@@ -56,11 +56,11 @@ pub fn update(state: &mut AppState, doc_id: DocId, ctx: &Context, painter: &Pain
         (Pt::new(r.right() as f32, r.bottom() as f32), Pos2::new(1.0, 1.0)),
         (Pt::new(r.x as f32, r.bottom() as f32), Pos2::new(0.0, 1.0)),
     ];
+    // Vertices go in directly: `colored_vertex` is for untextured meshes
+    // (it forces WHITE_UV and asserts there is no texture in debug builds).
     let mut mesh = Mesh::with_texture(flash.tex.id());
     for (p, uv) in corners {
-        mesh.colored_vertex(view.doc_to_screen(p), tint);
-        let last = mesh.vertices.len() - 1;
-        mesh.vertices[last].uv = uv;
+        mesh.vertices.push(egui::epaint::Vertex { pos: view.doc_to_screen(p), uv, color: tint });
     }
     mesh.add_triangle(0, 1, 2);
     mesh.add_triangle(0, 2, 3);

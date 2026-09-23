@@ -56,6 +56,45 @@ impl BlendMode {
         BlendMode::Luminosity,
     ];
 
+    /// One-line explanation for tooltips.
+    pub fn describe(self) -> &'static str {
+        match self {
+            BlendMode::Normal => "Paints over what's below; opacity is the only mixing.",
+            BlendMode::Darken => "Keeps whichever is darker, this layer or what's below, per channel.",
+            BlendMode::Multiply => {
+                "Darkens like stacking transparencies: white does nothing, black goes black. Shadows and ink."
+            }
+            BlendMode::ColorBurn => "Darkens and boosts contrast below; strong, saturated shadows.",
+            BlendMode::LinearBurn => "Darkens by subtracting brightness; harsher than Multiply.",
+            BlendMode::Lighten => "Keeps whichever is lighter, this layer or what's below, per channel.",
+            BlendMode::Screen => {
+                "Lightens like projecting lights together: black does nothing, white goes white. Glows and highlights."
+            }
+            BlendMode::ColorDodge => "Brightens and washes out below; intense glowing highlights.",
+            BlendMode::LinearDodge => "Adds the brightness straight on; blooms and light effects.",
+            BlendMode::Overlay => {
+                "Multiplies the darks and screens the lights below: more contrast, colors punch through."
+            }
+            BlendMode::SoftLight => "A gentle Overlay; subtle contrast and tinting.",
+            BlendMode::HardLight => {
+                "Overlay decided by this layer instead: harsh light or shadow from this layer's tones."
+            }
+            BlendMode::Difference => "Subtracts the two colors either way; inverts where this layer is bright.",
+            BlendMode::Exclusion => "Like Difference but softer, with grays instead of hard inversion.",
+            BlendMode::Subtract => "Takes this layer's color away from what's below; darkens.",
+            BlendMode::Divide => "Divides what's below by this layer; brightens, cancels a color cast.",
+            BlendMode::Hue => "Uses this layer's hue with the saturation and brightness from below.",
+            BlendMode::Saturation => "Uses this layer's saturation with the hue and brightness from below.",
+            BlendMode::Color => {
+                "Uses this layer's hue and saturation with the brightness from below; recolors line art and grayscale."
+            }
+            BlendMode::Luminosity => "Uses this layer's brightness with the hue and saturation from below.",
+            BlendMode::PassThrough => {
+                "Group members blend straight onto the layers below the group, as if the folder weren't there."
+            }
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             BlendMode::Normal => "Normal",

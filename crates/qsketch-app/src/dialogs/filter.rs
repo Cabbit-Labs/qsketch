@@ -9,7 +9,7 @@
 use std::time::Instant;
 
 use egui::{Context, Key, RichText, Ui};
-use qsketch_core::filter::{self, DitherPattern, Filter, OffsetEdge, RadialMode};
+use qsketch_core::filter::{self, DitherPattern, Filter, Levels, LevelsChannel, OffsetEdge, RadialMode};
 use qsketch_core::Rgba8;
 
 use crate::actions::Action;
@@ -28,14 +28,23 @@ pub struct FilterDialog {
     /// How long the last preview took; cheap filters re-render while a slider
     /// is still being dragged, expensive ones wait for the release.
     pub last_ms: f32,
+    /// Luma / R / G / B histograms of the target pixels (Levels only),
+    /// taken from the committed state when the dialog opened.
+    pub hist: Option<Box<[[u32; 256]; 4]>>,
 }
 
 /// Default parameters for a Filter-menu action. Color parameters start from
 /// the current foreground / background colors.
 pub fn filter_for_action(state: &AppState, a: Action) -> Option<Filter> {
-    let (fg, bg) = (state.fg, state.bg);
+    default_filter(a, state.fg, state.bg)
+}
+
+/// `filter_for_action` with the colors passed in.
+pub fn default_filter(a: Action, fg: Rgba8, bg: Rgba8) -> Option<Filter> {
     Some(match a {
         Action::HueSaturation => Filter::HueSaturation { hue: 0.0, saturation: 0.0, lightness: 0.0, colorize: false },
+        Action::BrightnessContrast => Filter::BrightnessContrast { brightness: 0.0, contrast: 0.0 },
+        Action::Levels => Filter::Levels(Levels::default()),
         Action::FilterGaussianBlur => Filter::GaussianBlur { radius: 5.0 },
         Action::FilterBoxBlur => Filter::BoxBlur { radius: 3 },
         Action::FilterMotionBlur => Filter::MotionBlur { angle: 0.0, distance: 20.0 },
@@ -48,7 +57,9 @@ pub fn filter_for_action(state: &AppState, a: Action) -> Option<Filter> {
         Action::FilterPolarCoordinates => Filter::PolarCoordinates { to_polar: true },
         Action::FilterAddNoise => Filter::AddNoise { amount: 0.15, monochrome: false, gaussian: true, seed: 1 },
         Action::FilterMedian => Filter::Median { radius: 2 },
-        Action::FilterDustAndScratches => Filter::DustAndScratches { radius: 2, threshold: 24 },
+        // Threshold is how different a pixel must be before it is replaced,
+        // so a high default makes the filter look like it does nothing.
+        Action::FilterDustAndScratches => Filter::DustAndScratches { radius: 2, threshold: 8 },
         Action::FilterMosaic => Filter::Mosaic { cell: 8 },
         Action::FilterCrystallize => Filter::Crystallize { cell: 16, seed: 1 },
         Action::FilterFragment => Filter::Fragment,
@@ -115,8 +126,45 @@ pub fn open_with(state: &mut AppState, f: Filter) {
     if let Some(prev) = state.dialogs.filter.take() {
         revert(state, &prev);
     }
-    state.dialogs.filter =
-        Some(FilterDialog { doc: target.0, layers: target.1, filter: f, applied: None, preview: true, last_ms: 0.0 });
+    let hist = match &f {
+        Filter::Levels(_) => state.doc(target.0).map(|e| histogram(e, &target.1)),
+        _ => None,
+    };
+    state.dialogs.filter = Some(FilterDialog {
+        doc: target.0,
+        layers: target.1,
+        filter: f,
+        applied: None,
+        preview: true,
+        last_ms: 0.0,
+        hist,
+    });
+}
+
+/// Luma / R / G / B histograms over the target layers, within the
+/// selection's bounds, ignoring fully transparent pixels.
+fn histogram(e: &DocEntry, layers: &[usize]) -> Box<[[u32; 256]; 4]> {
+    let s = e.doc.state();
+    let mut h = Box::new([[0u32; 256]; 4]);
+    let full = qsketch_core::IRect::new(0, 0, s.width as i32, s.height as i32);
+    let rect = s.selection_mask().map(|m| m.bounds().intersect(&full)).unwrap_or(full);
+    for &li in layers {
+        let Some(l) = s.layers.get(li) else { continue };
+        for y in rect.y..rect.bottom() {
+            for x in rect.x..rect.right() {
+                let p = l.raster.get_pixel(x, y);
+                if p.a == 0 {
+                    continue;
+                }
+                let luma = (0.299 * p.r as f32 + 0.587 * p.g as f32 + 0.114 * p.b as f32 + 0.5) as usize;
+                h[0][luma.min(255)] += 1;
+                h[1][p.r as usize] += 1;
+                h[2][p.g as usize] += 1;
+                h[3][p.b as usize] += 1;
+            }
+        }
+    }
+    h
 }
 
 /// Apply `f` to the selected layers and commit it as one history step.
@@ -210,7 +258,13 @@ pub fn show(ctx: &Context, state: &mut AppState) {
         .default_pos(egui::pos2(screen.right() - 372.0, screen.top() + 80.0))
         .show(ctx, |ui| {
             ui.set_width(320.0);
-            params_ui(ui, &mut d.filter);
+            ui.label(RichText::new(d.filter.describe()).weak().small());
+            ui.add_space(6.0);
+            if let Filter::Levels(l) = &mut d.filter {
+                levels_ui(ui, l, d.hist.as_deref());
+            } else {
+                params_ui(ui, &mut d.filter);
+            }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.checkbox(&mut d.preview, "Preview");
@@ -324,8 +378,133 @@ fn color_ui(ui: &mut Ui, label: &str, c: &mut Rgba8) {
     });
 }
 
+/// Photoshop-style Levels: channel picker, histogram, input black / gamma /
+/// white, output black / white, Auto and Reset.
+fn levels_ui(ui: &mut Ui, l: &mut Levels, hist: Option<&[[u32; 256]; 4]>) {
+    ui.horizontal(|ui| {
+        ui.label("Channel");
+        for (c, name) in [
+            (LevelsChannel::Rgb, "RGB"),
+            (LevelsChannel::Red, "Red"),
+            (LevelsChannel::Green, "Green"),
+            (LevelsChannel::Blue, "Blue"),
+        ] {
+            ui.selectable_value(&mut l.channel, c, name);
+        }
+    });
+    ui.add_space(4.0);
+    // Histogram of the channel being edited.
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 96.0), egui::Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(rect, 3.0, ui.visuals().extreme_bg_color);
+    if let Some(h) = hist {
+        let bins = &h[match l.channel {
+            LevelsChannel::Rgb => 0,
+            LevelsChannel::Red => 1,
+            LevelsChannel::Green => 2,
+            LevelsChannel::Blue => 3,
+        }];
+        // Scale to the 99th-percentile bin so a few spikes don't flatten the rest.
+        let mut sorted: Vec<u32> = bins.to_vec();
+        sorted.sort_unstable();
+        let top = sorted[253].max(1) as f32;
+        let col = match l.channel {
+            LevelsChannel::Rgb => ui.visuals().text_color(),
+            LevelsChannel::Red => egui::Color32::from_rgb(230, 80, 80),
+            LevelsChannel::Green => egui::Color32::from_rgb(80, 200, 90),
+            LevelsChannel::Blue => egui::Color32::from_rgb(90, 130, 240),
+        };
+        let inner = rect.shrink(2.0);
+        let bw = inner.width() / 256.0;
+        for (i, &n) in bins.iter().enumerate() {
+            if n == 0 {
+                continue;
+            }
+            let hgt = (n as f32 / top).min(1.0) * inner.height();
+            let x0 = inner.left() + i as f32 * bw;
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(x0, inner.bottom() - hgt),
+                    egui::pos2(x0 + bw.max(1.0), inner.bottom()),
+                ),
+                0.0,
+                col,
+            );
+        }
+        // Input black / white markers.
+        let cur = l.curve(l.channel);
+        for (v, c) in [(cur.in_black, egui::Color32::BLACK), (cur.in_white, egui::Color32::WHITE)] {
+            let x = inner.left() + v / 255.0 * inner.width();
+            p.line_segment([egui::pos2(x, inner.top()), egui::pos2(x, inner.bottom())], egui::Stroke::new(1.0, c));
+        }
+    } else {
+        p.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "No pixels to sample",
+            egui::FontId::proportional(12.0),
+            ui.visuals().weak_text_color(),
+        );
+    }
+    ui.add_space(4.0);
+    let cur = l.curve_mut(l.channel);
+    ui.label(RichText::new("Input levels").weak().small());
+    slider(ui, &mut cur.in_black, 0.0..=253.0, "Black", "");
+    cur.in_black = cur.in_black.min(cur.in_white - 2.0).max(0.0);
+    ui.add(egui::Slider::new(&mut cur.in_gamma, 0.1..=9.99).text("Gamma").logarithmic(true).fixed_decimals(2));
+    slider(ui, &mut cur.in_white, 2.0..=255.0, "White", "");
+    cur.in_white = cur.in_white.max(cur.in_black + 2.0).min(255.0);
+    ui.label(RichText::new("Output levels").weak().small());
+    slider(ui, &mut cur.out_black, 0.0..=255.0, "Black", "");
+    slider(ui, &mut cur.out_white, 0.0..=255.0, "White", "");
+    ui.horizontal(|ui| {
+        if crate::ui::widgets::small_button(ui, "Auto")
+            .on_hover_text("Stretch each channel so 0.1% of its pixels clip at each end")
+            .clicked()
+        {
+            if let Some(h) = hist {
+                *l = Levels::default();
+                for (ci, curve) in [(1usize, &mut l.red), (2, &mut l.green), (3, &mut l.blue)] {
+                    let bins = &h[ci];
+                    let total: u64 = bins.iter().map(|&n| n as u64).sum();
+                    if total == 0 {
+                        continue;
+                    }
+                    let clip = (total as f64 * 0.001).max(1.0) as u64;
+                    let mut acc = 0u64;
+                    let lo = bins.iter().position(|&n| {
+                        acc += n as u64;
+                        acc > clip
+                    });
+                    acc = 0;
+                    let hi = bins.iter().rposition(|&n| {
+                        acc += n as u64;
+                        acc > clip
+                    });
+                    if let (Some(lo), Some(hi)) = (lo, hi) {
+                        if hi > lo + 1 {
+                            curve.in_black = lo as f32;
+                            curve.in_white = hi as f32;
+                        }
+                    }
+                }
+            }
+        }
+        if crate::ui::widgets::small_button(ui, "Reset").clicked() {
+            let ch = l.channel;
+            *l = Levels::default();
+            l.channel = ch;
+        }
+    });
+}
+
 fn params_ui(ui: &mut Ui, f: &mut Filter) {
     match f {
+        Filter::BrightnessContrast { brightness, contrast } => {
+            slider(ui, brightness, -100.0..=100.0, "Brightness", "");
+            slider(ui, contrast, -100.0..=100.0, "Contrast", "");
+        }
+        Filter::Levels(_) => {}
         Filter::HueSaturation { hue, saturation, lightness, colorize } => {
             if *colorize {
                 slider(ui, hue, 0.0..=360.0, "Hue", "°");
@@ -523,5 +702,65 @@ fn params_ui(ui: &mut Ui, f: &mut Filter) {
         Filter::Fragment | Filter::Sharpen | Filter::SharpenMore | Filter::FindEdges | Filter::Solarize => {
             ui.label(RichText::new("This filter has no settings.").weak());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qsketch_core::DocState;
+
+    /// Every filter with default parameters must visibly change a test
+    /// image (except the ones whose defaults are the identity on purpose),
+    /// and no two filters may produce the same output.
+    #[test]
+    fn every_filter_changes_the_image_distinctly() {
+        let (w, h) = (48u32, 48u32);
+        let mut doc = DocState::new(w, h, None);
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                let checker = ((x / 6 + y / 6) % 2) as u8;
+                let c = Rgba8::new(
+                    (x * 5) as u8,
+                    (y * 5) as u8,
+                    if checker == 1 { 200 } else { 40 },
+                    if x < 40 { 255 } else { 90 },
+                );
+                doc.layers[0].raster.set_pixel(x, y, c);
+            }
+        }
+        // Speckles, so the noise-removal filters have something to remove.
+        for k in 0..40i32 {
+            let (x, y) = ((k * 7 + 3) % 47, (k * 13 + 5) % 47);
+            doc.layers[0].raster.set_pixel(x, y, Rgba8::new(255, 255, 255, 255));
+        }
+        let base = doc.layers[0].raster.to_rgba();
+        let fg = Rgba8::new(220, 30, 60, 255);
+        let bg = Rgba8::new(20, 200, 120, 255);
+        // Identity by design at their defaults: sliders start centered.
+        let identity_ok = ["offset", "brightness_contrast", "levels", "hue_saturation"];
+        let mut outputs: Vec<(&'static str, Vec<u8>)> = Vec::new();
+        let mut inert = Vec::new();
+        for &a in Action::ALL {
+            let Some(f) = default_filter(a, fg, bg) else { continue };
+            let mut d = doc.clone();
+            let r = filter::apply_filter(&mut d, 0, &f);
+            let out = d.layers[0].raster.to_rgba();
+            let changed = out != base && !r.is_empty();
+            if !changed && !identity_ok.contains(&f.id()) {
+                inert.push(f.name());
+            }
+            outputs.push((f.name(), out));
+        }
+        assert!(inert.is_empty(), "filters that did nothing at their defaults: {inert:?}");
+        let mut dupes = Vec::new();
+        for i in 0..outputs.len() {
+            for j in i + 1..outputs.len() {
+                if outputs[i].1 == outputs[j].1 && outputs[i].1 != base {
+                    dupes.push(format!("{} == {}", outputs[i].0, outputs[j].0));
+                }
+            }
+        }
+        assert!(dupes.is_empty(), "filters with identical output: {dupes:?}");
     }
 }

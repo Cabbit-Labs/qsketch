@@ -3,9 +3,10 @@
 
 use egui::{Context, RichText, Ui};
 
-use crate::actions::{Action, Category, Shortcut};
+use crate::actions::{Action, Category, Shortcut, Trigger};
 use crate::settings::{
-    BrushCursor, ChromeTexture, CustomPalette, IconSet, MouseChord, NewDocBackground, Settings, Theme, WheelBehavior,
+    BrushCursor, ChromeTexture, CustomPalette, IconSet, MouseChord, NewDocBackground, SelectionTintMode, Settings,
+    Theme, WheelBehavior,
 };
 use crate::state::AppState;
 use crate::tools::ToolKind;
@@ -623,6 +624,26 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             "Dragging a selection, shape or move against the edge of the view scrolls the canvas along with it.",
         );
         ui.end_row();
+        ui.label("Tint selected area");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut c.selection_tint, "")
+                .on_hover_text("Shade the selected pixels with a color so the whole selection is easy to read, not just its outline.");
+            ui.add_enabled_ui(c.selection_tint, |ui| {
+                let mut col = egui::Color32::from_rgb(
+                    c.selection_tint_color[0],
+                    c.selection_tint_color[1],
+                    c.selection_tint_color[2],
+                );
+                if egui::color_picker::color_edit_button_srgba(ui, &mut col, egui::color_picker::Alpha::Opaque).changed() {
+                    c.selection_tint_color = [col.r(), col.g(), col.b()];
+                }
+                ui.add(egui::Slider::new(&mut c.selection_tint_opacity, 0.05..=0.9).show_value(false))
+                    .on_hover_text("Tint strength");
+                ui.selectable_value(&mut c.selection_tint_mode, SelectionTintMode::SelectionTools, "Selection tools only");
+                ui.selectable_value(&mut c.selection_tint_mode, SelectionTintMode::Always, "Always");
+            });
+        });
+        ui.end_row();
         ui.label("Auto-scroll speed");
         ui.add_enabled(
             c.edge_autoscroll,
@@ -969,15 +990,26 @@ fn shortcuts(ui: &mut Ui, ctx: &Context, state: &mut AppState, dlg: &mut Setting
         let mut clear = false;
         ctx.input(|i| {
             for ev in &i.events {
-                if let egui::Event::Key { key, pressed: true, modifiers, .. } = ev {
-                    match key {
+                match ev {
+                    egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
                         // Bare modifier presses (egui 0.36 emits them as physical keys):
                         // wait for the actual key of the chord.
                         k if crate::actions::is_modifier_key(*k) => {}
                         egui::Key::Escape => cancel = true,
                         egui::Key::Backspace if modifiers.is_none() => clear = true,
                         _ => captured = Some(Shortcut::new(*modifiers, *key)),
+                    },
+                    // Wheel notches and the thumb buttons bind like keys.
+                    egui::Event::MouseWheel { delta, modifiers, .. } if delta.y != 0.0 => {
+                        let t = if delta.y > 0.0 { Trigger::WheelUp } else { Trigger::WheelDown };
+                        captured = Some(Shortcut::with_trigger(*modifiers, t));
                     }
+                    egui::Event::PointerButton { button, pressed: true, modifiers, .. } => {
+                        if let Some(t) = Trigger::from_pointer_button(*button) {
+                            captured = Some(Shortcut::with_trigger(*modifiers, t));
+                        }
+                    }
+                    _ => {}
                 }
             }
         });

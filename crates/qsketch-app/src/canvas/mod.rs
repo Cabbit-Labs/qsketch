@@ -391,6 +391,10 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     let grid_min = settings.pixel_grid_min_zoom;
     let tile_grid = settings.show_grid.then_some(settings.grid_size.max(1));
     let smooth_out = settings.smooth_zoom_out;
+    let tint_tools = settings.selection_tint_mode == crate::settings::SelectionTintMode::SelectionTools;
+    let tint_on = settings.selection_tint
+        && (!tint_tools || tool.is_selection() || tool == ToolKind::SelectBrush || tool == ToolKind::Move);
+    let tint = (settings.selection_tint_color, settings.selection_tint_opacity);
     let render_state = state.render_state.clone();
     let Some(entry) = state.doc_mut(doc_id) else { return };
     let dirty = entry.doc.update_composite();
@@ -473,6 +477,11 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         }
     }
 
+    if tint_on {
+        draw_selection_tint(&painter, entry, &ctx, tint.0, tint.1);
+    } else {
+        entry.sel_tint = None;
+    }
     draw_selection(&painter, entry, &ctx);
     flash::update(state, doc_id, &ctx, &painter);
     tools::draw_overlay(state, doc_id, &painter);
@@ -602,6 +611,65 @@ fn pct(ui: &mut Ui, value: &mut f32) {
     {
         *value = (p / 100.0).clamp(0.0, 1.0);
     }
+}
+
+/// Shade the selected pixels: a coverage texture over the selection's
+/// bounds, drawn as a colored quad so it follows zoom, rotation and flip.
+fn draw_selection_tint(
+    painter: &egui::Painter,
+    entry: &mut crate::state::DocEntry,
+    ctx: &egui::Context,
+    color: [u8; 3],
+    opacity: f32,
+) {
+    let Some(sel) = entry.doc.state().selection.clone() else {
+        entry.sel_tint = None;
+        return;
+    };
+    let key = std::sync::Arc::as_ptr(&sel) as usize;
+    if entry.sel_tint.as_ref().is_none_or(|(k, _, _)| *k != key) {
+        const MAX_TEX: i32 = 1024;
+        let rect = sel.bounds();
+        if rect.is_empty() {
+            entry.sel_tint = None;
+            return;
+        }
+        let step = ((rect.w.max(rect.h) + MAX_TEX - 1) / MAX_TEX).max(1);
+        let tw = ((rect.w + step - 1) / step) as usize;
+        let th = ((rect.h + step - 1) / step) as usize;
+        let mut px = vec![Color32::TRANSPARENT; tw * th];
+        for (ty, row) in px.chunks_mut(tw).enumerate() {
+            let y = rect.y + ty as i32 * step;
+            for (tx, out) in row.iter_mut().enumerate() {
+                let x = rect.x + tx as i32 * step;
+                let a = sel.get(x, y);
+                if a > 0 {
+                    *out = Color32::from_white_alpha(a);
+                }
+            }
+        }
+        let img = egui::ColorImage::new([tw, th], px);
+        let opts = if step == 1 { egui::TextureOptions::NEAREST } else { egui::TextureOptions::LINEAR };
+        let tex = ctx.load_texture(format!("selection-tint-{}", entry.id), img, opts);
+        entry.sel_tint = Some((key, tex, rect));
+    }
+    let Some((_, tex, r)) = &entry.sel_tint else { return };
+    let view = &entry.view;
+    let a = (opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let tint = Color32::from_rgba_unmultiplied(color[0], color[1], color[2], a);
+    let corners = [
+        (Pt::new(r.x as f32, r.y as f32), Pos2::new(0.0, 0.0)),
+        (Pt::new(r.right() as f32, r.y as f32), Pos2::new(1.0, 0.0)),
+        (Pt::new(r.right() as f32, r.bottom() as f32), Pos2::new(1.0, 1.0)),
+        (Pt::new(r.x as f32, r.bottom() as f32), Pos2::new(0.0, 1.0)),
+    ];
+    let mut mesh = egui::Mesh::with_texture(tex.id());
+    for (p, uv) in corners {
+        mesh.vertices.push(egui::epaint::Vertex { pos: view.doc_to_screen(p), uv, color: tint });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    painter.add(mesh);
 }
 
 fn draw_selection(painter: &egui::Painter, entry: &mut crate::state::DocEntry, ctx: &egui::Context) {

@@ -94,15 +94,25 @@ pub fn labeled_slider(
 
 /// Percentage slider over a `0..=1` float, shown as 0–100%.
 pub fn percent_slider(ui: &mut Ui, label: &str, value: &mut f32) -> bool {
+    percent_slider_tip(ui, label, value, "")
+}
+
+/// `percent_slider` with a tooltip on the label and the slider.
+pub fn percent_slider_tip(ui: &mut Ui, label: &str, value: &mut f32, tip: &str) -> bool {
     let mut pct = (*value * 100.0).round();
     let r = ui.horizontal(|ui| {
-        ui.label(label);
-        ui.add(
+        let l = ui.label(label);
+        let s = ui.add(
             egui::Slider::new(&mut pct, 0.0..=100.0)
                 .suffix("%")
                 .fixed_decimals(0)
                 .clamping(egui::SliderClamping::Always),
-        )
+        );
+        if !tip.is_empty() {
+            l.on_hover_text(tip);
+            return s.on_hover_text(tip);
+        }
+        s
     });
     let mut changed = r.inner.changed();
     // The wheel nudges the value while the pointer is over the slider (1 % a
