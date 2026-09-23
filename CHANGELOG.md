@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.34.0 — 2026-09-23
 
 - **Draw together over Leyline.** File ▸ Share via Leyline… sends the current
   canvas to a contact or group and keeps it in sync while everyone paints; Join
