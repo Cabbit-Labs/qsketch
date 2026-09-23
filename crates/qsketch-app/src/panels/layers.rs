@@ -60,6 +60,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         state.eye_drag = None;
     }
     let eye_sweep = state.eye_drag;
+    let state_accent = state.settings.ui.palette().accent;
     let pointer = ui.input(|i| i.pointer.latest_pos());
     let mut start_sweep: Option<bool> = None;
     let mut toggle_expand: Option<usize> = None;
@@ -330,14 +331,30 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             // click_and_drag so the sweep is ours and the scroll area does
             // not start drag-scrolling the list.
             let eye = ui.interact(eye_rect, ui.id().with(("eye", layer_id)), Sense::click_and_drag());
-            ui.painter().text(
-                eye_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                if vis { icons::EYE } else { icons::EYE_SLASH },
-                egui::FontId::new(14.0, ICON_FAMILY()),
-                if vis && !dim { ui.visuals().text_color() } else { hidden_eye_color(ui) },
-            );
-            eye.on_hover_text("Toggle visibility (drag across eyes to set several)");
+            // Drawn as a checkbox: a ticked box is a visible layer. A layer
+            // hidden by an ancestor keeps its own tick but fades, like a
+            // checked-but-disabled control.
+            {
+                let p = ui.painter();
+                let box_rect = egui::Rect::from_center_size(eye_rect.center(), egui::vec2(13.0, 13.0));
+                let accent = state_accent;
+                let (fill, stroke_c) = if vis {
+                    (if dim { accent.gamma_multiply(0.45) } else { accent }, Color32::TRANSPARENT)
+                } else {
+                    (Color32::TRANSPARENT, hidden_eye_color(ui))
+                };
+                p.rect(box_rect, 3.0, fill, egui::Stroke::new(1.0, stroke_c), egui::StrokeKind::Inside);
+                if vis {
+                    let c = box_rect.center();
+                    let tick = egui::Stroke::new(1.8, Color32::WHITE);
+                    p.line_segment([c + egui::vec2(-3.5, 0.0), c + egui::vec2(-1.0, 2.8)], tick);
+                    p.line_segment([c + egui::vec2(-1.0, 2.8), c + egui::vec2(3.8, -2.8)], tick);
+                }
+                if eye.hovered() {
+                    p.rect_stroke(box_rect.expand(2.0), 4.0, egui::Stroke::new(1.0, accent), egui::StrokeKind::Outside);
+                }
+            }
+            eye.on_hover_text("Visible (drag across the boxes to set several)");
             // Acts on press, not release, so the layer flips the moment the
             // eye is hit and a sweep over other eyes can start right away.
             if primary_pressed && pointer.is_some_and(|p| eye_rect.contains(p)) {
@@ -679,12 +696,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     }
 }
 
-/// Eye-slash glyph for hidden layers: pushed well away from the visible
-/// eye's text color (toward the row background) so the two states read at a
-/// glance.
+/// Outline of an unticked (hidden) visibility box: the palette's dim text, not
+/// a fixed gray — on tinted chrome (a pink theme, say) a gray is both
+/// off-palette and hard to see.
 fn hidden_eye_color(ui: &Ui) -> Color32 {
-    // The palette's dim text, not a fixed gray: on tinted chrome (a pink
-    // theme, say) a gray is both off-palette and hard to see. The glyph
-    // itself already says hidden (eye vs eye-slash), so it can be legible.
     crate::ui::theme::dim_text(ui.visuals())
 }

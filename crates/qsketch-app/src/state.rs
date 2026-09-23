@@ -43,6 +43,8 @@ pub struct DocEntry {
     pub last_selection: Option<std::sync::Arc<qsketch_core::Mask>>,
     /// Selection tint texture keyed by the selection's allocation address.
     pub sel_tint: Option<(usize, egui::TextureHandle, qsketch_core::IRect)>,
+    /// Live collaboration over Leyline, when this document is shared.
+    pub share: Option<crate::share::ShareSession>,
 }
 
 impl DocEntry {
@@ -58,6 +60,7 @@ impl DocEntry {
             format_ack: None,
             last_selection: None,
             sel_tint: None,
+            share: None,
             flash_seen_active: None,
             layer_flash: None,
         }
@@ -246,6 +249,8 @@ pub struct AppState {
     pub last_filter: Option<qsketch_core::Filter>,
     /// Last-used parameters per filter kind, keyed by `Filter::id()`.
     pub filter_memory: HashMap<&'static str, qsketch_core::Filter>,
+    /// The connection to a running Leyline, opened the first time sharing is used.
+    pub share: Option<crate::share::link::Link>,
 }
 
 impl AppState {
@@ -309,6 +314,7 @@ impl AppState {
             brush_page: Default::default(),
             last_filter: None,
             filter_memory: HashMap::new(),
+            share: None,
         }
     }
 
@@ -390,6 +396,7 @@ impl AppState {
     }
 
     pub fn remove_document(&mut self, id: DocId) {
+        crate::share::stop(self, id);
         if self.session_doc == Some(id) {
             self.session = None;
             self.session_doc = None;

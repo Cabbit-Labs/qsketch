@@ -31,6 +31,12 @@ keyboard.
 - **Save As any image format** (PNG, JPEG, WebP, BMP, TGA, TIFF) straight
   from Save As, with a heads-up listing what that format drops (layers,
   transparency, selection) before it writes.
+- **Draw together over [Leyline](https://github.com/mayathegreat/leyline).**
+  File ▸ Share via Leyline… puts the current canvas in a contact's or group's
+  hands; everyone paints on it at once, sees each other's named pointers, and
+  keeps their own undo. Leyline (running on the same computer) carries the
+  changes, queues them for whoever is offline, and replays them for whoever
+  joins later. See [docs/SHARING.md](docs/SHARING.md).
 - **20 blend modes** (Normal through Luminosity, matching the W3C compositing
   spec / Photoshop semantics), per-layer opacity, clipping masks, alpha lock,
   layer groups (nested, with their own opacity/blend/visibility), and

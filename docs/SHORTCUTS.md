@@ -21,6 +21,8 @@ reachable from its menu until you assign one.
 | Save | `Ctrl+S` |
 | Save As… | `Ctrl+Shift+S` |
 | Export Image… | `Ctrl+Shift+E` |
+| Share via Leyline… | — |
+| Stop Sharing | — |
 | Close | `Ctrl+W` |
 | Quit | `Ctrl+Q` |
 

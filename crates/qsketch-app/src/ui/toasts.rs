@@ -64,10 +64,11 @@ impl Toasts {
                         let age = now.duration_since(t.created).as_secs_f32();
                         let remaining = t.ttl.as_secs_f32() - age;
                         let alpha = (remaining / 0.4).clamp(0.0, 1.0);
+                        // Icon-font glyphs: the UI font has no check mark.
                         let (bar, glyph) = match t.level {
-                            Level::Info => (Color32::from_rgb(90, 150, 240), "i"),
-                            Level::Success => (Color32::from_rgb(23, 200, 160), "✓"),
-                            Level::Error => (Color32::from_rgb(235, 87, 87), "!"),
+                            Level::Info => (Color32::from_rgb(90, 150, 240), crate::ui::icons::INFO),
+                            Level::Success => (Color32::from_rgb(23, 200, 160), crate::ui::icons::CHECK),
+                            Level::Error => (Color32::from_rgb(235, 87, 87), crate::ui::icons::WARNING),
                         };
                         egui::Frame::new()
                             .fill(ui.visuals().window_fill.gamma_multiply(alpha))
@@ -77,7 +78,7 @@ impl Toasts {
                             .show(ui, |ui| {
                                 ui.set_max_width(420.0);
                                 ui.horizontal(|ui| {
-                                    ui.label(RichText::new(glyph).color(bar.gamma_multiply(alpha)).strong());
+                                    ui.label(crate::ui::widgets::icon(glyph, 13.0).color(bar.gamma_multiply(alpha)));
                                     ui.label(
                                         RichText::new(&t.text).color(ui.visuals().text_color().gamma_multiply(alpha)),
                                     );

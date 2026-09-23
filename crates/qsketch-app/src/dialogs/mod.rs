@@ -3,6 +3,7 @@
 
 pub mod filter;
 pub mod settings;
+pub mod share;
 
 use egui::{Context, RichText, Ui};
 use qsketch_core::ops::{self, Anchor};
@@ -92,6 +93,7 @@ pub struct Dialogs {
     pub close_confirm: Option<CloseConfirm>,
     pub save_confirm: Option<SaveConfirm>,
     pub settings: Option<settings::SettingsDialog>,
+    pub share: Option<share::ShareDialog>,
     pub about: bool,
     /// Autosave snapshots found at startup, offered for recovery.
     pub recover: Option<Vec<crate::autosave::Recoverable>>,
@@ -108,6 +110,7 @@ impl Dialogs {
             || self.close_confirm.is_some()
             || self.save_confirm.is_some()
             || self.settings.is_some()
+            || self.share.is_some()
             || self.about
             || self.recover.is_some()
     }
@@ -127,7 +130,7 @@ fn bullet(ui: &mut Ui, text: &str) {
     });
 }
 
-fn modal<R>(ctx: &Context, id: &str, title: &str, width: f32, add: impl FnOnce(&mut Ui) -> R) -> (R, bool) {
+pub(super) fn modal<R>(ctx: &Context, id: &str, title: &str, width: f32, add: impl FnOnce(&mut Ui) -> R) -> (R, bool) {
     let mut closed = false;
     let resp = egui::Modal::new(egui::Id::new(id)).show(ctx, |ui| {
         ui.set_width(width);
@@ -153,6 +156,7 @@ pub fn show_all(ctx: &Context, state: &mut AppState) {
     show_close_confirm(ctx, state);
     show_save_confirm(ctx, state);
     settings::show(ctx, state);
+    share::show(ctx, state);
     show_about(ctx, state);
     show_update(ctx, state);
     show_recover(ctx, state);

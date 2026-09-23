@@ -92,6 +92,8 @@ actions! {
     Save => (File, "Save", ["Ctrl+S"]),
     SaveAs => (File, "Save As…", ["Ctrl+Shift+S"]),
     ExportImage => (File, "Export Image…", ["Ctrl+Alt+Shift+S"]),
+    ShareCanvas => (File, "Share via Leyline…", []),
+    StopSharing => (File, "Stop Sharing", []),
     CloseDocument => (File, "Close", ["Ctrl+W"]),
     Quit => (File, "Quit", ["Ctrl+Q"]),
     // Edit

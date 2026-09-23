@@ -486,6 +486,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     draw_selection(&painter, entry, &ctx);
     flash::update(state, doc_id, &ctx, &painter);
     tools::draw_overlay(state, doc_id, &painter);
+    crate::share::draw_cursors(state, doc_id, &painter);
     {
         // The quick brush popup takes the pointer off the canvas, which would
         // normally hide the cursor. Keep drawing it, tracking the pointer

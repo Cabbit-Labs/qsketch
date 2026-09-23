@@ -344,6 +344,34 @@ impl TabViewer for Viewer<'_> {
                 job.into()
             }
             PanelKind::Document(id) => match self.state.doc(*id) {
+                // A shared canvas wears the conversation's colored dot.
+                Some(d) if d.share.is_some() => {
+                    let p = self.state.settings.ui.palette();
+                    let s = d.share.as_ref().unwrap();
+                    let mut job = egui::text::LayoutJob::default();
+                    job.append(
+                        icons::CIRCLE,
+                        0.0,
+                        egui::TextFormat {
+                            font_id: egui::FontId::new(
+                                8.0,
+                                egui::FontFamily::Name(crate::ui::theme::ICON_FONT_FILL.into()),
+                            ),
+                            color: s.color,
+                            ..Default::default()
+                        },
+                    );
+                    job.append(
+                        &format!("{} {}", icons::IMAGE, d.doc.display_title()),
+                        4.0,
+                        egui::TextFormat {
+                            font_id: egui::FontId::proportional(12.5),
+                            color: p.text,
+                            ..Default::default()
+                        },
+                    );
+                    job.into()
+                }
                 Some(d) => format!("{} {}", icons::IMAGE, d.doc.display_title()).into(),
                 None => "(closed)".into(),
             },

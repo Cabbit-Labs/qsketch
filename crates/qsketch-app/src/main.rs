@@ -12,6 +12,7 @@ mod files;
 mod fonts;
 mod panels;
 mod settings;
+mod share;
 mod single_instance;
 mod state;
 mod tablet;

@@ -2,6 +2,24 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- **Draw together over Leyline.** File ▸ Share via Leyline… sends the current
+  canvas to a contact or group and keeps it in sync while everyone paints; Join
+  opens a conversation's shared canvas as a new tab. A shared tab wears the
+  conversation's colored dot, the status bar lists who else is drawing, and the
+  other people's pointers show on the canvas with their name and tool, like
+  Leyline's own sketchpad. Leyline (0.7.41 or newer) must be running on the same
+  computer; it carries the changes, so they reach the group, queue for whoever
+  is offline, and replay for whoever joins later. What travels is committed
+  pixels (the tiles a stroke changed, plus the layer stack when it changes),
+  and what comes back is slotted under your own undo history — undo only ever
+  takes back your own marks. Set `QSKETCH_LEYLINE_PORT` if Leyline's link is
+  not on its default port.
+- The Layers panel's visibility eye is now a **checkbox** (a ticked box is a
+  visible layer). Pressing one still toggles it immediately, and dragging
+  across others still sets them all the same way.
+
 ## 0.33.0 — 2026-09-23
 
 - Select ▸ Modify, the set every other editor has: **Expand…** and

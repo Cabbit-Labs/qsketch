@@ -794,6 +794,10 @@ impl QSketchApp {
                 self.menu_item(ui, Action::SaveAs, has_doc);
                 self.menu_item(ui, Action::ExportImage, has_doc);
                 ui.separator();
+                let shared = self.state.active().is_some_and(|d| d.share.is_some());
+                self.menu_item(ui, Action::ShareCanvas, true);
+                self.menu_item(ui, Action::StopSharing, shared);
+                ui.separator();
                 self.menu_item(ui, Action::CloseDocument, has_doc);
                 self.menu_item(ui, Action::Quit, true);
             });
@@ -1136,6 +1140,22 @@ impl QSketchApp {
                     let b = m.bounds();
                     ui.label(RichText::new(format!("sel {}×{}", b.w, b.h)).weak().small());
                 }
+                // Shared canvas: the conversation's dot, and who else is drawing.
+                if let Some(sh) = d.share.as_ref() {
+                    ui.label(crate::share::dot(sh.color, 8.0));
+                    let others = sh.present();
+                    let who = match others.len() {
+                        0 => format!("{} · only you", sh.conv.name),
+                        _ => format!(
+                            "{} · {}",
+                            sh.conv.name,
+                            others.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", ")
+                        ),
+                    };
+                    let connected = self.state.share.as_ref().is_some_and(|l| l.connected);
+                    let text = if connected { who } else { format!("{} · Leyline not running", sh.conv.name) };
+                    ui.label(RichText::new(text).weak().small());
+                }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(RichText::new(format!("v{}", crate::update::CURRENT_VERSION)).weak().small());
@@ -1229,6 +1249,12 @@ impl QSketchApp {
             Action::ExportImage => {
                 if let Some(id) = active {
                     crate::files::export(&mut self.state, id);
+                }
+            }
+            Action::ShareCanvas => dialogs::share::open(&mut self.state, ctx),
+            Action::StopSharing => {
+                if let Some(id) = active {
+                    crate::share::stop(&mut self.state, id);
                 }
             }
             Action::CloseDocument => {
@@ -1814,6 +1840,7 @@ impl eframe::App for QSketchApp {
             }
         }
         self.process_requests(&ctx);
+        crate::share::tick(&mut self.state, &ctx);
 
         // --- chrome -----------------------------------------------------------
         let hidden = self.state.panels_hidden;
