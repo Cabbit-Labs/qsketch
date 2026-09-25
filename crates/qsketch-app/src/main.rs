@@ -32,20 +32,31 @@ fn main() -> eframe::Result<()> {
 
     let icon = load_icon();
     // The app draws its own title strip unless the user asked for the OS one.
-    let native_frame = settings::Settings::load().ui.native_frame;
-    let viewport = egui::ViewportBuilder::default()
+    let saved = settings::Settings::load();
+    let native_frame = saved.ui.native_frame;
+    // The window's final geometry goes on the builder so the first painted
+    // frame is already the right size: a resize after the window is shown
+    // rebuilds the swapchain and flashes a cleared frame.
+    let rect = saved.window_rect.filter(|r| r[2] >= 900.0 && r[3] >= 560.0 && r[0] > -8000.0 && r[1] > -8000.0);
+    let mut viewport = egui::ViewportBuilder::default()
         .with_title("qsketch")
         .with_app_id("qsketch")
-        .with_inner_size([1600.0, 950.0])
+        .with_inner_size(rect.map(|r| [r[2], r[3]]).unwrap_or([1600.0, 950.0]))
         .with_min_inner_size([900.0, 560.0])
         .with_decorations(native_frame)
+        .with_maximized(saved.window_maximized)
         .with_icon(icon);
+    if let Some(r) = rect {
+        viewport = viewport.with_position([r[0], r[1]]);
+    }
 
     let options = eframe::NativeOptions {
         viewport,
         renderer: eframe::Renderer::Wgpu,
-        centered: true,
-        persist_window: true,
+        centered: rect.is_none(),
+        // Geometry is remembered in settings.toml (see `window_rect`), not
+        // in eframe's own store, so it can be applied before the window shows.
+        persist_window: false,
         wgpu_options: egui_wgpu::WgpuConfiguration {
             surface: egui_wgpu::SurfaceConfig {
                 present_mode: wgpu::PresentMode::AutoVsync,

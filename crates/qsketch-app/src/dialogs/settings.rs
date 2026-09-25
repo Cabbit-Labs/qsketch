@@ -269,6 +269,10 @@ fn interface(ui: &mut Ui, state: &mut AppState) {
             "Show the OS title bar above the menus instead of qsketch's compact strip. Applies immediately.",
         );
         ui.end_row();
+        ui.label("Startup animation");
+        ui.checkbox(&mut u.startup_animation, "")
+            .on_hover_text("Show the icon and wordmark for a moment when qsketch opens. Any key or click skips it.");
+        ui.end_row();
         ui.label("Minimal tool options bar");
         ui.checkbox(&mut u.compact_tool_options, "")
             .on_hover_text("Hide the \"More\" menu and secondary text controls");

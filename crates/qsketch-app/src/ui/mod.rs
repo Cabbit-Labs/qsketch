@@ -3,6 +3,7 @@
 pub mod chrome;
 pub mod iconset;
 pub mod phosphor;
+pub mod splash;
 pub mod theme;
 pub mod toasts;
 pub mod widgets;

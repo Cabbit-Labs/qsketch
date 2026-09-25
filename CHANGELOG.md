@@ -2,6 +2,17 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.43.0 — 2026-09-25
+
+- **No more flicker on launch.** The window's last size, position and
+  maximized state are remembered in settings.toml and handed to the window
+  before it is shown, so the first painted frame is already the right
+  geometry. Previously the window appeared and was then resized, and each
+  resize flashed a cleared frame.
+- **Startup animation** (Preferences ▸ Interface ▸ Startup animation, on by
+  default): the icon and wordmark on the theme background for a moment,
+  then a dissolve into the workspace. Any key or click skips it.
+
 ## 0.42.1 — 2026-09-25
 
 - Update dialog: when several releases are skipped, What's New lists every

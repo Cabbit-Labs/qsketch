@@ -505,6 +505,8 @@ pub struct UiSettings {
     /// Use the OS title bar instead of qsketch's own compact strip (menus,
     /// update indicator and window buttons in one bar).
     pub native_frame: bool,
+    /// Icon and wordmark dissolve into the workspace when the app opens.
+    pub startup_animation: bool,
     pub custom_palette: CustomPalette,
     pub icon_set: IconSet,
     /// Per-tool glyph overrides: tool name (`ToolKind` Debug form) → Phosphor icon name.
@@ -644,6 +646,7 @@ impl Default for UiSettings {
             show_tooltips: true,
             compact_tool_options: false,
             native_frame: false,
+            startup_animation: true,
             custom_palette: CustomPalette::default(),
             icon_set: IconSet::Outline,
             icon_overrides: Default::default(),
@@ -1097,6 +1100,10 @@ pub struct Settings {
     pub shortcuts: HashMap<String, Vec<String>>,
     /// Serialized egui_dock layout.
     pub layout: Option<String>,
+    /// Last windowed geometry as logical points: outer x, y and inner
+    /// width, height. Given to the window before it is shown so it opens at
+    /// its final size and place without a visible resize.
+    pub window_rect: Option<[f32; 4]>,
     pub window_maximized: bool,
     /// Bumped when a default changes in a way that has to reach settings files
     /// written by an older version (see `migrate`). 0 = before any migration.

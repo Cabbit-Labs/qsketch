@@ -30,6 +30,10 @@ pub struct QSketchApp {
     applied_native_frame: bool,
     /// App icon for the custom title strip.
     app_icon: egui::TextureHandle,
+    /// Startup animation while it runs.
+    splash: Option<crate::ui::splash::Splash>,
+    /// Frames painted so far (saturating).
+    frames: u32,
     last_settings_save: Instant,
     /// Last plain `Q` press, for the double-tap view reset.
     last_q_press: Option<Instant>,
@@ -115,6 +119,8 @@ impl QSketchApp {
             fullscreen_tries: 0,
             fullscreen_fix_at: None,
             app_icon,
+            splash: None,
+            frames: 0,
             last_settings_save: Instant::now(),
             last_q_press: None,
             last_title: String::new(),
@@ -267,6 +273,31 @@ impl QSketchApp {
         let Some(url) = u.effective_manifest_url() else { return };
         u.last_check = now;
         self.state.updater.check(url, false);
+    }
+
+    /// Remember where the window is so the next launch can open there.
+    fn record_window_geometry(&mut self, ctx: &Context) {
+        let (outer, inner, maximized) = ctx.input(|i| {
+            let v = i.viewport();
+            (v.outer_rect, v.inner_rect, v.maximized.unwrap_or(false))
+        });
+        // Only our own flag: the viewport's `fullscreen` reads true for a
+        // plainly windowed window on some platforms (see ToggleFullscreen).
+        if self.state.fullscreen {
+            return;
+        }
+        self.state.settings.window_maximized = maximized;
+        if maximized {
+            return;
+        }
+        // X11 without a window manager reports no outer rect; the inner one
+        // is then also the window's position.
+        if let Some(inner) = inner {
+            let origin = outer.map(|o| o.min).unwrap_or(inner.min);
+            if inner.width() >= 100.0 && inner.height() >= 100.0 {
+                self.state.settings.window_rect = Some([origin.x, origin.y, inner.width(), inner.height()]);
+            }
+        }
     }
 
     fn persist(&mut self) {
@@ -2131,12 +2162,24 @@ impl eframe::App for QSketchApp {
             }
         }
 
+        self.record_window_geometry(&ctx);
         if self.last_settings_save.elapsed() > Duration::from_secs(30) {
             self.persist();
         }
         // TextEdit publishes an IME rect every frame it has focus; use that to
         // know when single-key shortcuts must stay out of the way.
         self.text_editing = ctx.output(|o| o.ime.is_some());
+
+        // Startup animation over everything, from the first frame.
+        if self.frames == 0 && self.state.settings.ui.startup_animation {
+            self.splash = Some(crate::ui::splash::Splash::new());
+        }
+        if let Some(s) = &mut self.splash {
+            if !s.paint(&ctx, &self.state.settings.ui.palette(), &self.app_icon) {
+                self.splash = None;
+            }
+        }
+        self.frames = self.frames.saturating_add(1);
     }
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
