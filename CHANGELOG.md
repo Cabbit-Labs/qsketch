@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.37.2 — 2026-09-25
 
 - Alt+wheel is back to zoom: Alt belongs to the color picker. Ctrl+wheel
   keeps resizing the brush. A settings file from 0.37.1 that had Alt on brush
