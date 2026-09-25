@@ -16,7 +16,8 @@ use crate::ui::widgets::{icon_button, Swatch};
 /// drag in progress.
 #[derive(Clone, Copy, Default)]
 struct Mem {
-    /// Anchor and end of the selected range (inclusive, either order).
+    /// Anchor and end of the selected range (inclusive, either order);
+    /// mirrored into `DocEntry::palette_sel` for the shading ink.
     sel: Option<(usize, usize)>,
     drag_from: Option<usize>,
 }
@@ -33,7 +34,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let mem_id = ui.id().with(("palette_mem", doc_id));
     let mut mem: Mem = ui.data(|d| d.get_temp(mem_id)).unwrap_or_default();
     let (mut pal, locked) = {
-        let s = state.doc(doc_id).unwrap().doc.state();
+        let e = state.doc(doc_id).unwrap();
+        mem.sel = e.palette_sel;
+        let s = e.doc.state();
         (s.palette.clone(), s.palette_lock)
     };
     let n = pal.len();
@@ -286,6 +289,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         }
     }
     ui.data_mut(|d| d.insert_temp(mem_id, mem));
+    if let Some(e) = state.doc_mut(doc_id) {
+        e.palette_sel = mem.sel;
+    }
 
     // --- apply --------------------------------------------------------------
     if let Some(on) = lock {

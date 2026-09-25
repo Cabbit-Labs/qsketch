@@ -401,6 +401,18 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                 if r.clicked() {
                     b.antialias = !b.antialias;
                 }
+                if !b.antialias {
+                    let r = icon_button(
+                        ui,
+                        icons::STAIRS,
+                        "Pixel-perfect: drop the doubled corner pixels of hand-drawn lines",
+                        22.0,
+                        b.pixel_perfect,
+                    );
+                    if r.clicked() {
+                        b.pixel_perfect = !b.pixel_perfect;
+                    }
+                }
             }
             if tool.is_paint() || tool.is_selection_brush() {
                 stabilizer_options(ui, b);
@@ -408,6 +420,31 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
         }
         ui.add_space(2.0);
         symmetry_options(ui, state);
+        // Shading ink: needs a document palette; the selected run in the
+        // Palette panel is the ramp.
+        if matches!(tool, ToolKind::Brush | ToolKind::Pencil)
+            && state.active().is_some_and(|d| !d.doc.state().palette.is_empty())
+        {
+            ui.add_space(2.0);
+            let o = &mut state.tool_opts;
+            let r = icon_button(
+                ui,
+                icons::STACK,
+                "Shading: pixels under the brush step along the selected palette ramp instead of taking the foreground color",
+                22.0,
+                o.shading,
+            );
+            if r.clicked() {
+                o.shading = !o.shading;
+            }
+            if o.shading {
+                let glyph = if o.shading_reverse { icons::ARROW_LEFT } else { icons::ARROW_RIGHT };
+                let tip = if o.shading_reverse { "Step back along the ramp" } else { "Step forward along the ramp" };
+                if icon_button(ui, glyph, tip, 22.0, false).clicked() {
+                    o.shading_reverse = !o.shading_reverse;
+                }
+            }
+        }
         if !compact {
             let b = state.brush_for_tool_mut(tool).expect("checked above");
             ui.add_space(2.0);
@@ -424,6 +461,10 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                 });
                 if !matches!(tool, ToolKind::Pencil | ToolKind::Eraser) {
                     ui.checkbox(&mut b.antialias, "Anti-aliasing");
+                    if !b.antialias {
+                        ui.checkbox(&mut b.pixel_perfect, "Pixel-perfect")
+                            .on_hover_text("Drop the doubled corner pixels of hand-drawn lines (round tips)");
+                    }
                 }
                 if tool.is_paint() && b.stabilizer == qsketch_core::StabilizerMode::Rope {
                     ui.checkbox(&mut b.stabilizer_catch_up, "Stabilizer catches up on release")

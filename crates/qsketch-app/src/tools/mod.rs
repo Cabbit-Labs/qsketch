@@ -267,6 +267,13 @@ pub struct ToolOptions {
     /// again from the source point.
     pub clone_aligned: bool,
     pub clone_sample_merged: bool,
+    /// Brush / Pencil shading ink: paint steps palette colors along the
+    /// selected ramp instead of laying down the foreground color.
+    #[serde(default)]
+    pub shading: bool,
+    /// Shading direction: false = toward the end of the ramp, true = back.
+    #[serde(default)]
+    pub shading_reverse: bool,
     #[serde(default)]
     pub liquify_tool: crate::dialogs::liquify::LiquifyTool,
     #[serde(default = "default_liquify_size")]
@@ -317,6 +324,8 @@ impl Default for ToolOptions {
             clone_offset: None,
             clone_aligned: true,
             clone_sample_merged: false,
+            shading: false,
+            shading_reverse: false,
             liquify_tool: crate::dialogs::liquify::LiquifyTool::Push,
             liquify_size: 120.0,
             liquify_strength: 0.5,

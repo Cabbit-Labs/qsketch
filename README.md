@@ -26,7 +26,9 @@ keyboard.
   sorting, presets (PICO-8, DawnBringer, Endesga…), median-cut generation
   from the image and `.gpl`/`.hex`/`.pal`/`.act`/`.aco`/Aseprite files.
   Lock it and every edit snaps to it; Index Colors converts a document with
-  optional dither; Replace Color swaps one color for another.
+  optional dither; Replace Color swaps one color for another. A shading ink
+  steps pixels along a palette ramp, and the Pencil's pixel-perfect mode
+  keeps hand-drawn 1 px lines free of doubled corners.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
 - **Retouching brushes.** Smudge drags colors along under the stroke; the

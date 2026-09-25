@@ -196,6 +196,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             });
             ui.horizontal(|ui| {
                 ui.checkbox(&mut b.antialias, "Anti-aliasing");
+                if !b.antialias {
+                    ui.checkbox(&mut b.pixel_perfect, "Pixel-perfect")
+                        .on_hover_text("Drop the doubled corner pixels of hand-drawn lines (round tips)");
+                }
                 ui.label("Smoothing");
                 ui.spacing_mut().slider_width = 50.0;
                 let mut pct = (b.smoothing * 100.0).round();
@@ -323,7 +327,13 @@ fn section_list(ui: &mut Ui, b: &mut BrushSettings, page: &mut Page) {
     }
     ui.add_space(6.0);
     ui.separator();
-    ui.checkbox(&mut b.antialias, "Anti-aliasing");
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut b.antialias, "Anti-aliasing");
+        if !b.antialias {
+            ui.checkbox(&mut b.pixel_perfect, "Pixel-perfect")
+                .on_hover_text("Drop the doubled corner pixels of hand-drawn lines (round tips)");
+        }
+    });
     ui.horizontal(|ui| {
         ui.label("Smoothing");
         let mut pct = (b.smoothing * 100.0).round();

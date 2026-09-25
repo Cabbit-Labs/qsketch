@@ -153,6 +153,11 @@ pub struct BrushSettings {
     // --- Noise ---
     /// Add per-pixel noise to soft edges.
     pub noise: bool,
+
+    /// Pixel-perfect freehand (hard round tips only): the L-shaped double
+    /// pixels a hand-drawn 1 px line leaves at every turn are dropped, so
+    /// the line is a clean 8-connected chain, as in Aseprite.
+    pub pixel_perfect: bool,
 }
 
 impl Default for BrushSettings {
@@ -204,6 +209,7 @@ impl Default for BrushSettings {
             sat_jitter: 0.0,
             bri_jitter: 0.0,
             noise: false,
+            pixel_perfect: false,
         }
     }
 }
@@ -271,6 +277,7 @@ impl BrushSettings {
                 pressure_opacity: false,
                 smoothing: 0.0,
                 antialias: false,
+                pixel_perfect: true,
                 ..d.clone()
             },
             BrushSettings {
@@ -536,6 +543,10 @@ pub enum PaintMode {
     /// Smudge: the dab picks up what is under it and drags it along; the
     /// brush's opacity is the strength (1 = never fades, never picks up).
     Smudge,
+    /// Shading ink: every pixel under the brush whose color is in the ramp
+    /// (see [`StrokeEngine::with_shading`]) steps one slot along it; other
+    /// pixels are left alone. Each pixel steps once per stroke.
+    Shade,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -576,6 +587,12 @@ pub struct StrokeEngine {
     /// dab's center (side `smudge_side`), so moving the dab drags them along.
     smudge: Option<(Vec<[f32; 4]>, Pt)>,
     smudge_side: i32,
+    /// Shading ramp and step direction (+1 / -1).
+    shade: Option<(Vec<Rgba8>, i32)>,
+    /// Pixel-perfect: the last chain point stamped and the one still
+    /// waiting to see whether the next point makes it an L-corner.
+    pp_prev: Option<Pt>,
+    pp_pending: Option<(Pt, f32)>,
     last: Option<StrokeSample>,
     smooth_pos: Option<Pt>,
     /// The last raw (unsmoothed) input position, so the stroke can finish
@@ -635,6 +652,9 @@ impl StrokeEngine {
             clone: None,
             smudge: None,
             smudge_side,
+            shade: None,
+            pp_prev: None,
+            pp_pending: None,
             last: None,
             smooth_pos: None,
             last_raw: None,
@@ -653,6 +673,39 @@ impl StrokeEngine {
     pub fn with_clone_source(mut self, src: Arc<Raster>, dx: i32, dy: i32) -> Self {
         self.clone = Some((src, dx, dy));
         self
+    }
+
+    /// Shading ink: pixels whose color is in `ramp` move `dir` slots along
+    /// it (clamped at the ends). Only meaningful with [`PaintMode::Shade`].
+    pub fn with_shading(mut self, ramp: Vec<Rgba8>, dir: i32) -> Self {
+        self.shade = Some((ramp, if dir < 0 { -1 } else { 1 }));
+        self
+    }
+
+    fn pixel_perfect(&self) -> bool {
+        self.settings.pixel_perfect && !self.settings.antialias && self.settings.is_round()
+    }
+
+    /// Pixel-perfect chain step: stamp the pending point unless `p` shows it
+    /// to be the corner of an L (orthogonal step in, orthogonal step out,
+    /// ending diagonal to where it began), in which case it is dropped.
+    fn chain_point(&mut self, raster: &mut Raster, p: Pt, pressure: f32) -> IRect {
+        let mut dirty = IRect::EMPTY;
+        if let Some((b, bp)) = self.pp_pending {
+            let is_l = self.pp_prev.is_some_and(|a| {
+                let (dx1, dy1) = ((b.x - a.x).abs(), (b.y - a.y).abs());
+                let (dx2, dy2) = ((p.x - b.x).abs(), (p.y - b.y).abs());
+                let (dx, dy) = ((p.x - a.x).abs(), (p.y - a.y).abs());
+                let ortho = |dx: f32, dy: f32| (dx == 1.0 && dy == 0.0) || (dx == 0.0 && dy == 1.0);
+                ortho(dx1, dy1) && ortho(dx2, dy2) && dx == 1.0 && dy == 1.0
+            });
+            if !is_l {
+                dirty = self.dab_group(raster, b, bp);
+                self.pp_prev = Some(b);
+            }
+        }
+        self.pp_pending = Some((p, pressure));
+        dirty
     }
 
     pub fn with_zoom(mut self, zoom: f32) -> Self {
@@ -732,6 +785,9 @@ impl StrokeEngine {
 
         let Some(last) = self.last else {
             let r = self.dab_group(raster, pos, pressure);
+            if self.pixel_perfect() {
+                self.pp_prev = Some(pixel_snap(pos, self.radius_for(pressure)));
+            }
             self.last = Some(cur);
             self.until_next_dab = self.spacing_px(pressure);
             return r;
@@ -753,11 +809,13 @@ impl StrokeEngine {
             let p1 = pixel_snap(pos, self.radius_for(pressure));
             let (dx, dy) = (p1.x - p0.x, p1.y - p0.y);
             let n = dx.abs().max(dy.abs()).round() as i32;
+            let pp = self.pixel_perfect();
             for k in 1..=n {
                 let t = k as f32 / n as f32;
                 let p = Pt::new(p0.x + (dx * t).round(), p0.y + (dy * t).round());
                 let pr = last.pressure + (pressure - last.pressure) * t;
-                dirty = dirty.union(&self.dab_group(raster, p, pr));
+                let r = if pp { self.chain_point(raster, p, pr) } else { self.dab_group(raster, p, pr) };
+                dirty = dirty.union(&r);
             }
             self.last = Some(cur);
             return dirty;
@@ -784,6 +842,10 @@ impl StrokeEngine {
                 self.smooth_len = 0.0;
                 catch_up = self.extend(raster, StrokeSample { pos: raw, pressure: last.pressure });
             }
+        }
+        if let Some((b, bp)) = self.pp_pending.take() {
+            let r = self.dab_group(raster, b, bp);
+            catch_up = if catch_up.is_empty() { r } else { catch_up.union(&r) };
         }
         let r = if self.dabs == 0 {
             if let Some(l) = self.last {
@@ -1171,6 +1233,18 @@ impl StrokeEngine {
                             src_over(of, [color[0], color[1], color[2], color[3] * eff])
                         }
                         PaintMode::Smudge => continue,
+                        PaintMode::Shade => {
+                            let Some((ramp, dir)) = &self.shade else { continue };
+                            if o.a == 0 || eff < 0.5 {
+                                continue;
+                            }
+                            let Some(i) = ramp.iter().position(|c| c.r == o.r && c.g == o.g && c.b == o.b) else {
+                                continue;
+                            };
+                            let j = (i as i32 + dir).clamp(0, ramp.len() as i32 - 1) as usize;
+                            let n = ramp[j];
+                            [n.r as f32 / 255.0, n.g as f32 / 255.0, n.b as f32 / 255.0, of[3]]
+                        }
                         PaintMode::Erase if self.alpha_lock => {
                             if o.a == 0 {
                                 continue;
@@ -1471,6 +1545,56 @@ mod tests {
 
     /// The clone stamp paints what sits at the source offset, transparency
     /// included; smudge drags a color into empty space.
+    #[test]
+    fn pixel_perfect_drops_l_corners_and_shading_steps_once() {
+        let l = Layer::new(1, "l", 16, 16);
+        let mut s = BrushSettings::preset("Pixel");
+        s.pixel_perfect = true;
+        let mut r = l.raster.clone();
+        let mut e = StrokeEngine::new(s.clone(), PaintMode::Paint, Rgba8::BLACK, &l, None);
+        // Staircase input: right one, down one, right one, down one...
+        let pts = [(2, 2), (3, 2), (3, 3), (4, 3), (4, 4), (5, 4)];
+        for (x, y) in pts {
+            e.extend(&mut r, StrokeSample { pos: Pt::new(x as f32 + 0.5, y as f32 + 0.5), pressure: 1.0 });
+        }
+        e.finish(&mut r);
+        // The corners (3,2) and (4,3) are dropped; the diagonal chain stays.
+        for (x, y) in [(2, 2), (3, 3), (4, 4), (5, 4)] {
+            assert_eq!(r.get_pixel(x, y).a, 255, "({x},{y}) should be painted");
+        }
+        for (x, y) in [(3, 2), (4, 3)] {
+            assert_eq!(r.get_pixel(x, y).a, 0, "({x},{y}) is an L-corner");
+        }
+        // Without pixel-perfect the corners are painted.
+        s.pixel_perfect = false;
+        let mut r2 = l.raster.clone();
+        let mut e2 = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
+        for (x, y) in pts {
+            e2.extend(&mut r2, StrokeSample { pos: Pt::new(x as f32 + 0.5, y as f32 + 0.5), pressure: 1.0 });
+        }
+        e2.finish(&mut r2);
+        assert_eq!(r2.get_pixel(3, 2).a, 255);
+
+        // Shading: a ramp of three; pixels step once per stroke however
+        // many dabs land on them, and non-ramp colors are untouched.
+        let ramp = vec![Rgba8::rgb(10, 10, 10), Rgba8::rgb(120, 120, 120), Rgba8::rgb(240, 240, 240)];
+        let mut base = Layer::new(1, "l", 16, 16);
+        base.raster.fill_rect(IRect::new(0, 0, 16, 16), ramp[0]);
+        base.raster.set_pixel(8, 8, Rgba8::rgb(200, 0, 0));
+        let mut r3 = base.raster.clone();
+        let mut sh = BrushSettings::preset("Pixel");
+        sh.size = 5.0;
+        let mut e3 = StrokeEngine::new(sh, PaintMode::Shade, Rgba8::BLACK, &base, None).with_shading(ramp.clone(), 1);
+        for _ in 0..3 {
+            e3.extend(&mut r3, StrokeSample { pos: Pt::new(8.5, 8.5), pressure: 1.0 });
+            e3.extend(&mut r3, StrokeSample { pos: Pt::new(9.5, 8.5), pressure: 1.0 });
+        }
+        e3.finish(&mut r3);
+        assert_eq!(r3.get_pixel(9, 8), ramp[1], "stepped once");
+        assert_eq!(r3.get_pixel(8, 8), Rgba8::rgb(200, 0, 0), "not in the ramp");
+        assert_eq!(r3.get_pixel(0, 0), ramp[0], "outside the brush");
+    }
+
     #[test]
     fn clone_and_smudge() {
         let mut src = Raster::new(64, 64);

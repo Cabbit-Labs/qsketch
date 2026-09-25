@@ -166,6 +166,34 @@ pub(super) fn begin_engine_with(
     tool: ToolKind,
 ) -> Option<(Box<StrokeEngine>, usize, StrokeExtra)> {
     let (settings, mut mode, mut color) = brush_for(state, tool);
+    // Shading ink: the selected palette run (or the whole palette) is the
+    // ramp; each pixel under the brush steps along it.
+    let shade_ramp: Option<Vec<Rgba8>> = if state.tool_opts.shading
+        && matches!(tool, ToolKind::Brush | ToolKind::Pencil)
+        && state.doc(doc_id).is_some_and(|d| !d.editing_mask())
+    {
+        state.doc(doc_id).and_then(|d| {
+            let pal = &d.doc.state().palette;
+            if pal.is_empty() {
+                return None;
+            }
+            let (a, b) = match d.palette_sel {
+                Some((a, b)) if a != b => (a.min(b), a.max(b).min(pal.len() - 1)),
+                _ => (0, pal.len() - 1),
+            };
+            Some(pal.colors[a..=b].to_vec())
+        })
+    } else {
+        None
+    };
+    if state.tool_opts.shading && matches!(tool, ToolKind::Brush | ToolKind::Pencil) && shade_ramp.is_none() {
+        state.toasts.push(Level::Info, "Shading needs a palette: add colors in the Palette panel.");
+        return None;
+    }
+    if shade_ramp.is_some() {
+        mode = PaintMode::Shade;
+    }
+    let shade_dir = if state.tool_opts.shading_reverse { -1 } else { 1 };
     let (tip, texture) = state.library.resolve(&settings);
     let bg = if mode == PaintMode::Erase { state.fg } else { state.bg };
     let to_selection = tool.is_selection_brush();
@@ -234,8 +262,12 @@ pub(super) fn begin_engine_with(
             .with_background(bg)
             .with_seed(seed)
             .with_zoom(zoom);
-        match &clone_src {
+        let e = match &clone_src {
             Some((src, dx, dy)) => e.with_clone_source(src.clone(), *dx, *dy),
+            None => e,
+        };
+        match &shade_ramp {
+            Some(ramp) => e.with_shading(ramp.clone(), shade_dir),
             None => e,
         }
     };

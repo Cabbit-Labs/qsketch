@@ -2,6 +2,20 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.40.0 — 2026-09-25
+
+- **Pixel-perfect freehand** for hard round tips (Pencil options, the
+  "stairs" toggle; also in the brush's More menu and Brush Settings): the
+  doubled corner pixels a hand-drawn 1 px line leaves at every turn are
+  dropped, so lines come out as clean 8-connected chains. On by default for
+  the Pixel preset.
+- **Shading ink** for the Brush and Pencil (the "stack" toggle in the
+  options bar, shown when the document has a palette): pixels under the
+  brush step one slot along the palette ramp instead of taking the
+  foreground color. Select a run of slots in the Palette panel to use it
+  as the ramp (the whole palette otherwise); the arrow next to the toggle
+  flips the direction. Each pixel steps once per stroke.
+
 ## 0.39.0 — 2026-09-25
 
 - **Palette panel** (Window ▸ Palette): the document's own color palette,

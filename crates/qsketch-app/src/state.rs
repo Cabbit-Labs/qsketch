@@ -48,6 +48,9 @@ pub struct DocEntry {
     /// The layer whose *mask* is the paint target (its mask thumbnail is
     /// selected in the Layers panel). Only matters while that layer is active.
     pub mask_edit: Option<LayerId>,
+    /// Selected run of palette slots in the Palette panel (anchor, end),
+    /// which the shading ink uses as its ramp.
+    pub palette_sel: Option<(usize, usize)>,
 }
 
 impl DocEntry {
@@ -65,6 +68,7 @@ impl DocEntry {
             sel_tint: None,
             share: None,
             mask_edit: None,
+            palette_sel: None,
             flash_seen_active: None,
             layer_flash: None,
         }
