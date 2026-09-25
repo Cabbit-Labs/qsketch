@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.36.0 — 2026-09-25
 
 - **Layer masks.** Layer ▸ Layer Mask ▸ Reveal All / Hide All / From
   Selection adds a Photoshop-style mask; its thumbnail sits beside the layer's
