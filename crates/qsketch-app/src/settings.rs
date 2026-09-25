@@ -153,20 +153,31 @@ mod palette_tests {
     /// Old files get the new Ctrl/Alt = brush size defaults once; a user's
     /// own choice for either chord is left alone.
     #[test]
-    fn ctrl_and_alt_wheel_migrate_to_brush_size() {
+    fn ctrl_wheel_migrates_to_brush_size_and_alt_stays_the_pickers() {
         let mut c = CanvasSettings {
             wheel_ctrl: WheelAction::ScrollVertical,
             wheel_alt: WheelAction::Zoom,
             ctrl_wheel_migrated: false,
+            alt_wheel_restored: false,
             ..Default::default()
         };
         c.migrate_ctrl_wheel();
         assert_eq!(c.wheel_ctrl, WheelAction::BrushSize);
-        assert_eq!(c.wheel_alt, WheelAction::BrushSize);
+        assert_eq!(c.wheel_alt, WheelAction::Zoom);
+        // A file from 0.37.1, where Alt had been given brush size, goes back.
+        let mut from_0371 = CanvasSettings {
+            wheel_alt: WheelAction::BrushSize,
+            ctrl_wheel_migrated: true,
+            alt_wheel_restored: false,
+            ..Default::default()
+        };
+        from_0371.migrate_ctrl_wheel();
+        assert_eq!(from_0371.wheel_alt, WheelAction::Zoom);
         let mut own = CanvasSettings {
             wheel_ctrl: WheelAction::ScrollHorizontal,
             wheel_alt: WheelAction::Nothing,
             ctrl_wheel_migrated: false,
+            alt_wheel_restored: false,
             ..Default::default()
         };
         own.migrate_ctrl_wheel();
@@ -362,19 +373,23 @@ impl CanvasSettings {
         self.wheel_alt = alt;
     }
 
-    /// Ctrl+wheel and Alt+wheel became "brush size" (0.37.1). A file that
-    /// still carries the old default for either takes the new one, once;
-    /// anything the user chose themselves stays.
+    /// Ctrl+wheel became "brush size" (0.37.1). A file that still carries the
+    /// old default for it takes the new one, once; anything the user chose
+    /// themselves stays. (0.37.1 briefly gave Alt+wheel the same job; Alt is
+    /// the color picker's, so 0.37.2 hands an Alt set that way back to zoom.)
     pub fn migrate_ctrl_wheel(&mut self) {
-        if self.ctrl_wheel_migrated {
+        if self.alt_wheel_restored {
             return;
         }
-        self.ctrl_wheel_migrated = true;
-        if self.wheel_ctrl == WheelAction::ScrollVertical {
-            self.wheel_ctrl = WheelAction::BrushSize;
+        self.alt_wheel_restored = true;
+        if !self.ctrl_wheel_migrated {
+            self.ctrl_wheel_migrated = true;
+            if self.wheel_ctrl == WheelAction::ScrollVertical {
+                self.wheel_ctrl = WheelAction::BrushSize;
+            }
         }
-        if self.wheel_alt == WheelAction::Zoom {
-            self.wheel_alt = WheelAction::BrushSize;
+        if self.wheel_alt == WheelAction::BrushSize {
+            self.wheel_alt = WheelAction::Zoom;
         }
     }
 }
@@ -663,6 +678,8 @@ pub struct CanvasSettings {
     pub wheel_migrated: bool,
     #[serde(default)]
     pub ctrl_wheel_migrated: bool,
+    #[serde(default)]
+    pub alt_wheel_restored: bool,
     pub invert_wheel_zoom: bool,
     pub zoom_to_cursor: bool,
     pub brush_cursor: BrushCursor,
@@ -713,9 +730,10 @@ impl Default for CanvasSettings {
             wheel_plain: WheelAction::Zoom,
             wheel_shift: WheelAction::ScrollHorizontal,
             wheel_ctrl: WheelAction::BrushSize,
-            wheel_alt: WheelAction::BrushSize,
+            wheel_alt: WheelAction::Zoom,
             wheel_migrated: false,
             ctrl_wheel_migrated: false,
+            alt_wheel_restored: false,
             invert_wheel_zoom: false,
             zoom_to_cursor: true,
             brush_cursor: BrushCursor::Outline,
