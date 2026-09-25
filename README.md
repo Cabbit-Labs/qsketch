@@ -29,8 +29,8 @@ keyboard.
   optional dither; Replace Color swaps one color for another. A shading ink
   steps pixels along a palette ramp, and the Pencil's pixel-perfect mode
   keeps hand-drawn 1 px lines free of doubled corners. Snap to grid, a
-  tiled preview for seamless tiles and crisp integer-scaled export round
-  out the pixel-art kit.
+  tiled preview for seamless tiles, crisp integer-scaled export and a
+  deduplicated tileset export (sheet + map) round out the pixel-art kit.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
 - **Retouching brushes.** Smudge drags colors along under the stroke; the

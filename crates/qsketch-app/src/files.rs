@@ -224,6 +224,60 @@ pub fn export_scaled(state: &mut AppState, doc_id: DocId, k: u32) -> bool {
     }
 }
 
+/// Export a deduplicated tileset cut on the tile grid (View ▸ Grid size):
+/// `<name>.png` sheet, `<name>.csv` map (one row per grid row, ids with
+/// Tiled-style flip bits) and `<name>.json` with the geometry.
+pub fn export_tileset(state: &mut AppState, doc_id: DocId) -> bool {
+    let Some(entry) = state.doc(doc_id) else { return false };
+    let base = entry.doc.title.trim_end_matches('*').to_string();
+    let stem = Path::new(&base).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or(base);
+    let g = state.settings.canvas.grid_size.max(1);
+    let mut dlg = rfd::FileDialog::new()
+        .set_title(format!("Export Tileset ({g}×{g} tiles from the grid size)"))
+        .add_filter("PNG", &["png"])
+        .set_file_name(format!("{stem}-tiles.png"));
+    if let Some(dir) = entry.doc.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
+        dlg = dlg.set_directory(dir);
+    }
+    let Some(mut path) = dlg.save_file() else { return false };
+    path.set_extension("png");
+    let flat = qsketch_core::composite::flatten(entry.doc.state());
+    let ts = qsketch_core::ops::build_tileset(&flat, g, g, true);
+    let csv_path = path.with_extension("csv");
+    let json_path = path.with_extension("json");
+    let csv: String = ts
+        .map
+        .chunks(ts.map_w.max(1) as usize)
+        .map(|row| row.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let json = serde_json::json!({
+        "tilewidth": g,
+        "tileheight": g,
+        "columns": ts.columns,
+        "tilecount": ts.tile_count,
+        "image": path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+        "map": { "width": ts.map_w, "height": ts.map_h, "data": ts.map },
+        "flipflags": { "h": qsketch_core::ops::TILE_FLIP_H, "v": qsketch_core::ops::TILE_FLIP_V }
+    });
+    let result = io::image_io::export_raster(&path, &ts.sheet)
+        .and_then(|_| std::fs::write(&csv_path, csv).map_err(anyhow::Error::from))
+        .and_then(|_| std::fs::write(&json_path, serde_json::to_string_pretty(&json)?).map_err(anyhow::Error::from));
+    match result {
+        Ok(()) => {
+            state.toasts.push(
+                Level::Success,
+                format!("Exported {} tiles to {} (+ .csv / .json map)", ts.tile_count, path.display()),
+            );
+            true
+        }
+        Err(e) => {
+            state.toasts.push(Level::Error, format!("Tileset export failed: {e:#}"));
+            false
+        }
+    }
+}
+
 /// Close without any confirmation.
 pub fn force_close(state: &mut AppState, doc_id: DocId) {
     if let Some(rs) = &state.render_state {

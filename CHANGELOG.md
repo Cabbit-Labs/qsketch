@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.42.0 — 2026-09-25
+
+- **File ▸ Export Tileset…** cuts the picture on the tile grid (View ▸
+  Grid size), keeps one copy of every distinct tile (flipped uses fold onto
+  the same tile, with Tiled-style flip bits), and writes the sheet PNG plus
+  a `.csv` and `.json` map of which tile each cell uses. The empty tile is
+  always id 0.
+
 ## 0.41.0 — 2026-09-25
 
 - **Snap to Grid** (View ▸ Grid, `Ctrl+Shift+;`): marquee, rectangle,

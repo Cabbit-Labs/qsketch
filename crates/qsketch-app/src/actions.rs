@@ -96,6 +96,7 @@ actions! {
     ExportScaled3 => (File, "Export at 3×…", []),
     ExportScaled4 => (File, "Export at 4×…", []),
     ExportScaled8 => (File, "Export at 8×…", []),
+    ExportTileset => (File, "Export Tileset…", []),
     ShareCanvas => (File, "Share via Leyline…", []),
     StopSharing => (File, "Stop Sharing", []),
     CloseDocument => (File, "Close", ["Ctrl+W"]),

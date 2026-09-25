@@ -663,3 +663,106 @@ mod tests {
         assert_eq!(d.layers[0].raster.get_pixel(3, 1), Rgba8::BLACK);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tileset export
+
+/// Tiled-style flip flags in a tile id.
+pub const TILE_FLIP_H: u32 = 0x8000_0000;
+pub const TILE_FLIP_V: u32 = 0x4000_0000;
+
+/// A deduplicated tileset cut from an image on a `tile_w × tile_h` grid.
+pub struct Tileset {
+    /// Unique tiles packed left to right, `columns` per row.
+    pub sheet: Raster,
+    pub columns: u32,
+    pub tile_count: u32,
+    /// Grid size of the source in tiles.
+    pub map_w: u32,
+    pub map_h: u32,
+    /// Row-major tile id per cell; `TILE_FLIP_H` / `TILE_FLIP_V` bits mark
+    /// a flipped use of the tile when `flips` were folded.
+    pub map: Vec<u32>,
+}
+
+/// Cut `src` into `tile_w × tile_h` tiles, keep one copy of each distinct
+/// tile (also folding horizontal / vertical / both flips when `flips`) and
+/// record which tile each cell uses. Partial edge tiles are padded with
+/// transparency. The empty tile, if any, is id 0.
+pub fn build_tileset(src: &Raster, tile_w: u32, tile_h: u32, flips: bool) -> Tileset {
+    use std::collections::HashMap;
+    let (tw, th) = (tile_w.max(1), tile_h.max(1));
+    let map_w = src.width().div_ceil(tw);
+    let map_h = src.height().div_ceil(th);
+    let mut tiles: Vec<Raster> = Vec::new();
+    let mut seen: HashMap<Vec<u8>, u32> = HashMap::new();
+    // Reserve id 0 for the fully transparent tile so maps read naturally.
+    let empty = Raster::new(tw, th);
+    seen.insert(empty.to_rgba(), 0);
+    tiles.push(empty);
+    let mut map = Vec::with_capacity((map_w * map_h) as usize);
+    for ty in 0..map_h {
+        for tx in 0..map_w {
+            let t = src.crop(IRect::new((tx * tw) as i32, (ty * th) as i32, tw as i32, th as i32));
+            let key = t.to_rgba();
+            if let Some(&id) = seen.get(&key) {
+                map.push(id);
+                continue;
+            }
+            if flips {
+                let h = t.flipped_h();
+                if let Some(&id) = seen.get(&h.to_rgba()) {
+                    map.push(id | TILE_FLIP_H);
+                    continue;
+                }
+                let v = t.flipped_v();
+                if let Some(&id) = seen.get(&v.to_rgba()) {
+                    map.push(id | TILE_FLIP_V);
+                    continue;
+                }
+                if let Some(&id) = seen.get(&h.flipped_v().to_rgba()) {
+                    map.push(id | TILE_FLIP_H | TILE_FLIP_V);
+                    continue;
+                }
+            }
+            let id = tiles.len() as u32;
+            seen.insert(key, id);
+            tiles.push(t);
+            map.push(id);
+        }
+    }
+    let tile_count = tiles.len() as u32;
+    let columns = (tile_count as f32).sqrt().ceil().max(1.0) as u32;
+    let rows = tile_count.div_ceil(columns);
+    let mut sheet = Raster::new(columns * tw, rows * th);
+    for (i, t) in tiles.iter().enumerate() {
+        let (cx, cy) = (i as u32 % columns, i as u32 / columns);
+        sheet.blit(t, (cx * tw) as i32, (cy * th) as i32, false);
+    }
+    Tileset { sheet, columns, tile_count, map_w, map_h, map }
+}
+
+#[cfg(test)]
+mod tileset_tests {
+    use super::*;
+
+    #[test]
+    fn tileset_dedups_and_folds_flips() {
+        let mut r = Raster::new(8, 4);
+        // Two 4×4 tiles: the second is the first flipped horizontally.
+        r.set_pixel(0, 0, Rgba8::BLACK);
+        r.set_pixel(7, 0, Rgba8::BLACK);
+        let ts = build_tileset(&r, 4, 4, false);
+        assert_eq!(ts.tile_count, 3, "empty + two distinct");
+        assert_eq!(ts.map, vec![1, 2]);
+        let ts = build_tileset(&r, 4, 4, true);
+        assert_eq!(ts.tile_count, 2, "empty + one, the other is its flip");
+        assert_eq!(ts.map, vec![1, 1 | TILE_FLIP_H]);
+        assert_eq!(ts.sheet.get_pixel(4, 0), Rgba8::BLACK, "tile 1 sits after the empty tile");
+        // A blank region maps to the empty tile 0.
+        let blank = Raster::new(8, 8);
+        let ts = build_tileset(&blank, 4, 4, false);
+        assert_eq!(ts.map, vec![0, 0, 0, 0]);
+        assert_eq!(ts.tile_count, 1);
+    }
+}

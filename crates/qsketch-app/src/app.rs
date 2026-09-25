@@ -806,6 +806,7 @@ impl QSketchApp {
                         self.menu_item(ui, a, has_doc);
                     }
                 });
+                self.menu_item(ui, Action::ExportTileset, has_doc);
                 ui.separator();
                 let shared = self.state.active().is_some_and(|d| d.share.is_some());
                 self.menu_item(ui, Action::ShareCanvas, true);
@@ -1354,6 +1355,11 @@ impl QSketchApp {
                 };
                 if let Some(id) = active {
                     crate::files::export_scaled(&mut self.state, id, k);
+                }
+            }
+            Action::ExportTileset => {
+                if let Some(id) = active {
+                    crate::files::export_tileset(&mut self.state, id);
                 }
             }
             Action::ToggleSnapToGrid => {

@@ -22,6 +22,7 @@ reachable from its menu until you assign one.
 | Save As… | `Ctrl+Shift+S` |
 | Export Image… | `Ctrl+Shift+E` |
 | Export at 2× / 3× / 4× / 8×… | — |
+| Export Tileset… | — |
 | Share via Leyline… | — |
 | Stop Sharing | — |
 | Close | `Ctrl+W` |
