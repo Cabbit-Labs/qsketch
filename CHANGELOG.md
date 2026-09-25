@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.37.1 — 2026-09-25
 
 - **Ctrl+wheel and Alt+wheel resize the brush** of the current tool (wheel
   up = bigger), in the same steps as `[` and `]`. Both are the new defaults
