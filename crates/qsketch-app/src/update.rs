@@ -61,6 +61,19 @@ pub struct Manifest {
     #[allow(dead_code)]
     pub pub_date: String,
     pub platforms: std::collections::HashMap<String, PlatformEntry>,
+    /// Notes of every release, newest first (from the changelog), so a
+    /// client that skipped versions can show all of them.
+    #[serde(default)]
+    pub history: Vec<ReleaseNotes>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ReleaseNotes {
+    pub version: String,
+    #[serde(default)]
+    pub date: String,
+    #[serde(default)]
+    pub notes: String,
 }
 
 /// Split release notes into display blocks for the update dialog.
@@ -70,6 +83,9 @@ pub struct Manifest {
 /// paragraph — what older releases shipped — is broken at sentence ends so
 /// it doesn't render as a wall of text.
 pub fn notes_blocks(notes: &str) -> Vec<String> {
+    // Changelog sections carry light markdown; the dialog shows plain text.
+    // "▸" (menu paths) has no glyph in the UI font.
+    let notes = notes.replace("**", "").replace('`', "").replace('▸', "›");
     let notes = notes.trim();
     if notes.is_empty() {
         return Vec::new();
@@ -158,6 +174,9 @@ fn split_sentences(p: &str) -> Vec<String> {
 pub struct UpdateInfo {
     pub version: String,
     pub notes: String,
+    /// Every release newer than the running one, newest first, when the
+    /// manifest carries a changelog history; empty otherwise (show `notes`).
+    pub history: Vec<ReleaseNotes>,
     pub url: String,
     pub signature: String,
 }
@@ -422,9 +441,33 @@ fn newer_entry(m: &Manifest, manifest_url: &str, current: &str) -> Result<Option
     let Some(entry) = m.platforms.get(platform_key()) else {
         return Ok(None);
     };
+    // Everything the user skipped, newest first; the latest release is
+    // listed from its manifest notes if the changelog has no section yet.
+    let mut history: Vec<ReleaseNotes> = m
+        .history
+        .iter()
+        .filter(|h| semver::Version::parse(h.version.trim()).is_ok_and(|v| v > cur && v <= latest))
+        .cloned()
+        .collect();
+    history.sort_by(|a, b| {
+        let va = semver::Version::parse(a.version.trim()).unwrap();
+        let vb = semver::Version::parse(b.version.trim()).unwrap();
+        vb.cmp(&va)
+    });
+    if !history.is_empty() && history[0].version.trim() != m.version.trim() {
+        history.insert(
+            0,
+            ReleaseNotes { version: m.version.trim().to_string(), date: String::new(), notes: m.notes.clone() },
+        );
+    }
+    // One entry adds nothing over the plain notes.
+    if history.len() < 2 {
+        history.clear();
+    }
     Ok(Some(UpdateInfo {
         version: m.version.trim().to_string(),
         notes: m.notes.clone(),
+        history,
         url: resolve_url(manifest_url, &entry.url),
         signature: entry.signature.clone(),
     }))
@@ -629,7 +672,27 @@ mod tests {
             "windows-x86_64".to_string(),
             PlatformEntry { url: "https://example.invalid/qsketch-9.9.9-setup.exe".into(), signature: "sig".into() },
         );
-        Manifest { version: version.into(), notes: "n".into(), pub_date: String::new(), platforms }
+        Manifest { version: version.into(), notes: "n".into(), pub_date: String::new(), platforms, history: Vec::new() }
+    }
+
+    #[test]
+    fn history_lists_only_skipped_versions_newest_first() {
+        let url = "https://host/update/qsketch-latest.json";
+        let mut m = manifest("0.5.0");
+        let rn = |v: &str| ReleaseNotes { version: v.into(), date: String::new(), notes: format!("notes {v}") };
+        m.history = vec![rn("0.2.0"), rn("0.5.0"), rn("0.4.0"), rn("0.3.0"), rn("0.6.0")];
+        let info = newer_entry(&m, url, "0.3.0").unwrap().unwrap();
+        let vs: Vec<&str> = info.history.iter().map(|h| h.version.as_str()).collect();
+        assert_eq!(vs, ["0.5.0", "0.4.0"]);
+        // Latest missing from the history: its manifest notes lead.
+        m.history = vec![rn("0.4.0")];
+        let info = newer_entry(&m, url, "0.3.0").unwrap().unwrap();
+        assert_eq!(info.history[0].version, "0.5.0");
+        assert_eq!(info.history[0].notes, "n");
+        // A single step: nothing beyond the plain notes.
+        let info = newer_entry(&m, url, "0.4.0").unwrap().unwrap();
+        assert!(info.history.is_empty());
+        assert!(newer_entry(&manifest("0.5.0"), url, "0.1.0").unwrap().unwrap().history.is_empty());
     }
 
     #[test]

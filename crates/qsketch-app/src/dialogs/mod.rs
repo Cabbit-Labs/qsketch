@@ -291,9 +291,18 @@ fn show_update(ctx: &Context, state: &mut AppState) {
                         );
                     });
                     let blocks = crate::update::notes_blocks(&i.notes);
-                    if !blocks.is_empty() {
+                    if !blocks.is_empty() || !i.history.is_empty() {
                         ui.add_space(10.0);
-                        ui.label(RichText::new("WHAT'S NEW").weak().small().strong());
+                        let title = if i.history.len() > 1 {
+                            format!(
+                                "WHAT'S NEW · {} releases since {}",
+                                i.history.len(),
+                                crate::update::CURRENT_VERSION
+                            )
+                        } else {
+                            "WHAT'S NEW".to_string()
+                        };
+                        ui.label(RichText::new(title).weak().small().strong());
                         ui.add_space(4.0);
                         // Grows with the window, so a long changelog is
                         // readable instead of clipped after a few lines.
@@ -306,11 +315,35 @@ fn show_update(ctx: &Context, state: &mut AppState) {
                                 egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(
                                     ui,
                                     |ui| {
-                                        for (n, block) in blocks.iter().enumerate() {
-                                            if n > 0 {
-                                                ui.add_space(6.0);
+                                        if i.history.is_empty() {
+                                            for (n, block) in blocks.iter().enumerate() {
+                                                if n > 0 {
+                                                    ui.add_space(6.0);
+                                                }
+                                                bullet(ui, block);
                                             }
-                                            bullet(ui, block);
+                                            return;
+                                        }
+                                        // Several versions at once: one
+                                        // section per release, newest first.
+                                        for (k, rel) in i.history.iter().enumerate() {
+                                            if k > 0 {
+                                                ui.add_space(10.0);
+                                            }
+                                            ui.horizontal(|ui| {
+                                                ui.label(RichText::new(&rel.version).strong());
+                                                if !rel.date.is_empty() {
+                                                    ui.label(RichText::new(&rel.date).weak().small());
+                                                }
+                                            });
+                                            ui.add_space(2.0);
+                                            for (n, block) in crate::update::notes_blocks(&rel.notes).iter().enumerate()
+                                            {
+                                                if n > 0 {
+                                                    ui.add_space(6.0);
+                                                }
+                                                bullet(ui, block);
+                                            }
                                         }
                                     },
                                 );

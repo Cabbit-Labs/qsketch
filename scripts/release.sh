@@ -141,11 +141,30 @@ if os.environ.get("SETUP_NAME"):
     platforms["windows-x86_64"] = {"url": os.environ["SETUP_NAME"], "signature": os.environ["SETUP_SIG"]}
 elif "windows-x86_64" in platforms:
     pass  # keep a same-version Windows entry from a previous --no-windows run
+# Every release's notes, newest first, from CHANGELOG.md ("## X.Y.Z — date"
+# sections), so a client several versions behind can show what it skipped.
+import re
+history = []
+try:
+    cur = None
+    for line in open("CHANGELOG.md", encoding="utf-8"):
+        m = re.match(r"^## (\d+\.\d+\.\d+)\s*(?:[—–-]\s*(\S+))?", line)
+        if m:
+            cur = {"version": m.group(1), "date": m.group(2) or "", "notes": ""}
+            history.append(cur)
+        elif cur is not None:
+            cur["notes"] += line
+    for h in history:
+        h["notes"] = h["notes"].strip()
+    history = history[:40]
+except Exception as e:
+    print(f"warning: no changelog history in manifest: {e}", file=sys.stderr)
 json.dump({
     "version": os.environ["VER"],
     "notes": os.environ["NOTES"],
     "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "platforms": platforms,
+    "history": history,
 }, open(out, "w"), indent=2)
 open(out, "a").write("\n")
 PY

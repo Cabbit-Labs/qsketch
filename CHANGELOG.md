@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.42.1 — 2026-09-25
+
+- Update dialog: when several releases are skipped, What's New lists every
+  one of them, newest first, each under its version and date, instead of
+  only the latest release's notes. (The update manifest now carries the
+  changelog history.)
+- Brush Settings: the Anti-aliasing and Pixel-perfect boxes sit one per row
+  in the left column instead of spilling into the page beside it.
+
 ## 0.42.0 — 2026-09-25
 
 - **File ▸ Export Tileset…** cuts the picture on the tile grid (View ▸
