@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.34.2 — 2026-09-25
 
 - History panel: a Photoshop-style **snapshot row** at the top holds the
   document as it was opened (refreshed on every Save). Click it to go back
