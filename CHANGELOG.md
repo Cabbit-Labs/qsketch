@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- **Curves** (Image ▸ Adjustments ▸ Curves…, `Ctrl+M`): a Photoshop-style
+  tone curve per channel with the histogram behind it. Click to add a point,
+  drag to bend, right-click a point to remove it. Points are joined by a
+  monotone spline, so the curve never overshoots and posterizes between them.
+- **Color Balance** (`Ctrl+B`): cyan↔red, magenta↔green and yellow↔blue for
+  shadows, midtones and highlights separately, with Preserve Luminosity so the
+  result is a tint rather than a brightening.
+
 ## 0.34.2 — 2026-09-25
 
 - History panel: a Photoshop-style **snapshot row** at the top holds the

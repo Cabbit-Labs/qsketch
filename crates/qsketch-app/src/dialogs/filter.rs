@@ -9,7 +9,9 @@
 use std::time::Instant;
 
 use egui::{Context, Key, RichText, Ui};
-use qsketch_core::filter::{self, DitherPattern, Filter, Levels, LevelsChannel, OffsetEdge, RadialMode};
+use qsketch_core::filter::{
+    self, ColorBalance, Curves, DitherPattern, Filter, Levels, LevelsChannel, OffsetEdge, RadialMode, ToneRange,
+};
 use qsketch_core::{LayerId, Rgba8};
 
 use crate::actions::Action;
@@ -50,6 +52,8 @@ pub fn default_filter(a: Action, fg: Rgba8, bg: Rgba8) -> Option<Filter> {
         Action::HueSaturation => Filter::HueSaturation { hue: 0.0, saturation: 0.0, lightness: 0.0, colorize: false },
         Action::BrightnessContrast => Filter::BrightnessContrast { brightness: 0.0, contrast: 0.0 },
         Action::Levels => Filter::Levels(Levels::default()),
+        Action::Curves => Filter::Curves(Curves::default()),
+        Action::ColorBalance => Filter::ColorBalance(ColorBalance::default()),
         Action::FilterGaussianBlur => Filter::GaussianBlur { radius: 5.0 },
         Action::FilterBoxBlur => Filter::BoxBlur { radius: 3 },
         Action::FilterMotionBlur => Filter::MotionBlur { angle: 0.0, distance: 20.0 },
@@ -132,7 +136,7 @@ pub fn open_with(state: &mut AppState, f: Filter) {
         revert(state, &prev);
     }
     let hist = match &f {
-        Filter::Levels(_) => state.doc(target.0).map(|e| histogram(e, &target.1)),
+        Filter::Levels(_) | Filter::Curves(_) => state.doc(target.0).map(|e| histogram(e, &target.1)),
         _ => None,
     };
     let base = state.doc(target.0).map(|e| e.doc.history.current_id()).unwrap_or(0);
@@ -271,7 +275,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
     if now_base != d.base {
         d.base = now_base;
         d.applied = None;
-        if matches!(d.filter, Filter::Levels(_)) {
+        if matches!(d.filter, Filter::Levels(_) | Filter::Curves(_)) {
             d.hist = state.doc(d.doc).map(|e| histogram(e, &d.layers));
         }
     }
@@ -284,7 +288,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
             d.applied = None;
         }
         d.layers = targets;
-        if matches!(d.filter, Filter::Levels(_)) {
+        if matches!(d.filter, Filter::Levels(_) | Filter::Curves(_)) {
             d.hist = state.doc(d.doc).map(|e| histogram(e, &d.layers));
         }
     }
@@ -300,10 +304,11 @@ pub fn show(ctx: &Context, state: &mut AppState) {
             ui.set_width(320.0);
             ui.label(RichText::new(d.filter.describe()).weak().small());
             ui.add_space(6.0);
-            if let Filter::Levels(l) = &mut d.filter {
-                levels_ui(ui, l, d.hist.as_deref());
-            } else {
-                params_ui(ui, &mut d.filter);
+            match &mut d.filter {
+                Filter::Levels(l) => levels_ui(ui, l, d.hist.as_deref()),
+                Filter::Curves(c) => curves_ui(ui, c, d.hist.as_deref()),
+                Filter::ColorBalance(b) => color_balance_ui(ui, b),
+                f => params_ui(ui, f),
             }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
@@ -416,6 +421,188 @@ fn color_ui(ui: &mut Ui, label: &str, c: &mut Rgba8) {
         }
         ui.label(label);
     });
+}
+
+fn channel_color(ui: &Ui, c: LevelsChannel) -> egui::Color32 {
+    match c {
+        LevelsChannel::Rgb => ui.visuals().text_color(),
+        LevelsChannel::Red => egui::Color32::from_rgb(230, 80, 80),
+        LevelsChannel::Green => egui::Color32::from_rgb(80, 200, 90),
+        LevelsChannel::Blue => egui::Color32::from_rgb(90, 130, 240),
+    }
+}
+
+/// Draw the histogram bars of one channel into `inner` (bottom-aligned).
+fn draw_histogram(p: &egui::Painter, inner: egui::Rect, bins: &[u32; 256], col: egui::Color32) {
+    let mut sorted: Vec<u32> = bins.to_vec();
+    sorted.sort_unstable();
+    let top = sorted[253].max(1) as f32;
+    let bw = inner.width() / 256.0;
+    for (i, &n) in bins.iter().enumerate() {
+        if n == 0 {
+            continue;
+        }
+        let hgt = (n as f32 / top).min(1.0) * inner.height();
+        let x0 = inner.left() + i as f32 * bw;
+        p.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(x0, inner.bottom() - hgt),
+                egui::pos2(x0 + bw.max(1.0), inner.bottom()),
+            ),
+            0.0,
+            col,
+        );
+    }
+}
+
+/// Photoshop-style Curves: a square graph with the histogram behind it, the
+/// curve drawn over it, draggable control points. Click empty curve to add a
+/// point, drag to move, right-click (or drag off the graph) to remove.
+fn curves_ui(ui: &mut Ui, c: &mut Curves, hist: Option<&[[u32; 256]; 4]>) {
+    ui.horizontal(|ui| {
+        ui.label("Channel");
+        for (ch, name) in [
+            (LevelsChannel::Rgb, "RGB"),
+            (LevelsChannel::Red, "Red"),
+            (LevelsChannel::Green, "Green"),
+            (LevelsChannel::Blue, "Blue"),
+        ] {
+            ui.selectable_value(&mut c.channel, ch, name);
+        }
+    });
+    ui.add_space(4.0);
+    let side = ui.available_width().min(300.0);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
+    let inner = rect.shrink(6.0);
+    let p = ui.painter();
+    p.rect_filled(rect, 3.0, ui.visuals().extreme_bg_color);
+    let col = channel_color(ui, c.channel);
+    if let Some(h) = hist {
+        let bins = &h[match c.channel {
+            LevelsChannel::Rgb => 0,
+            LevelsChannel::Red => 1,
+            LevelsChannel::Green => 2,
+            LevelsChannel::Blue => 3,
+        }];
+        draw_histogram(p, inner, bins, col.gamma_multiply(0.25));
+    }
+    // Quarter grid and the identity diagonal.
+    let grid = egui::Stroke::new(1.0, ui.visuals().weak_text_color().gamma_multiply(0.35));
+    for k in 1..4 {
+        let f = k as f32 / 4.0;
+        let x = inner.left() + f * inner.width();
+        let y = inner.top() + f * inner.height();
+        p.line_segment([egui::pos2(x, inner.top()), egui::pos2(x, inner.bottom())], grid);
+        p.line_segment([egui::pos2(inner.left(), y), egui::pos2(inner.right(), y)], grid);
+    }
+    p.line_segment([inner.left_bottom(), inner.right_top()], grid);
+    let to_screen = |x: f32, y: f32| {
+        egui::pos2(inner.left() + x / 255.0 * inner.width(), inner.bottom() - y / 255.0 * inner.height())
+    };
+    let from_screen = |s: egui::Pos2| {
+        (
+            ((s.x - inner.left()) / inner.width() * 255.0).clamp(0.0, 255.0),
+            ((inner.bottom() - s.y) / inner.height() * 255.0).clamp(0.0, 255.0),
+        )
+    };
+    // The curve itself.
+    let curve = c.curve(c.channel).clone();
+    let pts: Vec<egui::Pos2> =
+        (0..=128).map(|i| to_screen(i as f32 * 2.0, curve.apply(i as f32 / 128.0) * 255.0)).collect();
+    p.add(egui::Shape::line(pts, egui::Stroke::new(1.5, col)));
+    for pt in &curve.points {
+        let s = to_screen(pt[0], pt[1]);
+        p.circle_filled(s, 4.0, col);
+        p.circle_stroke(s, 4.0, egui::Stroke::new(1.0, ui.visuals().extreme_bg_color));
+    }
+    // Interaction: the dragged point index lives in egui's temp memory.
+    let drag_id = ui.id().with("curve_drag");
+    let hit = |pos: egui::Pos2| curve.points.iter().position(|pt| to_screen(pt[0], pt[1]).distance(pos) < 8.0);
+    if let Some(pos) = resp.interact_pointer_pos() {
+        if resp.drag_started() || resp.clicked() {
+            let idx = hit(pos);
+            ui.data_mut(|d| d.insert_temp(drag_id, idx.map(|i| i as i64).unwrap_or(-1)));
+            if idx.is_none() && !resp.secondary_clicked() {
+                let (x, y) = from_screen(pos);
+                let at = c.curve_mut(c.channel).set_point(None, x, y);
+                ui.data_mut(|d| d.insert_temp(drag_id, at as i64));
+            }
+        }
+        if resp.dragged() {
+            let idx = ui.data(|d| d.get_temp::<i64>(drag_id)).unwrap_or(-1);
+            if idx >= 0 {
+                let (x, y) = from_screen(pos);
+                let n = c.curve(c.channel).points.len();
+                // End points slide only vertically, so the curve always
+                // covers the whole range.
+                let cur = c.curve_mut(c.channel);
+                let at = if idx as usize == 0 || idx as usize == n - 1 {
+                    cur.points[idx as usize][1] = y;
+                    idx as usize
+                } else {
+                    cur.set_point(Some(idx as usize), x, y)
+                };
+                ui.data_mut(|d| d.insert_temp(drag_id, at as i64));
+            }
+        }
+        if resp.secondary_clicked() {
+            if let Some(i) = hit(pos) {
+                let cur = c.curve_mut(c.channel);
+                if cur.points.len() > 2 && i != 0 && i != cur.points.len() - 1 {
+                    cur.points.remove(i);
+                }
+            }
+        }
+    }
+    if resp.drag_stopped() {
+        ui.data_mut(|d| d.insert_temp(drag_id, -1i64));
+    }
+    if let Some(pos) = resp.hover_pos() {
+        let (x, _) = from_screen(pos);
+        let y = curve.apply(x / 255.0) * 255.0;
+        ui.label(RichText::new(format!("Input {x:.0}   Output {y:.0}")).weak().small());
+    } else {
+        ui.label(RichText::new("Click to add a point · drag to bend · right-click a point to remove").weak().small());
+    }
+    ui.horizontal(|ui| {
+        if crate::ui::widgets::small_button(ui, "Reset channel").clicked() {
+            *c.curve_mut(c.channel) = Default::default();
+        }
+        if crate::ui::widgets::small_button(ui, "Reset all").clicked() {
+            let ch = c.channel;
+            *c = Curves::default();
+            c.channel = ch;
+        }
+    });
+}
+
+/// Color Balance: a tonal-range picker and three two-ended sliders.
+fn color_balance_ui(ui: &mut Ui, b: &mut ColorBalance) {
+    ui.horizontal(|ui| {
+        ui.label("Tone");
+        for (r, name) in
+            [(ToneRange::Shadows, "Shadows"), (ToneRange::Midtones, "Midtones"), (ToneRange::Highlights, "Highlights")]
+        {
+            ui.selectable_value(&mut b.range, r, name);
+        }
+    });
+    ui.add_space(4.0);
+    let range = b.range;
+    let v = b.levels_mut(range);
+    for (i, (lo, hi)) in [("Cyan", "Red"), ("Magenta", "Green"), ("Yellow", "Blue")].iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(*lo).weak().small());
+            ui.add(egui::Slider::new(&mut v[i], -100.0..=100.0).show_value(true).fixed_decimals(0));
+            ui.label(RichText::new(*hi).weak().small());
+        });
+    }
+    ui.checkbox(&mut b.preserve_luminosity, "Preserve luminosity")
+        .on_hover_text("Keep each pixel as light as it was, so the change is a tint rather than a brightening");
+    if crate::ui::widgets::small_button(ui, "Reset").clicked() {
+        let r = b.range;
+        *b = ColorBalance::default();
+        b.range = r;
+    }
 }
 
 /// Photoshop-style Levels: channel picker, histogram, input black / gamma /
@@ -544,7 +731,7 @@ fn params_ui(ui: &mut Ui, f: &mut Filter) {
             slider(ui, brightness, -100.0..=100.0, "Brightness", "");
             slider(ui, contrast, -100.0..=100.0, "Contrast", "");
         }
-        Filter::Levels(_) => {}
+        Filter::Levels(_) | Filter::Curves(_) | Filter::ColorBalance(_) => {}
         Filter::HueSaturation { hue, saturation, lightness, colorize } => {
             if *colorize {
                 slider(ui, hue, 0.0..=360.0, "Hue", "°");
@@ -778,7 +965,7 @@ mod tests {
         let fg = Rgba8::new(220, 30, 60, 255);
         let bg = Rgba8::new(20, 200, 120, 255);
         // Identity by design at their defaults: sliders start centered.
-        let identity_ok = ["offset", "brightness_contrast", "levels", "hue_saturation"];
+        let identity_ok = ["offset", "brightness_contrast", "levels", "curves", "color_balance", "hue_saturation"];
         let mut outputs: Vec<(&'static str, Vec<u8>)> = Vec::new();
         let mut inert = Vec::new();
         for &a in Action::ALL {

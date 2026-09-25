@@ -122,6 +122,8 @@ actions! {
     Desaturate => (Image, "Desaturate", ["Ctrl+Shift+U"]),
     BrightnessContrast => (Image, "Brightness/Contrast…", []),
     Levels => (Image, "Levels…", ["Ctrl+L"]),
+    Curves => (Image, "Curves…", ["Ctrl+M"]),
+    ColorBalance => (Image, "Color Balance…", ["Ctrl+B"]),
     HueSaturation => (Image, "Hue/Saturation…", ["Ctrl+H", "Ctrl+U"]),
     // Layer
     NewLayer => (Layer, "New Layer", ["Ctrl+Shift+N"]),

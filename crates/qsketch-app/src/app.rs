@@ -840,7 +840,9 @@ impl QSketchApp {
                 ui.menu_button("Adjustments", |ui| {
                     self.menu_item(ui, Action::BrightnessContrast, has_doc);
                     self.menu_item(ui, Action::Levels, has_doc);
+                    self.menu_item(ui, Action::Curves, has_doc);
                     self.menu_item(ui, Action::HueSaturation, has_doc);
+                    self.menu_item(ui, Action::ColorBalance, has_doc);
                     ui.separator();
                     self.menu_item(ui, Action::Desaturate, has_doc);
                     self.menu_item(ui, Action::InvertColors, has_doc);
@@ -1369,9 +1371,11 @@ impl QSketchApp {
             Action::Rotate180 => self.orient("Rotate 180°", ops::Orient::Rotate(2)),
             Action::InvertColors => self.edit_layer("Invert", ops::invert_colors),
             Action::Desaturate => self.edit_layer("Desaturate", ops::desaturate),
-            Action::BrightnessContrast | Action::Levels | Action::HueSaturation => {
-                dialogs::filter::open(&mut self.state, action)
-            }
+            Action::BrightnessContrast
+            | Action::Levels
+            | Action::Curves
+            | Action::ColorBalance
+            | Action::HueSaturation => dialogs::filter::open(&mut self.state, action),
             Action::LastFilter => dialogs::filter::repeat_last(&mut self.state),
             Action::LastFilterDialog => dialogs::filter::reopen_last(&mut self.state),
             a if a.category() == Category::Filter => dialogs::filter::open(&mut self.state, a),

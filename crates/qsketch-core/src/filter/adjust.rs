@@ -1,7 +1,7 @@
 //! Color adjustments that run through the filter pipeline so they get the
 //! same live preview, selection handling and multi-layer application.
 
-use super::{map_rgb, Img, Levels, Src};
+use super::{map_rgb, ColorBalance, Curves, Img, Levels, Src};
 
 /// Photoshop-style Brightness/Contrast, both -100..=100.
 pub fn brightness_contrast(src: &Src, brightness: f32, contrast: f32) -> Img {
@@ -23,6 +23,49 @@ pub fn levels(src: &Src, l: &Levels) -> Img {
     let (lr, lg, lb) = (lut(&l.red), lut(&l.green), lut(&l.blue));
     let idx = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as usize;
     src.map(|x, y| map_rgb(src.at(x, y), |c| [lr[idx(c[0])], lg[idx(c[1])], lb[idx(c[2])]]))
+}
+
+/// Curves: per-channel curves first, then the master curve, via 256-entry LUTs.
+pub fn curves(src: &Src, c: &Curves) -> Img {
+    let lut = |ch: &super::Curve| -> Vec<f32> { (0..256).map(|i| c.rgb.apply(ch.apply(i as f32 / 255.0))).collect() };
+    let (lr, lg, lb) = (lut(&c.red), lut(&c.green), lut(&c.blue));
+    let idx = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as usize;
+    src.map(|x, y| map_rgb(src.at(x, y), |c| [lr[idx(c[0])], lg[idx(c[1])], lb[idx(c[2])]]))
+}
+
+/// Photoshop-style Color Balance. Each tonal range's three sliders shift
+/// red, green and blue, weighted by how much of the pixel's luminance falls
+/// in that range (shadows peak at black, highlights at white, midtones in
+/// between); `preserve_luminosity` then restores the original lightness so
+/// the tint does not also brighten or darken.
+pub fn color_balance(src: &Src, b: &ColorBalance) -> Img {
+    let scale = 1.0 / 100.0;
+    let sh = b.shadows.map(|v| v * scale);
+    let mid = b.midtones.map(|v| v * scale);
+    let hi = b.highlights.map(|v| v * scale);
+    src.map(|x, y| {
+        map_rgb(src.at(x, y), |c| {
+            let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+            // Smooth tonal weights that sum to about one across the range.
+            let ws = (1.0 - l * 2.0).clamp(0.0, 1.0);
+            let wh = (l * 2.0 - 1.0).clamp(0.0, 1.0);
+            let wm = 1.0 - ws - wh;
+            let mut out = [0.0f32; 3];
+            for k in 0..3 {
+                // Midtone adjustments are the gentlest, as in Photoshop.
+                let d = sh[k] * ws * 0.6 + mid[k] * wm * 0.5 + hi[k] * wh * 0.6;
+                out[k] = (c[k] + d).clamp(0.0, 1.0);
+            }
+            if b.preserve_luminosity {
+                // Shift all three channels equally until the luma is back
+                // where it was: a tint, not a lightening.
+                let l1 = 0.299 * out[0] + 0.587 * out[1] + 0.114 * out[2];
+                let d = l - l1;
+                out = out.map(|v| (v + d).clamp(0.0, 1.0));
+            }
+            out
+        })
+    })
 }
 
 /// RGB (straight, 0..=1) to HSL with hue in degrees.
@@ -90,6 +133,49 @@ pub fn hue_saturation(src: &Src, hue: f32, saturation: f32, lightness: f32, colo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The default curve is the identity; a raised midpoint brightens the
+    /// midtones, leaves the ends alone, and never overshoots.
+    #[test]
+    fn curve_is_monotone_and_identity_by_default() {
+        let c = super::super::Curve::default();
+        for i in 0..=255 {
+            assert!((c.apply(i as f32 / 255.0) * 255.0 - i as f32).abs() < 0.01);
+        }
+        let mut s = super::super::Curve::default();
+        s.set_point(None, 128.0, 192.0);
+        assert_eq!(s.points.len(), 3);
+        assert!((s.apply(0.5) - 192.0 / 255.0).abs() < 0.01);
+        assert!(s.apply(0.0) < 0.001 && s.apply(1.0) > 0.999);
+        let mut prev = -1.0;
+        for i in 0..=255 {
+            let v = s.apply(i as f32 / 255.0);
+            assert!(v >= prev - 1e-6, "curve dips at {i}");
+            prev = v;
+        }
+        // Two points cannot share an input column.
+        s.set_point(None, 128.0, 10.0);
+        let xs: Vec<f32> = s.points.iter().map(|p| p[0]).collect();
+        assert!(xs.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    /// Pushing midtones toward red reddens a mid-gray, leaves lightness
+    /// alone when asked to, and does not touch pure black.
+    #[test]
+    fn color_balance_tints_by_range() {
+        use super::super::{apply_filter, Filter};
+        use crate::DocState;
+        let mut s = DocState::new(2, 1, None);
+        s.layers[0].raster.set_pixel(0, 0, crate::Rgba8::new(128, 128, 128, 255));
+        s.layers[0].raster.set_pixel(1, 0, crate::Rgba8::new(0, 0, 0, 255));
+        let b = ColorBalance { midtones: [100.0, 0.0, 0.0], ..Default::default() };
+        apply_filter(&mut s, 0, &Filter::ColorBalance(b));
+        let p = s.layers[0].raster.get_pixel(0, 0);
+        assert!(p.r > p.g && p.g == p.b, "{p:?}");
+        let l = 0.299 * p.r as f32 + 0.587 * p.g as f32 + 0.114 * p.b as f32;
+        assert!((l - 128.0).abs() < 8.0, "lightness kept: {l}");
+        assert_eq!(s.layers[0].raster.get_pixel(1, 0), crate::Rgba8::new(0, 0, 0, 255));
+    }
 
     #[test]
     fn hsl_roundtrip() {

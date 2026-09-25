@@ -59,6 +59,8 @@ reachable from its menu until you assign one.
 | Desaturate | `Ctrl+Shift+U` |
 | Brightness/Contrast… | — |
 | Levels… | `Ctrl+L` |
+| Curves… | `Ctrl+M` |
+| Color Balance… | `Ctrl+B` |
 | Hue/Saturation… | `Ctrl+H` (also `Ctrl+U`) |
 
 ## Layer

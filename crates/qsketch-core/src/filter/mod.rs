@@ -433,6 +433,165 @@ impl LevelsCurve {
     }
 }
 
+/// One Curves channel: control points in 0..=255 input/output, sorted by
+/// input, joined by a monotone cubic so the curve never overshoots between
+/// points (a Catmull-Rom would, and a tone curve that dips below its own
+/// points posterizes).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Curve {
+    pub points: Vec<[f32; 2]>,
+}
+
+impl Default for Curve {
+    fn default() -> Self {
+        Self { points: vec![[0.0, 0.0], [255.0, 255.0]] }
+    }
+}
+
+impl Curve {
+    pub fn is_identity(&self) -> bool {
+        self.points.iter().all(|p| (p[0] - p[1]).abs() < 1e-3) && self.points.len() >= 2
+    }
+
+    /// Insert or move a point; inputs are kept unique and sorted.
+    pub fn set_point(&mut self, idx: Option<usize>, x: f32, y: f32) -> usize {
+        let x = x.clamp(0.0, 255.0);
+        let y = y.clamp(0.0, 255.0);
+        if let Some(i) = idx {
+            self.points.remove(i);
+        }
+        // Two points cannot share an input; nudge onto a free column.
+        let mut x = x.round();
+        while self.points.iter().any(|p| (p[0] - x).abs() < 0.5) {
+            x += 1.0;
+            if x > 255.0 {
+                x = 0.0;
+            }
+        }
+        let at = self.points.iter().position(|p| p[0] > x).unwrap_or(self.points.len());
+        self.points.insert(at, [x, y]);
+        at
+    }
+
+    /// Map one 0..=1 value through the curve.
+    pub fn apply(&self, v: f32) -> f32 {
+        let x = v.clamp(0.0, 1.0) * 255.0;
+        let n = self.points.len();
+        if n == 0 {
+            return v;
+        }
+        if n == 1 || x <= self.points[0][0] {
+            return self.points[0][1] / 255.0;
+        }
+        if x >= self.points[n - 1][0] {
+            return self.points[n - 1][1] / 255.0;
+        }
+        // Fritsch–Carlson monotone tangents.
+        let k = self.points.iter().position(|p| p[0] > x).unwrap() - 1;
+        let tangent = |i: usize| -> f32 {
+            let d = |a: usize, b: usize| {
+                let (pa, pb) = (self.points[a], self.points[b]);
+                (pb[1] - pa[1]) / (pb[0] - pa[0]).max(1e-3)
+            };
+            if i == 0 {
+                d(0, 1)
+            } else if i == n - 1 {
+                d(n - 2, n - 1)
+            } else {
+                let (d0, d1) = (d(i - 1, i), d(i, i + 1));
+                if d0 * d1 <= 0.0 {
+                    0.0
+                } else {
+                    let m = (d0 + d1) * 0.5;
+                    // Keep within 3× the smaller slope so the segment stays monotone.
+                    m.clamp(-3.0 * d0.abs().min(d1.abs()), 3.0 * d0.abs().min(d1.abs()))
+                }
+            }
+        };
+        let (p0, p1) = (self.points[k], self.points[k + 1]);
+        let h = (p1[0] - p0[0]).max(1e-3);
+        let t = (x - p0[0]) / h;
+        let (m0, m1) = (tangent(k) * h, tangent(k + 1) * h);
+        let (t2, t3) = (t * t, t * t * t);
+        let y = (2.0 * t3 - 3.0 * t2 + 1.0) * p0[1]
+            + (t3 - 2.0 * t2 + t) * m0
+            + (-2.0 * t3 + 3.0 * t2) * p1[1]
+            + (t3 - t2) * m1;
+        (y / 255.0).clamp(0.0, 1.0)
+    }
+}
+
+/// Curves parameters: a master curve plus one per channel, like Levels.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub struct Curves {
+    pub channel: LevelsChannel,
+    pub rgb: Curve,
+    pub red: Curve,
+    pub green: Curve,
+    pub blue: Curve,
+}
+
+impl Curves {
+    pub fn curve_mut(&mut self, c: LevelsChannel) -> &mut Curve {
+        match c {
+            LevelsChannel::Rgb => &mut self.rgb,
+            LevelsChannel::Red => &mut self.red,
+            LevelsChannel::Green => &mut self.green,
+            LevelsChannel::Blue => &mut self.blue,
+        }
+    }
+    pub fn curve(&self, c: LevelsChannel) -> &Curve {
+        match c {
+            LevelsChannel::Rgb => &self.rgb,
+            LevelsChannel::Red => &self.red,
+            LevelsChannel::Green => &self.green,
+            LevelsChannel::Blue => &self.blue,
+        }
+    }
+}
+
+/// Which tonal range the Color Balance dialog is editing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ToneRange {
+    Shadows,
+    #[default]
+    Midtones,
+    Highlights,
+}
+
+/// Color Balance: cyan↔red, magenta↔green, yellow↔blue in -100..=100 for
+/// each tonal range, weighted by how dark or light each pixel is.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ColorBalance {
+    pub range: ToneRange,
+    pub shadows: [f32; 3],
+    pub midtones: [f32; 3],
+    pub highlights: [f32; 3],
+    pub preserve_luminosity: bool,
+}
+
+impl Default for ColorBalance {
+    fn default() -> Self {
+        Self {
+            range: ToneRange::Midtones,
+            shadows: [0.0; 3],
+            midtones: [0.0; 3],
+            highlights: [0.0; 3],
+            preserve_luminosity: true,
+        }
+    }
+}
+
+impl ColorBalance {
+    pub fn levels_mut(&mut self, r: ToneRange) -> &mut [f32; 3] {
+        match r {
+            ToneRange::Shadows => &mut self.shadows,
+            ToneRange::Midtones => &mut self.midtones,
+            ToneRange::Highlights => &mut self.highlights,
+        }
+    }
+}
+
 /// Levels parameters: a master curve plus one per channel. `channel` only
 /// records which curve the dialog is showing.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
@@ -479,6 +638,8 @@ pub enum Filter {
         contrast: f32,
     },
     Levels(Levels),
+    Curves(Curves),
+    ColorBalance(ColorBalance),
     // Blur
     GaussianBlur {
         radius: f32,
@@ -662,6 +823,8 @@ impl Filter {
             Filter::HueSaturation { .. } => "hue_saturation",
             Filter::BrightnessContrast { .. } => "brightness_contrast",
             Filter::Levels(_) => "levels",
+            Filter::Curves(_) => "curves",
+            Filter::ColorBalance(_) => "color_balance",
             Filter::GaussianBlur { .. } => "gaussian_blur",
             Filter::BoxBlur { .. } => "box_blur",
             Filter::MotionBlur { .. } => "motion_blur",
@@ -714,6 +877,8 @@ impl Filter {
             Filter::HueSaturation { .. } => "Hue/Saturation",
             Filter::BrightnessContrast { .. } => "Brightness/Contrast",
             Filter::Levels(_) => "Levels",
+            Filter::Curves(_) => "Curves",
+            Filter::ColorBalance(_) => "Color Balance",
             Filter::GaussianBlur { .. } => "Gaussian Blur",
             Filter::BoxBlur { .. } => "Box Blur",
             Filter::MotionBlur { .. } => "Motion Blur",
@@ -771,6 +936,8 @@ impl Filter {
             Filter::HueSaturation { .. } => "Shifts hue, saturation and lightness; Colorize tints everything one hue.",
             Filter::BrightnessContrast { .. } => "Lightens or darkens, and pushes tones away from or toward mid-gray.",
             Filter::Levels(_) => "Remaps black, midtones and white. Drag the input sliders to the ends of the histogram for contrast.",
+            Filter::Curves(_) => "Reshapes tones freely: click the curve to add a point, drag to bend, right-click a point to remove it. An S-curve adds contrast.",
+            Filter::ColorBalance(_) => "Tints the shadows, midtones and highlights separately toward or away from each primary.",
             Filter::GaussianBlur { .. } => "Smooth, even blur. The everyday one for softening.",
             Filter::BoxBlur { .. } => "Averages a square of pixels: blockier than Gaussian, and faster.",
             Filter::MotionBlur { .. } => "Smears in one direction, like a camera panning.",
@@ -821,7 +988,11 @@ impl Filter {
     pub fn margin(&self) -> i32 {
         let g = blur::gaussian_margin;
         match *self {
-            Filter::HueSaturation { .. } | Filter::BrightnessContrast { .. } | Filter::Levels(_) => 0,
+            Filter::HueSaturation { .. }
+            | Filter::BrightnessContrast { .. }
+            | Filter::Levels(_)
+            | Filter::Curves(_)
+            | Filter::ColorBalance(_) => 0,
             Filter::GaussianBlur { radius } => g(radius),
             Filter::BoxBlur { radius } => radius as i32,
             Filter::MotionBlur { distance, .. } => (distance * 0.5).ceil() as i32 + 1,
@@ -870,6 +1041,8 @@ impl Filter {
                 adjust::brightness_contrast(src, *brightness, *contrast)
             }
             Filter::Levels(l) => adjust::levels(src, l),
+            Filter::Curves(c) => adjust::curves(src, c),
+            Filter::ColorBalance(b) => adjust::color_balance(src, b),
             Filter::GaussianBlur { radius } => blur::gaussian(src, *radius),
             Filter::BoxBlur { radius } => blur::box_blur(src, *radius),
             Filter::MotionBlur { angle, distance } => blur::motion(src, *angle, *distance),
