@@ -68,6 +68,9 @@ pub fn resize_canvas(doc: &mut DocState, new_w: u32, new_h: u32, anchor: Anchor)
     let (ox, oy) = anchor.offset(doc.width, doc.height, new_w, new_h);
     for l in &mut doc.layers {
         l.raster = l.raster.with_canvas_size(new_w, new_h, ox, oy);
+        if let Some(m) = &l.mask {
+            l.mask = Some(Arc::new(m.with_canvas_size(new_w, new_h, ox, oy)));
+        }
     }
     doc.selection = doc.selection.as_ref().map(|m| Arc::new(m.with_canvas_size(new_w, new_h, ox, oy)));
     doc.width = new_w;
@@ -79,6 +82,9 @@ pub fn resize_image(doc: &mut DocState, new_w: u32, new_h: u32, filter: ResizeFi
     let new_h = new_h.max(1);
     for l in &mut doc.layers {
         l.raster = l.raster.resized(new_w, new_h, filter);
+        if let Some(m) = &l.mask {
+            l.mask = Some(Arc::new(m.resized(new_w, new_h)));
+        }
     }
     doc.selection = None;
     doc.width = new_w;
@@ -92,6 +98,9 @@ pub fn crop(doc: &mut DocState, rect: IRect) {
     }
     for l in &mut doc.layers {
         l.raster = l.raster.crop(r);
+        if let Some(m) = &l.mask {
+            l.mask = Some(Arc::new(m.with_canvas_size(r.w as u32, r.h as u32, -r.x, -r.y)));
+        }
     }
     doc.selection = None;
     doc.width = r.w as u32;
@@ -101,6 +110,9 @@ pub fn crop(doc: &mut DocState, rect: IRect) {
 pub fn flip_horizontal(doc: &mut DocState) {
     for l in &mut doc.layers {
         l.raster = l.raster.flipped_h();
+        if let Some(m) = &l.mask {
+            l.mask = Some(Arc::new(m.flipped_h()));
+        }
     }
     doc.selection = None;
 }
@@ -108,6 +120,9 @@ pub fn flip_horizontal(doc: &mut DocState) {
 pub fn flip_vertical(doc: &mut DocState) {
     for l in &mut doc.layers {
         l.raster = l.raster.flipped_v();
+        if let Some(m) = &l.mask {
+            l.mask = Some(Arc::new(m.flipped_v()));
+        }
     }
     doc.selection = None;
 }
@@ -116,6 +131,9 @@ pub fn flip_vertical(doc: &mut DocState) {
 pub fn rotate_canvas(doc: &mut DocState, times: u32) {
     for l in &mut doc.layers {
         l.raster = l.raster.rotated(times);
+        if let Some(m) = &l.mask {
+            l.mask = Some(Arc::new(m.rotated(times)));
+        }
     }
     if times % 2 == 1 {
         std::mem::swap(&mut doc.width, &mut doc.height);
@@ -127,11 +145,17 @@ pub fn rotate_canvas(doc: &mut DocState, times: u32) {
 pub fn flip_layer_horizontal(doc: &mut DocState, idx: usize) {
     if let Some(l) = doc.layers.get_mut(idx) {
         l.raster = l.raster.flipped_h();
+        if let Some(m) = &l.mask {
+            l.mask = Some(Arc::new(m.flipped_h()));
+        }
     }
 }
 pub fn flip_layer_vertical(doc: &mut DocState, idx: usize) {
     if let Some(l) = doc.layers.get_mut(idx) {
         l.raster = l.raster.flipped_v();
+        if let Some(m) = &l.mask {
+            l.mask = Some(Arc::new(m.flipped_v()));
+        }
     }
 }
 

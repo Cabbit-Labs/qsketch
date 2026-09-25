@@ -877,6 +877,29 @@ impl QSketchApp {
                 self.menu_item(ui, Action::FlipLayerHorizontal, has_doc);
                 self.menu_item(ui, Action::FlipLayerVertical, has_doc);
                 self.menu_item(ui, Action::ClearLayer, has_doc);
+                ui.separator();
+                let (has_mask, mask_on) = self
+                    .state
+                    .active()
+                    .map(|d| {
+                        let l = d.doc.state().active_layer();
+                        (l.mask.is_some(), l.props.mask_enabled)
+                    })
+                    .unwrap_or((false, true));
+                ui.menu_button("Layer Mask", |ui| {
+                    self.menu_item(ui, Action::MaskRevealAll, has_doc && !has_mask);
+                    self.menu_item(ui, Action::MaskHideAll, has_doc && !has_mask);
+                    self.menu_item(ui, Action::MaskFromSelection, has_doc && !has_mask && has_sel);
+                    ui.separator();
+                    let text = self.state.keymap.primary_text(Action::MaskToggle);
+                    let label = if mask_on { "Disable Layer Mask" } else { "Enable Layer Mask" };
+                    if ui.add_enabled(has_mask, egui::Button::new(label).shortcut_text(text)).clicked() {
+                        self.state.pending.push(Action::MaskToggle);
+                        ui.close();
+                    }
+                    self.menu_item(ui, Action::MaskApply, has_mask);
+                    self.menu_item(ui, Action::MaskDelete, has_mask);
+                });
             });
             top_menu(ui, "Select", |ui| {
                 self.menu_item(ui, Action::SelectAll, has_doc);
@@ -1496,6 +1519,71 @@ impl QSketchApp {
                 self.toggle_prop("Lock Transparent Pixels", |p| p.alpha_locked = !p.alpha_locked)
             }
             Action::ToggleLayerLock => self.toggle_prop("Lock Layer", |p| p.locked = !p.locked),
+            Action::MaskRevealAll | Action::MaskHideAll | Action::MaskFromSelection => {
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let (w, h) = (s.width, s.height);
+                    let li = s.active;
+                    if s.layers[li].is_group() {
+                        self.state.toasts.push(Level::Info, "Groups can't have a mask yet.");
+                    } else if s.layers[li].mask.is_none() {
+                        let mask = match action {
+                            Action::MaskHideAll => qsketch_core::Mask::new(w, h),
+                            Action::MaskFromSelection => match &s.selection {
+                                Some(sel) => (**sel).clone(),
+                                None => qsketch_core::Mask::full(w, h),
+                            },
+                            _ => qsketch_core::Mask::full(w, h),
+                        };
+                        let id = s.layers[li].props.id;
+                        s.layers[li].mask = Some(std::sync::Arc::new(mask));
+                        s.layers[li].props.mask_enabled = true;
+                        if action == Action::MaskFromSelection {
+                            s.selection = None;
+                            d.sel_outline = None;
+                        }
+                        d.doc.mark_all_dirty();
+                        d.doc.commit("Add Layer Mask");
+                        d.mask_edit = Some(id);
+                    }
+                }
+            }
+            Action::MaskDelete | Action::MaskApply => {
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let li = s.active;
+                    if s.layers[li].mask.is_some() {
+                        if action == Action::MaskApply {
+                            s.layers[li].apply_mask();
+                        } else {
+                            s.layers[li].mask = None;
+                            s.layers[li].props.mask_enabled = true;
+                        }
+                        d.mask_edit = None;
+                        d.doc.mark_all_dirty();
+                        d.doc.commit(if action == Action::MaskApply {
+                            "Apply Layer Mask"
+                        } else {
+                            "Delete Layer Mask"
+                        });
+                    }
+                }
+            }
+            Action::MaskToggle => {
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let li = s.active;
+                    if s.layers[li].mask.is_some() {
+                        s.layers[li].props.mask_enabled = !s.layers[li].props.mask_enabled;
+                        let on = s.layers[li].props.mask_enabled;
+                        d.doc.mark_all_dirty();
+                        d.doc.commit(if on { "Enable Layer Mask" } else { "Disable Layer Mask" });
+                    }
+                }
+            }
             Action::LayerProperties => dialogs::open_layer_props(&mut self.state),
             Action::FlipLayerHorizontal | Action::FlipLayerVertical => {
                 if let Some(d) = self.state.active_mut() {

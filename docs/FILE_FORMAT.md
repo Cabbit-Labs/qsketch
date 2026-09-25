@@ -15,6 +15,7 @@ mydrawing.qsk  (a ZIP file)
 ├── manifest.json        # layer stack description (see below)
 ├── layers/
 │   ├── 000.png           # bottom layer, straight-alpha RGBA8 PNG
+│   ├── 000.mask.png      # optional: that layer's mask, 8-bit grayscale
 │   ├── 001.png
 │   └── ...                # one file per layer, bottom to top
 ├── selection.png         # optional: 8-bit grayscale selection coverage
@@ -28,6 +29,10 @@ mydrawing.qsk  (a ZIP file)
   `layers` array (`layers/{i:03}.png`, zero-padded to 3 digits — practically
   unbounded, this is just for readable sorting, not a hard layer-count
   limit).
+- **Layer masks** (`layers/NNN.mask.png`) are written only for layers that
+  have one, named in the layer's manifest entry under `mask`. 8-bit
+  grayscale the size of the document: `255` = shown, `0` = hidden. The
+  entry's `mask_enabled` flag (default `true`) records a disabled mask.
 - **`selection.png`** is written only when there is a non-empty selection.
   It's an 8-bit grayscale image the same size as the document, one byte of
   coverage per pixel (`0` = unselected, `255` = fully selected,

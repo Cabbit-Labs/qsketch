@@ -99,6 +99,9 @@ pub fn compat_warnings(path: &Path, doc: &crate::document::DocState) -> Vec<Stri
         }
         return w;
     }
+    if ase::is_ase(path) && doc.layers.iter().any(|l| l.mask.is_some()) {
+        w.push("Aseprite has no layer masks: each mask is applied to its layer's pixels in the file.".into());
+    }
     if psd::is_psd(path) {
         if doc.selection.is_some() {
             w.push("The selection isn't stored in Photoshop files.".into());

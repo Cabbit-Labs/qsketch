@@ -515,6 +515,7 @@ impl AseSprite {
                 kind: LayerKind::Raster,
                 parent,
                 expanded: al.flags & LAYER_COLLAPSED == 0,
+                mask_enabled: true,
             };
             let raster = match al.kind {
                 LAYER_KIND_GROUP => {
@@ -551,7 +552,7 @@ impl AseSprite {
                     r
                 }
             };
-            layers.push(Layer { props, raster });
+            layers.push(Layer { props, raster, mask: None });
         }
         if layers.is_empty() {
             layers.push(Layer::new(1, "Layer 1", self.width, self.height));
@@ -826,12 +827,13 @@ pub fn encode(doc: &DocState) -> anyhow::Result<Vec<u8>> {
         if l.is_group() {
             continue;
         }
-        let Some(rect) = l.raster.bounds() else { continue };
+        let shown = l.masked_raster();
+        let Some(rect) = shown.bounds() else { continue };
         if rect.is_empty() {
             continue;
         }
         let rect = IRect::new(rect.x, rect.y, rect.w, rect.h);
-        let crop = l.raster.crop(rect);
+        let crop = shown.crop(rect);
         let rgba = crop.to_rgba();
         let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
         z.write_all(&rgba)?;

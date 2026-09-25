@@ -36,6 +36,40 @@ pub enum StrokeTarget {
     /// merged live into the selection on top of `base` (the selection before
     /// the stroke), adding by default or taking away when `erase` is set.
     Selection { scratch: Raster, base: Option<Arc<Mask>>, erase: bool },
+    /// Painting the active layer's mask: dabs go into a scratch raster whose
+    /// alpha blends `value` (the paint color's gray) into the mask over
+    /// `base` (the mask before the stroke).
+    Mask { scratch: Raster, base: Arc<Mask>, value: u8 },
+}
+
+/// Photoshop paints a mask with the color's gray: white reveals, black hides.
+fn gray_of(c: Rgba8) -> u8 {
+    (0.299 * c.r as f32 + 0.587 * c.g as f32 + 0.114 * c.b as f32 + 0.5) as u8
+}
+
+/// Blend the scratch raster's alpha inside `dirty` into the layer's mask.
+fn merge_mask_stroke(
+    doc_state: &mut qsketch_core::DocState,
+    li: usize,
+    scratch: &Raster,
+    base: &Mask,
+    value: u8,
+    dirty: IRect,
+) {
+    let Some(m) = doc_state.layers.get_mut(li).and_then(|l| l.mask.as_mut()) else { return };
+    let m = Arc::make_mut(m);
+    let r = dirty.intersect(&m.rect());
+    for y in r.y..r.y + r.h {
+        for x in r.x..r.x + r.w {
+            let a = scratch.get_pixel(x, y).a as i32;
+            if a == 0 {
+                continue;
+            }
+            let b = base.get(x, y) as i32;
+            m.set(x, y, (b + (value as i32 - b) * a / 255) as u8);
+        }
+    }
+    m.expand_bounds(r);
 }
 
 /// Input stabilizer for freehand strokes (see `StabilizerMode`).
@@ -129,12 +163,19 @@ pub(super) fn begin_engine_with(
     doc_id: DocId,
     tool: ToolKind,
 ) -> Option<(Box<StrokeEngine>, usize, StrokeExtra)> {
-    let (settings, mode, color) = brush_for(state, tool);
+    let (settings, mut mode, mut color) = brush_for(state, tool);
     let (tip, texture) = state.library.resolve(&settings);
     let bg = if mode == PaintMode::Erase { state.fg } else { state.bg };
     let to_selection = tool.is_selection_brush();
     if mode == PaintMode::Paint && !to_selection {
         state.note_color_used(color);
+    }
+    // Into the mask: the engine deposits coverage, the merge decides the gray.
+    let to_mask = !to_selection && state.doc(doc_id).is_some_and(|d| d.editing_mask());
+    let mask_value = gray_of(color);
+    if to_mask {
+        mode = PaintMode::Paint;
+        color = Rgba8::WHITE;
     }
     let symmetry = state.symmetry;
     let zoom = state.doc(doc_id).map(|d| d.view.zoom).unwrap_or(1.0);
@@ -160,6 +201,8 @@ pub(super) fn begin_engine_with(
     let clip = if to_selection { None } else { s.selection.clone() };
     let target = if to_selection {
         StrokeTarget::Selection { scratch: Raster::new(w, h), base: s.selection.clone(), erase: erase_sel }
+    } else if to_mask {
+        StrokeTarget::Mask { scratch: Raster::new(w, h), base: s.layers[li].mask.clone().unwrap(), value: mask_value }
     } else {
         StrokeTarget::Layer
     };
@@ -207,7 +250,7 @@ pub(super) fn feed(state: &mut AppState, doc_id: DocId, sample: StrokeSample) {
     let doc_state = entry.doc.state_mut();
     let raster = match &mut extra.target {
         StrokeTarget::Layer => &mut doc_state.layers[li].raster,
-        StrokeTarget::Selection { scratch, .. } => scratch,
+        StrokeTarget::Selection { scratch, .. } | StrokeTarget::Mask { scratch, .. } => scratch,
     };
     let mut dirty = engine.extend(raster, sample);
     for (t, m) in extra.mirrors.iter_mut() {
@@ -228,6 +271,10 @@ pub(super) fn feed(state: &mut AppState, doc_id: DocId, sample: StrokeSample) {
         StrokeTarget::Selection { scratch, base, erase } => {
             merge_selection_stroke(doc_state, scratch, base.as_deref(), *erase, dirty);
             entry.sel_outline = None;
+        }
+        StrokeTarget::Mask { scratch, base, value } => {
+            merge_mask_stroke(doc_state, li, scratch, base, *value, dirty);
+            entry.doc.mark_dirty_rect(dirty);
         }
     }
 }
@@ -294,7 +341,7 @@ pub(super) fn finish_with(state: &mut AppState, doc_id: DocId, label: &str) {
     let doc_state = entry.doc.state_mut();
     let raster = match &mut extra.target {
         StrokeTarget::Layer => &mut doc_state.layers[layer].raster,
-        StrokeTarget::Selection { scratch, .. } => scratch,
+        StrokeTarget::Selection { scratch, .. } | StrokeTarget::Mask { scratch, .. } => scratch,
     };
     let mut dirty = engine.finish(raster);
     for (_, m) in extra.mirrors.iter_mut() {
@@ -326,6 +373,12 @@ pub(super) fn finish_with(state: &mut AppState, doc_id: DocId, label: &str) {
                 }
             }
             entry.sel_outline = None;
+        }
+        StrokeTarget::Mask { scratch, base, value } => {
+            if !dirty.is_empty() {
+                merge_mask_stroke(doc_state, layer, scratch, base, *value, dirty);
+                entry.doc.mark_dirty_rect(dirty);
+            }
         }
     }
     if engine.dab_count() > 0 {

@@ -27,6 +27,10 @@ pub struct SnapshotHeader {
     pub layers: Vec<qsketch_core::layer::LayerProps>,
     /// PNG byte length per layer, in `layers` order (0 for a group).
     pub pngs: Vec<u32>,
+    /// Grayscale PNG byte length per layer mask (0 = no mask), following the
+    /// layer PNGs in the payload.
+    #[serde(default)]
+    pub masks: Vec<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -41,6 +45,10 @@ pub struct PatchHeader {
     pub th: u32,
     /// Row-major over the box: which tiles the receiver takes.
     pub mask: Vec<bool>,
+    /// A *layer mask* patch instead of pixels: the payload is the whole
+    /// mask as a grayscale PNG (empty = the mask was removed).
+    #[serde(default)]
+    pub layer_mask: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -87,6 +95,27 @@ fn png_encode(w: u32, h: u32, rgba: &[u8]) -> Result<Vec<u8>> {
     Ok(out.into_inner())
 }
 
+fn gray_encode(w: u32, h: u32, gray: &[u8]) -> Result<Vec<u8>> {
+    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+    use image::ImageEncoder;
+    let mut out = Cursor::new(Vec::new());
+    PngEncoder::new_with_quality(&mut out, CompressionType::Fast, FilterType::Sub).write_image(
+        gray,
+        w,
+        h,
+        image::ExtendedColorType::L8,
+    )?;
+    Ok(out.into_inner())
+}
+
+fn gray_decode(bytes: &[u8], w: u32, h: u32) -> Result<qsketch_core::Mask> {
+    let img = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)?.into_luma8();
+    if img.dimensions() != (w, h) {
+        bail!("mask is {}×{}, document is {w}×{h}", img.width(), img.height());
+    }
+    Ok(qsketch_core::Mask::from_gray(w, h, img.into_raw()))
+}
+
 fn png_decode(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>)> {
     let img = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)?.into_rgba8();
     Ok((img.width(), img.height(), img.into_raw()))
@@ -106,6 +135,17 @@ pub fn encode_snapshot(state: &DocState, title: &str) -> Result<Vec<u8>> {
         pngs.push(png.len() as u32);
         payload.extend_from_slice(&png);
     }
+    let mut masks = Vec::with_capacity(state.layers.len());
+    for l in &state.layers {
+        match &l.mask {
+            Some(m) => {
+                let png = gray_encode(state.width, state.height, m.to_gray())?;
+                masks.push(png.len() as u32);
+                payload.extend_from_slice(&png);
+            }
+            None => masks.push(0),
+        }
+    }
     let header = SnapshotHeader {
         w: state.width,
         h: state.height,
@@ -113,6 +153,7 @@ pub fn encode_snapshot(state: &DocState, title: &str) -> Result<Vec<u8>> {
         active: state.active_layer().props.id,
         layers: state.layers.iter().map(|l| l.props.clone()).collect(),
         pngs,
+        masks,
     };
     Ok(pack(&header, &payload))
 }
@@ -136,10 +177,18 @@ pub fn decode_snapshot(bytes: &[u8]) -> Result<(DocState, String)> {
             }
             Raster::from_rgba(h.w, h.h, &rgba)
         };
-        layers.push(Layer { props: props.clone(), raster });
+        layers.push(Layer { props: props.clone(), raster, mask: None });
     }
     if layers.is_empty() {
         bail!("snapshot has no layers");
+    }
+    for (l, &len) in layers.iter_mut().zip(&h.masks) {
+        if len == 0 {
+            continue;
+        }
+        let png = payload.get(..len as usize).ok_or_else(|| anyhow!("truncated snapshot mask"))?;
+        payload = &payload[len as usize..];
+        l.mask = Some(Arc::new(gray_decode(png, h.w, h.h)?));
     }
     let active = layers.iter().position(|l| l.props.id == h.active).unwrap_or(0);
     let next = layers.iter().map(|l| l.props.id).max().unwrap_or(0) + 1;
@@ -193,8 +242,30 @@ pub fn encode_patch(state: &DocState, layer: LayerId, tiles: &[usize]) -> Result
         }
     }
     let png = png_encode(pw, ph, &rgba)?;
-    let header = PatchHeader { w: state.width, h: state.height, layer, tx: x0, ty: y0, tw, th, mask };
+    let header =
+        PatchHeader { w: state.width, h: state.height, layer, tx: x0, ty: y0, tw, th, mask, layer_mask: false };
     Ok(pack(&header, &png))
+}
+
+/// Encode a layer's whole mask (or its removal) as a patch.
+pub fn encode_mask_patch(state: &DocState, layer: LayerId) -> Result<Vec<u8>> {
+    let l = state.layer_by_id(layer).ok_or_else(|| anyhow!("no such layer"))?;
+    let payload = match &l.mask {
+        Some(m) => gray_encode(state.width, state.height, m.to_gray())?,
+        None => Vec::new(),
+    };
+    let header = PatchHeader {
+        w: state.width,
+        h: state.height,
+        layer,
+        tx: 0,
+        ty: 0,
+        tw: 0,
+        th: 0,
+        mask: Vec::new(),
+        layer_mask: true,
+    };
+    Ok(pack(&header, &payload))
 }
 
 /// A decoded patch: the layer, and each affected tile as `(index, tile)` where
@@ -204,10 +275,16 @@ pub struct Patch {
     pub h: u32,
     pub layer: LayerId,
     pub tiles: Vec<(usize, Option<Arc<Tile>>)>,
+    /// `Some` for a layer-mask patch: the new mask, or `None` inside = removed.
+    pub layer_mask: Option<Option<Arc<qsketch_core::Mask>>>,
 }
 
 pub fn decode_patch(bytes: &[u8]) -> Result<Patch> {
     let (h, png): (PatchHeader, &[u8]) = unpack(bytes)?;
+    if h.layer_mask {
+        let m = if png.is_empty() { None } else { Some(Arc::new(gray_decode(png, h.w, h.h)?)) };
+        return Ok(Patch { w: h.w, h: h.h, layer: h.layer, tiles: Vec::new(), layer_mask: Some(m) });
+    }
     if h.mask.len() != (h.tw * h.th) as usize || h.w == 0 || h.h == 0 {
         bail!("malformed patch");
     }
@@ -230,7 +307,7 @@ pub fn decode_patch(bytes: &[u8]) -> Result<Patch> {
             tiles.push((idx, boxed.tile(tx, ty).cloned()));
         }
     }
-    Ok(Patch { w: h.w, h: h.h, layer: h.layer, tiles })
+    Ok(Patch { w: h.w, h: h.h, layer: h.layer, tiles, layer_mask: None })
 }
 
 // --- layers ---------------------------------------------------------------
@@ -309,6 +386,23 @@ mod tests {
         let bytes = encode_patch(&s, 1, &[0]).unwrap();
         let p = decode_patch(&bytes).unwrap();
         assert!(p.tiles[0].1.is_none());
+    }
+
+    /// Masks ride the snapshot and travel as whole-mask patches.
+    #[test]
+    fn masks_round_trip() {
+        let mut s = DocState::new(70, 70, None);
+        let mut m = qsketch_core::Mask::full(70, 70);
+        m.set(3, 3, 0);
+        s.layers[0].mask = Some(Arc::new(m));
+        let (back, _) = decode_snapshot(&encode_snapshot(&s, "t").unwrap()).unwrap();
+        assert_eq!(back.layers[0].mask.as_ref().unwrap().get(3, 3), 0);
+        assert_eq!(back.layers[0].mask.as_ref().unwrap().get(0, 0), 255);
+        let p = decode_patch(&encode_mask_patch(&s, 1).unwrap()).unwrap();
+        assert_eq!(p.layer_mask.as_ref().unwrap().as_ref().unwrap().get(3, 3), 0);
+        s.layers[0].mask = None;
+        let p = decode_patch(&encode_mask_patch(&s, 1).unwrap()).unwrap();
+        assert!(p.layer_mask.unwrap().is_none(), "removal travels too");
     }
 
     #[test]

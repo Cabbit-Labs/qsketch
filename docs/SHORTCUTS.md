@@ -60,6 +60,7 @@ reachable from its menu until you assign one.
 | Brightness/Contrast… | — |
 | Levels… | `Ctrl+L` |
 | Curves… | `Ctrl+M` |
+| Disable/Enable Layer Mask | `Shift+Ctrl+M` |
 | Color Balance… | `Ctrl+B` |
 | Hue/Saturation… | `Ctrl+H` (also `Ctrl+U`) |
 

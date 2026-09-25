@@ -147,6 +147,12 @@ actions! {
     FlipLayerHorizontal => (Layer, "Flip Layer Horizontal", []),
     FlipLayerVertical => (Layer, "Flip Layer Vertical", []),
     ClearLayer => (Layer, "Clear Layer", []),
+    MaskRevealAll => (Layer, "Add Layer Mask (Reveal All)", []),
+    MaskHideAll => (Layer, "Add Layer Mask (Hide All)", []),
+    MaskFromSelection => (Layer, "Add Layer Mask From Selection", []),
+    MaskDelete => (Layer, "Delete Layer Mask", []),
+    MaskApply => (Layer, "Apply Layer Mask", []),
+    MaskToggle => (Layer, "Disable/Enable Layer Mask", ["Shift+Ctrl+M"]),
     // Select
     SelectAll => (Select, "All", ["Ctrl+A"]),
     Deselect => (Select, "Deselect", ["Ctrl+D"]),

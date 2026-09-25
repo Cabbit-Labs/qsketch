@@ -13,9 +13,6 @@ obvious room to help. Nothing here is a promise of a delivery date.
 - **Layer groups.** The layer stack (`DocState::layers`) is a flat
   `Vec<Layer>`; there's no folder/group concept, so there's no way to
   collapse, move or apply opacity/blend to a set of layers as a unit.
-- **Layer masks.** Layers have a `clipped` flag (clip to the layer below's
-  alpha) and `alpha_locked`, but no independent per-layer grayscale mask
-  channel.
 - **Adjustment layers.** Invert/Desaturate/Brightness-Contrast/Hue-Saturation
   (`ops.rs`) are destructive, one-shot pixel operations applied to a layer's
   raster; there's no non-destructive adjustment-layer stack that composites

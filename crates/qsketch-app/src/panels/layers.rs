@@ -63,6 +63,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let pointer = ui.input(|i| i.pointer.latest_pos());
     let mut start_sweep: Option<bool> = None;
     let mut toggle_expand: Option<usize> = None;
+    // (row, target): `Some(id)` selects the mask, `None` the pixels.
+    let mut mask_click: Option<(usize, Option<LayerId>)> = None;
+    let accent = state.settings.ui.palette().accent;
     let mut rename_target: Option<(LayerId, String)> = None;
     let mut click: Option<Click> = None;
     let mut reorder: Option<(usize, usize, Option<LayerId>)> = None;
@@ -71,6 +74,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let AppState { docs, thumbs, pending, keymap, .. } = state;
     let Some(entry) = docs.iter_mut().find(|d| d.id == doc_id) else { return };
     let generation = entry.generation;
+    let entry_mask_edit = entry.mask_edit;
     let selected_ids = entry.selected_ids();
     let s = entry.doc.state_mut();
     let active = s.active.min(s.layers.len() - 1);
@@ -405,13 +409,61 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                     Color32::WHITE,
                 );
+                let mask_target = entry_mask_edit == Some(layer_id) && s.layers[i].mask.is_some();
+                let pixels_target = is_active && !mask_target;
                 ui.painter().rect_stroke(
                     draw,
                     0,
-                    egui::Stroke::new(1.0, Color32::from_black_alpha(120)),
+                    if pixels_target {
+                        egui::Stroke::new(2.0, accent)
+                    } else {
+                        egui::Stroke::new(1.0, Color32::from_black_alpha(120))
+                    },
                     egui::StrokeKind::Outside,
                 );
+                let pix_resp = ui.interact(thumb_rect, ui.id().with(("pix_thumb", layer_id)), Sense::click());
+                if pix_resp.clicked() && s.layers[i].mask.is_some() {
+                    mask_click = Some((i, None));
+                }
                 x += 54.0;
+                // The mask thumbnail: click to paint the mask instead of the pixels.
+                if let Some(m) = s.layers[i].mask.as_ref() {
+                    let mrect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 2.0), egui::vec2(36.0, 36.0));
+                    let mtex = thumbs.get(&ctx, (doc_id, layer_id | (1 << 63)), generation, [36, 36], |mx| {
+                        crate::panels::thumbs::mask_thumb(m, mx)
+                    });
+                    let msize = mtex.size_vec2();
+                    let mscale = (mrect.width() / msize.x).min(mrect.height() / msize.y);
+                    let mdraw = egui::Rect::from_center_size(mrect.center(), msize * mscale);
+                    ui.painter().image(
+                        mtex.id(),
+                        mdraw,
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        if s.layers[i].props.mask_enabled { Color32::WHITE } else { Color32::from_white_alpha(90) },
+                    );
+                    ui.painter().rect_stroke(
+                        mdraw,
+                        0,
+                        if mask_target {
+                            egui::Stroke::new(2.0, accent)
+                        } else {
+                            egui::Stroke::new(1.0, Color32::from_black_alpha(120))
+                        },
+                        egui::StrokeKind::Outside,
+                    );
+                    if !s.layers[i].props.mask_enabled {
+                        // A red slash: Photoshop's "mask disabled" mark.
+                        ui.painter().line_segment(
+                            [mdraw.left_bottom(), mdraw.right_top()],
+                            egui::Stroke::new(2.0, Color32::from_rgb(220, 60, 60)),
+                        );
+                    }
+                    let mresp = ui.interact(mrect, ui.id().with(("mask_thumb", layer_id)), Sense::click());
+                    if mresp.on_hover_text("Layer mask — click to paint it (white reveals, black hides)").clicked() {
+                        mask_click = Some((i, Some(layer_id)));
+                    }
+                    x += 40.0;
+                }
             }
 
             // Name / rename
@@ -607,6 +659,17 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 l.props.expanded = expanded;
             }
         });
+    }
+    if let Some((i, target)) = mask_click {
+        entry.mask_edit = target;
+        if entry.doc.state().active != i {
+            entry.doc.state_mut().active = i;
+            entry.doc.history.for_each_state_mut(|s| {
+                if i < s.layers.len() {
+                    s.active = i;
+                }
+            });
+        }
     }
     // Visibility is a view toggle, not an undoable edit.
     for (id, visible) in toggle_vis {

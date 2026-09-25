@@ -90,6 +90,22 @@ pub fn raster_thumb(raster: &Raster, max: [usize; 2], checker: bool) -> ColorIma
 }
 
 /// Downsample the premultiplied composite with a checkerboard behind.
+/// A layer mask as a grayscale thumbnail.
+pub fn mask_thumb(mask: &qsketch_core::Mask, max: [usize; 2]) -> ColorImage {
+    let (w, h) = (mask.width(), mask.height());
+    let size = fit_size(w, h, max);
+    let mut px = Vec::with_capacity(size[0] * size[1]);
+    for y in 0..size[1] {
+        for x in 0..size[0] {
+            let sx = ((x as f32 + 0.5) * w as f32 / size[0] as f32) as i32;
+            let sy = ((y as f32 + 0.5) * h as f32 / size[1] as f32) as i32;
+            let v = mask.get(sx, sy);
+            px.push(egui::Color32::from_gray(v));
+        }
+    }
+    ColorImage { size, pixels: px, source_size: egui::vec2(size[0] as f32, size[1] as f32) }
+}
+
 pub fn composite_thumb(comp: &Composite, max: [usize; 2]) -> ColorImage {
     let (w, h) = (comp.width(), comp.height());
     let size = fit_size(w, h, max);

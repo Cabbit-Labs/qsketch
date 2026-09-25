@@ -45,6 +45,9 @@ pub struct DocEntry {
     pub sel_tint: Option<(usize, egui::TextureHandle, qsketch_core::IRect)>,
     /// Live collaboration over Leyline, when this document is shared.
     pub share: Option<crate::share::ShareSession>,
+    /// The layer whose *mask* is the paint target (its mask thumbnail is
+    /// selected in the Layers panel). Only matters while that layer is active.
+    pub mask_edit: Option<LayerId>,
 }
 
 impl DocEntry {
@@ -61,6 +64,7 @@ impl DocEntry {
             last_selection: None,
             sel_tint: None,
             share: None,
+            mask_edit: None,
             flash_seen_active: None,
             layer_flash: None,
         }
@@ -93,6 +97,13 @@ impl DocEntry {
     /// layer, with groups standing for their members.
     pub fn target_layers(&self) -> Vec<usize> {
         self.doc.state().raster_layers_in(&self.selected_ids())
+    }
+
+    /// Painting goes into the active layer's mask rather than its pixels.
+    pub fn editing_mask(&self) -> bool {
+        let s = self.doc.state();
+        let l = s.active_layer();
+        self.mask_edit == Some(l.props.id) && l.mask.is_some()
     }
 
     /// `target_layers` as layer ids, for callers that outlive a single frame

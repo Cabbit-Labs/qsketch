@@ -37,6 +37,11 @@ keyboard.
   keeps their own undo. Leyline (running on the same computer) carries the
   changes, queues them for whoever is offline, and replays them for whoever
   joins later. See [docs/SHARING.md](docs/SHARING.md).
+- **Layer masks.** Photoshop-style per-layer masks: add one that reveals
+  all, hides all, or comes from the selection; paint on it with any brush
+  (white reveals, black hides); disable, apply or delete it. Masks round-trip
+  through `.qsk` and `.psd`, and follow the layer through moves, flips,
+  rotations and resizes.
 - **20 blend modes** (Normal through Luminosity, matching the W3C compositing
   spec / Photoshop semantics), per-layer opacity, clipping masks, alpha lock,
   layer groups (nested, with their own opacity/blend/visibility), and

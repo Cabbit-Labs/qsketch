@@ -504,6 +504,16 @@ fn diff_and_queue(entry: &mut DocEntry, ops: &mut Vec<QueuedOp>) {
             continue;
         }
         let old = synced.layers.iter().find(|s| s.props.id == l.props.id);
+        let mask_same = match (old.and_then(|o| o.mask.as_ref()), l.mask.as_ref()) {
+            (None, None) => true,
+            (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+            _ => false,
+        };
+        if !mask_same {
+            if let Ok(bytes) = codec::encode_mask_patch(cur, l.props.id) {
+                ops.push((conv.clone(), kind::PATCH, bytes, Some(size), Vec::new()));
+            }
+        }
         let changed: Vec<usize> = (0..l.raster.tile_count())
             .filter(|&i| match old {
                 Some(o) => !o.raster.tile_ptr_eq(&l.raster, i),
@@ -553,6 +563,21 @@ fn apply_remote(entry: &mut DocEntry, undo_limit: usize, op: RemoteOp) {
                 return;
             }
             let sess = entry.share.as_mut().unwrap();
+            if let Some(new_mask) = p.layer_mask {
+                let put = |s: &mut DocState| {
+                    if let Some(li) = s.index_of(p.layer) {
+                        s.layers[li].mask = new_mask.clone();
+                    }
+                };
+                put(entry.doc.state_mut());
+                entry.doc.history.for_each_state_mut(put);
+                if let Some(s) = sess.synced.as_mut() {
+                    put(s);
+                }
+                entry.doc.mark_all_dirty();
+                entry.generation += 1;
+                return;
+            }
             let mut set = TileSet::for_size(p.w, p.h);
             let txn = p.w.div_ceil(TILE as u32);
             let mut writes: Vec<(usize, Option<std::sync::Arc<qsketch_core::Tile>>)> = Vec::new();
@@ -599,7 +624,7 @@ fn apply_remote(entry: &mut DocEntry, undo_limit: usize, op: RemoteOp) {
                             .find(|l| l.props.id == props.id)
                             .map(|l| l.raster.clone())
                             .unwrap_or_else(|| Raster::new(s.width, s.height));
-                        Layer { props: props.clone(), raster }
+                        Layer { props: props.clone(), raster, mask: None }
                     })
                     .collect();
                 s.layers = layers;

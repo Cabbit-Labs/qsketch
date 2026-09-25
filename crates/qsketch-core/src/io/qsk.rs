@@ -38,6 +38,23 @@ struct LayerEntry {
     #[serde(flatten)]
     props: LayerProps,
     file: String,
+    /// Grayscale PNG of the layer mask, when the layer has one.
+    #[serde(default)]
+    mask: Option<String>,
+}
+
+fn gray_png(w: u32, h: u32, gray: &[u8]) -> anyhow::Result<Vec<u8>> {
+    let img = image::GrayImage::from_raw(w, h, gray.to_vec()).ok_or_else(|| anyhow!("bad mask size"))?;
+    let mut buf = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::Png)?;
+    Ok(buf.into_inner())
+}
+
+fn read_gray(zip: &mut ZipArchive<BufReader<File>>, name: &str, w: u32, h: u32) -> Option<Mask> {
+    let mut bytes = Vec::new();
+    zip.by_name(name).ok()?.read_to_end(&mut bytes).ok()?;
+    let img = image::load_from_memory(&bytes).ok()?.to_luma8();
+    (img.dimensions() == (w, h)).then(|| Mask::from_gray(w, h, img.into_raw()))
 }
 
 pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
@@ -55,18 +72,22 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
             // PNG is already compressed; store it.
             zip.start_file(&file, stored)?;
             zip.write_all(&png)?;
-            entries.push(LayerEntry { props: layer.props.clone(), file });
+            let mask = match &layer.mask {
+                Some(m) => {
+                    let name = format!("layers/{i:03}.mask.png");
+                    zip.start_file(&name, stored)?;
+                    zip.write_all(&gray_png(doc.width, doc.height, m.to_gray())?)?;
+                    Some(name)
+                }
+                None => None,
+            };
+            entries.push(LayerEntry { props: layer.props.clone(), file, mask });
         }
         let selection = match &doc.selection {
             Some(m) if !m.is_empty() => {
                 let name = "selection.png".to_string();
-                let gray = m.to_gray();
-                let img = image::GrayImage::from_raw(doc.width, doc.height, gray.to_vec())
-                    .ok_or_else(|| anyhow!("bad mask size"))?;
-                let mut buf = std::io::Cursor::new(Vec::new());
-                img.write_to(&mut buf, image::ImageFormat::Png)?;
                 zip.start_file(&name, stored)?;
-                zip.write_all(&buf.into_inner())?;
+                zip.write_all(&gray_png(doc.width, doc.height, m.to_gray())?)?;
                 Some(name)
             }
             _ => None,
@@ -118,24 +139,13 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         let raster = super::image_io::decode_bytes(&bytes)?;
         let raster =
             if raster.width() != w || raster.height() != h { raster.with_canvas_size(w, h, 0, 0) } else { raster };
-        layers.push(Layer { props: entry.props, raster });
+        let mask = entry.mask.as_deref().and_then(|name| read_gray(&mut zip, name, w, h)).map(Arc::new);
+        layers.push(Layer { props: entry.props, raster, mask });
     }
     if layers.is_empty() {
         layers.push(Layer::new(1, "Background", w, h));
     }
-    let selection = match manifest.selection {
-        Some(name) => {
-            let mut bytes = Vec::new();
-            zip.by_name(&name)?.read_to_end(&mut bytes)?;
-            let img = image::load_from_memory(&bytes)?.to_luma8();
-            if img.dimensions() == (w, h) {
-                Some(Arc::new(Mask::from_gray(w, h, img.into_raw())))
-            } else {
-                None
-            }
-        }
-        None => None,
-    };
+    let selection = manifest.selection.as_deref().and_then(|name| read_gray(&mut zip, name, w, h)).map(Arc::new);
     let next_layer_id = manifest.next_layer_id.max(layers.iter().map(|l| l.props.id).max().unwrap_or(0) + 1);
     let mut doc = DocState {
         width: w,
@@ -161,6 +171,23 @@ pub fn read_preview(path: &Path) -> anyhow::Result<Raster> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layer_mask_round_trips() {
+        let mut doc = DocState::new(8, 8, None);
+        let mut m = Mask::full(8, 8);
+        m.set(2, 3, 9);
+        doc.layers[0].mask = Some(Arc::new(m));
+        doc.layers[0].props.mask_enabled = false;
+        let dir = std::env::temp_dir().join(format!("qsk-mask-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("m.qsk");
+        save(&path, &doc).unwrap();
+        let back = load(&path).unwrap();
+        assert_eq!(back.layers[0].mask.as_ref().unwrap().get(2, 3), 9);
+        assert!(!back.layers[0].props.mask_enabled);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     use crate::color::Rgba8;
     use crate::geom::IRect;
 

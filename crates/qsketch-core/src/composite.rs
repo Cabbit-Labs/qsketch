@@ -312,6 +312,15 @@ pub fn composite_range(
             }
             continue;
         }
+        // A layer mask scales the alpha per pixel (255 = shown).
+        let mask = layer.active_mask();
+        let (ox, oy) = (tx as i32 * TILE as i32, ty as i32 * TILE as i32);
+        let mask_at = |i: usize| -> f32 {
+            match mask {
+                Some(m) => m.get(ox + (i % TILE) as i32, oy + (i / TILE) as i32) as f32 / 255.0,
+                None => 1.0,
+            }
+        };
         if layer.is_group() {
             let mut buf = [[0f32; 4]; TILE_PX];
             composite_range(doc, tx, ty, doc.members(li), Some(layer.props.id), &mut buf);
@@ -323,6 +332,7 @@ pub fn composite_range(
                 if let Some(ct) = clip_tile {
                     src[3] *= ct.px[i * 4 + 3] as f32 / 255.0;
                 }
+                src[3] *= mask_at(i);
                 *o = composite_pixel(mode, *o, src, opacity);
             }
             continue;
@@ -330,7 +340,7 @@ pub fn composite_range(
         let Some(tile) = layer.raster.tile(tx, ty) else {
             continue;
         };
-        let fast_normal = mode == BlendMode::Normal && opacity >= 1.0 && clip_tile.is_none();
+        let fast_normal = mode == BlendMode::Normal && opacity >= 1.0 && clip_tile.is_none() && mask.is_none();
         for (i, o) in out.iter_mut().enumerate() {
             let s = &tile.px[i * 4..i * 4 + 4];
             let sa = s[3];
@@ -344,6 +354,10 @@ pub fn composite_range(
             let mut src = [s[0] as f32 / 255.0, s[1] as f32 / 255.0, s[2] as f32 / 255.0, sa as f32 / 255.0];
             if let Some(ct) = clip_tile {
                 src[3] *= ct.px[i * 4 + 3] as f32 / 255.0;
+            }
+            src[3] *= mask_at(i);
+            if src[3] <= 0.0 {
+                continue;
             }
             *o = composite_pixel(mode, *o, src, opacity);
         }

@@ -2,6 +2,19 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- **Layer masks.** Layer ▸ Layer Mask ▸ Reveal All / Hide All / From
+  Selection adds a Photoshop-style mask; its thumbnail sits beside the layer's
+  in the Layers panel, and clicking it makes the brush, pencil and eraser paint
+  the mask instead of the pixels (white reveals, black hides; the eraser paints
+  the background color's gray). Disable/Enable (`Shift+Ctrl+M`, shown with a
+  red slash), Apply and Delete round it out. Masks are stored in `.qsk`, read
+  and written as Photoshop user masks in `.psd`, baked into pixels for
+  Aseprite files, and follow the layer through Move, flips, rotations, Image
+  Size, Canvas Size and Crop. Merge Down bakes both masks in. Shared canvases
+  sync masks too.
+
 ## 0.35.0 — 2026-09-25
 
 - **Curves** (Image ▸ Adjustments ▸ Curves…, `Ctrl+M`): a Photoshop-style

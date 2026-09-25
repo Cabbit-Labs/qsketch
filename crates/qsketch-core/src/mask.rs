@@ -414,6 +414,32 @@ impl Mask {
     }
 
     /// Resize the mask canvas, keeping content at offset.
+    /// Bilinear resample to a new size (for Image Size).
+    pub fn resized(&self, new_w: u32, new_h: u32) -> Self {
+        let (nw, nh) = (new_w.max(1), new_h.max(1));
+        let mut data = vec![0u8; (nw * nh) as usize];
+        let sx = self.width as f32 / nw as f32;
+        let sy = self.height as f32 / nh as f32;
+        for y in 0..nh {
+            let fy = ((y as f32 + 0.5) * sy - 0.5).max(0.0);
+            let y0 = fy.floor() as i32;
+            let ty = fy - y0 as f32;
+            for x in 0..nw {
+                let fx = ((x as f32 + 0.5) * sx - 0.5).max(0.0);
+                let x0 = fx.floor() as i32;
+                let tx = fx - x0 as f32;
+                let g =
+                    |xx: i32, yy: i32| self.get(xx.min(self.width as i32 - 1), yy.min(self.height as i32 - 1)) as f32;
+                let v = g(x0, y0) * (1.0 - tx) * (1.0 - ty)
+                    + g(x0 + 1, y0) * tx * (1.0 - ty)
+                    + g(x0, y0 + 1) * (1.0 - tx) * ty
+                    + g(x0 + 1, y0 + 1) * tx * ty;
+                data[(y * nw + x) as usize] = (v + 0.5) as u8;
+            }
+        }
+        Self::from_gray(nw, nh, data)
+    }
+
     pub fn with_canvas_size(&self, new_w: u32, new_h: u32, ox: i32, oy: i32) -> Self {
         let mut m = Self::new(new_w, new_h);
         let b = self.bounds;

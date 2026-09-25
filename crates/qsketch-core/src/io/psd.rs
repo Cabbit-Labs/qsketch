@@ -122,6 +122,9 @@ struct LayerRecord {
     name: String,
     /// Section divider (group open/close) — carries no pixels of its own.
     is_section: bool,
+    /// User mask: its rectangle and the value outside it (0 = hidden).
+    mask: Option<(IRect, u8)>,
+    mask_enabled: bool,
 }
 
 pub fn load(path: &Path) -> anyhow::Result<DocState> {
@@ -179,7 +182,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
                 records.push(read_layer_record(&mut c)?);
             }
             for rec in &records {
-                let raster = read_layer_pixels(&mut c, &hdr, rec)?;
+                let (raster, mask) = read_layer_pixels(&mut c, &hdr, rec)?;
                 if rec.is_section {
                     continue;
                 }
@@ -195,9 +198,10 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
                     kind: crate::layer::LayerKind::Raster,
                     parent: None,
                     expanded: true,
+                    mask_enabled: rec.mask_enabled,
                 };
                 next_id += 1;
-                layers.push(Layer { props, raster });
+                layers.push(Layer { props, raster, mask: mask.map(std::sync::Arc::new) });
             }
             c.p = li_end;
         }
@@ -238,9 +242,26 @@ fn read_layer_record(c: &mut Cur) -> anyhow::Result<LayerRecord> {
     let visible = flags & 0x02 == 0;
     let extra_len = c.u32()? as usize;
     let extra_end = c.p + extra_len;
-    // Layer mask data, blending ranges.
+    // Layer mask data: rect, default color, flags (only the user mask; a
+    // vector mask's extra fields are skipped).
     let n = c.u32()? as usize;
-    c.take(n)?;
+    let mut mask = None;
+    let mut mask_enabled = true;
+    if n >= 18 {
+        let m_end = c.p + n;
+        let top = c.i32()?;
+        let left = c.i32()?;
+        let bottom = c.i32()?;
+        let right = c.i32()?;
+        let default = c.u8()?;
+        let flags = c.u8()?;
+        mask = Some((IRect::from_min_max(left, top, right, bottom), default));
+        mask_enabled = flags & 2 == 0;
+        c.p = m_end;
+    } else {
+        c.take(n)?;
+    }
+    // Blending ranges.
     let n = c.u32()? as usize;
     c.take(n)?;
     // Pascal name padded to a multiple of 4.
@@ -285,7 +306,7 @@ fn read_layer_record(c: &mut Cur) -> anyhow::Result<LayerRecord> {
         }
     }
     c.p = extra_end;
-    Ok(LayerRecord { rect, channels, blend, opacity, clipped, visible, name, is_section })
+    Ok(LayerRecord { rect, channels, blend, opacity, clipped, visible, name, is_section, mask, mask_enabled })
 }
 
 /// Decode one channel of `w*h` samples at the cursor, given its byte length.
@@ -373,17 +394,44 @@ fn unpack_bits(src: &[u8], dst: &mut Vec<u8>, cap: usize) {
     }
 }
 
-fn read_layer_pixels(c: &mut Cur, hdr: &Header, rec: &LayerRecord) -> anyhow::Result<Raster> {
+fn read_layer_pixels(
+    c: &mut Cur,
+    hdr: &Header,
+    rec: &LayerRecord,
+) -> anyhow::Result<(Raster, Option<crate::mask::Mask>)> {
     let (w, h) = (rec.rect.w.max(0) as usize, rec.rect.h.max(0) as usize);
     let n = w * h;
     let mut planes: [Option<Vec<u8>>; 4] = [None, None, None, None];
+    let mut mask = None;
     for ch in &rec.channels {
+        if ch.id == -2 {
+            // The user mask, at its own rectangle; the default color fills
+            // the rest of the canvas.
+            let Some((mr, default)) = rec.mask else {
+                c.p += ch.len;
+                continue;
+            };
+            let (mw, mh) = (mr.w.max(0) as usize, mr.h.max(0) as usize);
+            let data = read_channel(c, mw, mh, hdr.depth, ch.len)?;
+            let mut m =
+                crate::mask::Mask::from_gray(hdr.width, hdr.height, vec![default; (hdr.width * hdr.height) as usize]);
+            if data.len() == mw * mh {
+                for y in 0..mh {
+                    for x in 0..mw {
+                        m.set(mr.x + x as i32, mr.y + y as i32, data[y * mw + x]);
+                    }
+                }
+            }
+            m.recompute_bounds();
+            mask = Some(m);
+            continue;
+        }
         let data = read_channel(c, w, h, hdr.depth, ch.len)?;
         let slot = match (hdr.mode, ch.id) {
             (_, -1) => Some(3),
             (Mode::Rgb, 0..=2) => Some(ch.id as usize),
             (Mode::Gray, 0) => Some(0),
-            _ => None, // user mask (-2/-3) or extra channels
+            _ => None, // vector mask (-3) or extra channels
         };
         if let Some(s) = slot {
             if data.len() == n {
@@ -392,7 +440,7 @@ fn read_layer_pixels(c: &mut Cur, hdr: &Header, rec: &LayerRecord) -> anyhow::Re
         }
     }
     if n == 0 {
-        return Ok(Raster::new(hdr.width, hdr.height));
+        return Ok((Raster::new(hdr.width, hdr.height), mask));
     }
     let mut rgba = vec![0u8; n * 4];
     let gray = hdr.mode == Mode::Gray;
@@ -410,7 +458,7 @@ fn read_layer_pixels(c: &mut Cur, hdr: &Header, rec: &LayerRecord) -> anyhow::Re
     // Place at the layer's offset on the document canvas (rect may exceed it).
     let mut out = Raster::new(hdr.width, hdr.height);
     blit(&mut out, &sub, rec.rect.x, rec.rect.y);
-    Ok(out)
+    Ok((out, mask))
 }
 
 fn blit(dst: &mut Raster, src: &Raster, ox: i32, oy: i32) {
@@ -624,14 +672,24 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
                 })
                 .collect()
         };
+        // A layer mask travels as channel -2 covering the whole canvas.
+        let mask_blob: Option<Vec<u8>> = layer.mask.as_ref().map(|m| {
+            let mut b = vec![0, 1];
+            b.extend(encode_rle(&[m.to_gray()], doc.width as usize, doc.height as usize));
+            b
+        });
         o.i32(rect.y);
         o.i32(rect.x);
         o.i32(rect.y + rect.h);
         o.i32(rect.x + rect.w);
-        o.u16(4);
+        o.u16(4 + mask_blob.is_some() as u16);
         for (id, blob) in [-1i16, 0, 1, 2].iter().zip(&blobs) {
             o.i16(*id);
             o.u32(blob.len() as u32);
+        }
+        if let Some(mb) = &mask_blob {
+            o.i16(-2);
+            o.u32(mb.len() as u32);
         }
         o.bytes(b"8BIM");
         o.bytes(blend_key(layer.props.blend));
@@ -644,7 +702,21 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
         o.u8(flags);
         o.u8(0);
         let extra = o.len_slot();
-        o.u32(0); // no layer mask
+        match &mask_blob {
+            Some(_) => {
+                // Layer mask data: rect (whole canvas), default color, flags
+                // (bit 1 = disabled), 2 bytes padding = 20 bytes.
+                o.u32(20);
+                o.i32(0);
+                o.i32(0);
+                o.i32(doc.height as i32);
+                o.i32(doc.width as i32);
+                o.u8(255);
+                o.u8(if layer.props.mask_enabled { 0 } else { 2 });
+                o.u16(0);
+            }
+            None => o.u32(0),
+        }
         o.u32(0); // no blending ranges
 
         // Pascal name (ASCII-safe, truncated), padded to 4.
@@ -668,6 +740,10 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
         }
         o.patch_len(ls);
         o.patch_len(extra);
+        let mut blobs = blobs;
+        if let Some(mb) = mask_blob {
+            blobs.push(mb);
+        }
         channel_blobs.push(blobs);
     }
     for blobs in &channel_blobs {
@@ -700,6 +776,31 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A layer mask survives save + open as Photoshop's user mask (channel -2),
+    /// including its disabled flag.
+    #[test]
+    fn layer_mask_round_trips() {
+        let mut doc = DocState::new(16, 12, None);
+        doc.layers[0].raster.set_pixel(3, 4, Rgba8::new(10, 20, 30, 255));
+        let mut m = crate::mask::Mask::full(16, 12);
+        m.set(3, 4, 0);
+        m.set(5, 5, 77);
+        doc.layers[0].mask = Some(std::sync::Arc::new(m));
+        doc.layers[0].props.mask_enabled = false;
+        let dir = std::env::temp_dir().join(format!("qsk-psd-mask-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("m.psd");
+        save(&path, &doc).unwrap();
+        let back = load(&path).unwrap();
+        let l = &back.layers[0];
+        let bm = l.mask.as_ref().expect("mask read back");
+        assert_eq!(bm.get(3, 4), 0);
+        assert_eq!(bm.get(5, 5), 77);
+        assert_eq!(bm.get(0, 0), 255);
+        assert!(!l.props.mask_enabled);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     use crate::color::Rgba8;
 
     #[test]

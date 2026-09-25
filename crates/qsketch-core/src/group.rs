@@ -277,7 +277,7 @@ impl DocState {
         if props.blend == crate::blend::BlendMode::PassThrough {
             props.blend = crate::blend::BlendMode::Normal;
         }
-        let new = Layer { props, raster };
+        let new = Layer { props, raster, mask: None };
         let block = self.block(idx);
         let active_in = (block.start..block.end).contains(&self.active);
         self.layers.drain(block.clone());

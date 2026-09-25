@@ -60,6 +60,13 @@ pub fn handle_move(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             }
             *cur = Pt::new(start.x + dx as f32, start.y + dy as f32);
             let Some(entry) = state.docs.iter_mut().find(|d| d.id == doc_id) else { return };
+            // Moving the whole layer moves its mask with it (a selection
+            // move lifts pixels only, as in Photoshop with the mask unlinked).
+            let base_mask = if floating.mask.is_none() {
+                entry.doc.history.current().layers.get(*layer).and_then(|l| l.mask.clone())
+            } else {
+                None
+            };
             let new_raster = drop_floating(base, floating, dx, dy);
             let nr = IRect::new(
                 floating.origin.0 + dx,
@@ -69,6 +76,9 @@ pub fn handle_move(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             );
             let s = entry.doc.state_mut();
             s.layers[*layer].raster = new_raster;
+            if let Some(bm) = base_mask {
+                s.layers[*layer].mask = Some(std::sync::Arc::new(bm.translated(dx, dy)));
+            }
             s.selection = floating.mask.as_ref().map(|m| {
                 std::sync::Arc::new(m.with_canvas_size(
                     s.width,
@@ -110,6 +120,11 @@ pub fn nudge(state: &mut AppState, doc_id: DocId, dx: i32, dy: i32) {
     let Some(floating) = ops::lift(s, li) else { return };
     let base = s.layers[li].raster.clone();
     s.layers[li].raster = drop_floating(&base, &floating, dx, dy);
+    if floating.mask.is_none() {
+        if let Some(m) = s.layers[li].mask.clone() {
+            s.layers[li].mask = Some(std::sync::Arc::new(m.translated(dx, dy)));
+        }
+    }
     if let Some(m) = &floating.mask {
         s.selection = Some(std::sync::Arc::new(m.with_canvas_size(
             s.width,

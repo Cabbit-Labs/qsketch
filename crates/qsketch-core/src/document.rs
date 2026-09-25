@@ -209,7 +209,9 @@ impl DocState {
         let top = self.layers[idx].clone();
         let below = &mut self.layers[idx - 1];
         if top.props.visible {
-            merge_raster(&mut below.raster, &top.raster, top.props.blend, top.props.opacity);
+            // Merging bakes both masks in: the result has none.
+            below.apply_mask();
+            merge_raster(&mut below.raster, &top.masked_raster(), top.props.blend, top.props.opacity);
         }
         self.layers.remove(idx);
         self.active = idx - 1;
@@ -286,6 +288,15 @@ pub fn dirty_between(a: &DocState, b: &DocState) -> TileSet {
     }
     for (la, lb) in a.layers.iter().zip(&b.layers) {
         if la.props != lb.props {
+            set.insert_all();
+            return set;
+        }
+        let same_mask = match (&la.mask, &lb.mask) {
+            (None, None) => true,
+            (Some(x), Some(y)) => Arc::ptr_eq(x, y),
+            _ => false,
+        };
+        if !same_mask {
             set.insert_all();
             return set;
         }
@@ -514,6 +525,50 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A mask hides pixels in the composite without touching them, disabling
+    /// it shows them again, and merging down bakes it in.
+    #[test]
+    fn layer_mask_hides_composites_and_bakes_on_merge() {
+        let mut s = DocState::new(4, 4, None);
+        s.add_layer("Top", None);
+        s.layers[1].raster.fill_rect(IRect::new(0, 0, 4, 4), Rgba8::new(255, 0, 0, 255));
+        let mut m = Mask::full(4, 4);
+        m.set(1, 1, 0);
+        m.set(2, 2, 128);
+        s.layers[1].mask = Some(Arc::new(m));
+        let flat = crate::composite::flatten(&s);
+        assert_eq!(flat.get_pixel(0, 0), Rgba8::new(255, 0, 0, 255));
+        assert_eq!(flat.get_pixel(1, 1).a, 0, "masked out");
+        assert!((flat.get_pixel(2, 2).a as i32 - 128).abs() <= 1, "half masked");
+        assert_eq!(s.layers[1].raster.get_pixel(1, 1).a, 255, "pixels untouched");
+        s.layers[1].props.mask_enabled = false;
+        assert_eq!(crate::composite::flatten(&s).get_pixel(1, 1).a, 255, "disabled mask shows all");
+        s.layers[1].props.mask_enabled = true;
+        assert!(s.merge_down(1));
+        assert_eq!(s.layers.len(), 1);
+        assert!(s.layers[0].mask.is_none());
+        assert_eq!(s.layers[0].raster.get_pixel(1, 1).a, 0, "baked in");
+        assert_eq!(s.layers[0].raster.get_pixel(0, 0), Rgba8::new(255, 0, 0, 255));
+    }
+
+    /// Whole-canvas transforms carry the mask along.
+    #[test]
+    fn layer_mask_follows_canvas_transforms() {
+        let mut s = DocState::new(4, 2, None);
+        let mut m = Mask::new(4, 2);
+        m.set(0, 0, 255);
+        s.layers[0].mask = Some(Arc::new(m));
+        crate::ops::flip_horizontal(&mut s);
+        assert_eq!(s.layers[0].mask.as_ref().unwrap().get(3, 0), 255);
+        crate::ops::rotate_canvas(&mut s, 1);
+        assert_eq!((s.width, s.height), (2, 4));
+        assert_eq!(s.layers[0].mask.as_ref().unwrap().width(), 2);
+        crate::ops::resize_image(&mut s, 4, 8, crate::raster::ResizeFilter::Nearest);
+        assert_eq!(s.layers[0].mask.as_ref().unwrap().width(), 4);
+        crate::ops::resize_canvas(&mut s, 6, 8, crate::ops::Anchor::TopLeft);
+        assert_eq!(s.layers[0].mask.as_ref().unwrap().width(), 6);
+    }
 
     /// The snapshot outlives the undo limit: after more steps than the
     /// history keeps, the opened state is gone from the list but revert still
