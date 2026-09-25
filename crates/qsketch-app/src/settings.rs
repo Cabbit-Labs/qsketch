@@ -148,10 +148,9 @@ fn contrast(a: [u8; 3], b: [u8; 3]) -> f32 {
 mod palette_tests {
     use super::*;
 
-    /// Old settings keep the behavior they had, and the most specific
-    /// modifier held wins.
-    /// Old files get the new Ctrl/Alt = brush size defaults once; a user's
-    /// own choice for either chord is left alone.
+    /// Old files get the new Ctrl = brush size default once, Alt stays the
+    /// color picker's (a 0.37.1 file that had Alt on brush size goes back to
+    /// zoom), and a user's own choice for either chord is left alone.
     #[test]
     fn ctrl_wheel_migrates_to_brush_size_and_alt_stays_the_pickers() {
         let mut c = CanvasSettings {
@@ -188,6 +187,8 @@ mod palette_tests {
         assert_eq!(own.wheel_ctrl, WheelAction::ScrollVertical, "runs once");
     }
 
+    /// Old settings keep the behavior they had, and the most specific
+    /// modifier held wins.
     #[test]
     fn wheel_migrates_and_picks_the_specific_chord() {
         let m =
