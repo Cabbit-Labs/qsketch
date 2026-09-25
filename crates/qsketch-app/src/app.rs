@@ -727,6 +727,11 @@ impl QSketchApp {
 
     fn menu_bar(&mut self, ui: &mut Ui) {
         let has_doc = self.state.active_doc.is_some();
+        let (has_pal, pal_locked) = self
+            .state
+            .active()
+            .map(|d| (!d.doc.state().palette.is_empty(), d.doc.state().palette_lock))
+            .unwrap_or((false, false));
         let (can_undo, can_redo, has_sel, layers, can_merge_down, active_is_group, sel_or_content) =
             match self.state.active() {
                 Some(d) => {
@@ -846,6 +851,24 @@ impl QSketchApp {
                     ui.separator();
                     self.menu_item(ui, Action::Desaturate, has_doc);
                     self.menu_item(ui, Action::InvertColors, has_doc);
+                    ui.separator();
+                    self.menu_item(ui, Action::ReplaceColor, has_doc);
+                });
+                ui.menu_button("Palette", |ui| {
+                    self.menu_item(ui, Action::IndexColors, has_doc);
+                    self.menu_item(ui, Action::SnapToPalette, has_pal);
+                    ui.separator();
+                    let text = self.state.keymap.primary_text(Action::TogglePaletteLock);
+                    let label = format!(
+                        "{} {}",
+                        if pal_locked { icons::CHECK } else { " " },
+                        Action::TogglePaletteLock.label()
+                    );
+                    if ui.add_enabled(has_doc, egui::Button::new(label).shortcut_text(text)).clicked() {
+                        self.state.pending.push(Action::TogglePaletteLock);
+                        ui.close();
+                    }
+                    self.menu_item(ui, Action::ShowPalette, true);
                 });
             });
             top_menu(ui, "Layer", |ui| {
@@ -1009,6 +1032,7 @@ impl QSketchApp {
                     (Action::ShowHistory, PanelKind::History),
                     (Action::ShowColor, PanelKind::Color),
                     (Action::ShowSwatches, PanelKind::Swatches),
+                    (Action::ShowPalette, PanelKind::Palette),
                     (Action::ShowNavigator, PanelKind::Navigator),
                     (Action::ShowBrushes, PanelKind::Brushes),
                     (Action::ShowBrushSettings, PanelKind::BrushSettings),
@@ -1403,6 +1427,19 @@ impl QSketchApp {
             | Action::ColorBalance
             | Action::HueSaturation => dialogs::filter::open(&mut self.state, action),
             Action::Liquify => dialogs::liquify::open(&mut self.state),
+            Action::ReplaceColor => dialogs::filter::open_replace_color(&mut self.state),
+            Action::SnapToPalette => dialogs::filter::open_snap_to_palette(&mut self.state, false),
+            Action::IndexColors => dialogs::filter::open_snap_to_palette(&mut self.state, true),
+            Action::TogglePaletteLock => {
+                if let Some(e) = self.state.active_mut() {
+                    let on = !e.doc.state().palette_lock;
+                    e.doc.set_palette_lock(on);
+                    if on && e.doc.state().palette.is_empty() {
+                        self.state.show_panel_requests.push(PanelKind::Palette);
+                        self.state.toasts.push(Level::Info, "The palette is empty: add colors in the Palette panel.");
+                    }
+                }
+            }
             Action::LastFilter => dialogs::filter::repeat_last(&mut self.state),
             Action::LastFilterDialog => dialogs::filter::reopen_last(&mut self.state),
             a if a.category() == Category::Filter => dialogs::filter::open(&mut self.state, a),
@@ -1729,6 +1766,7 @@ impl QSketchApp {
             Action::ShowHistory => self.state.show_panel_requests.push(PanelKind::History),
             Action::ShowColor => self.state.show_panel_requests.push(PanelKind::Color),
             Action::ShowSwatches => self.state.show_panel_requests.push(PanelKind::Swatches),
+            Action::ShowPalette => self.state.show_panel_requests.push(PanelKind::Palette),
             Action::ShowNavigator => self.state.show_panel_requests.push(PanelKind::Navigator),
             Action::ShowBrushes => self.state.show_panel_requests.push(PanelKind::Brushes),
             Action::ShowBrushSettings => self.state.show_panel_requests.push(PanelKind::BrushSettings),
@@ -1944,6 +1982,15 @@ impl eframe::App for QSketchApp {
         }
         self.process_requests(&ctx);
         crate::share::tick(&mut self.state, &ctx);
+        // Indexed-color workflow: the current colors always come from the
+        // palette while it is locked, wherever they were picked.
+        if let Some(s) = self.state.active().map(|e| e.doc.state()) {
+            if s.palette_lock && !s.palette.is_empty() {
+                let (fg, bg) = (s.palette.snap(self.state.fg), s.palette.snap(self.state.bg));
+                self.state.fg = fg;
+                self.state.bg = bg;
+            }
+        }
 
         // --- chrome -----------------------------------------------------------
         let hidden = self.state.panels_hidden;

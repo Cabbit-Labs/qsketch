@@ -68,7 +68,9 @@ mydrawing.qsk  (a ZIP file)
     }
     // ... one entry per layer, bottom to top, matching layers/*.png order
   ],
-  "selection": "selection.png" // omitted (or null) if there is no selection
+  "selection": "selection.png", // omitted (or null) if there is no selection
+  "palette": { "name": "PICO-8", "colors": [{ "r": 0, "g": 0, "b": 0, "a": 255 }] }, // omitted when empty
+  "palette_lock": false // indexed-color mode: edits snap to the palette
 }
 ```
 
@@ -96,6 +98,9 @@ Field notes:
   created layers after loading don't collide with existing layer ids. On
   load it's taken as `max(manifest value, highest existing layer id + 1)`,
   so it self-heals if the manifest's value is stale or missing.
+- **`palette`** / **`palette_lock`** (0.39+) are the document palette and
+  whether edits are snapped to it; both are optional and default to none /
+  off, so older files load unchanged.
 - **`layers`** is an array of per-layer properties (`LayerProps`, flattened
   into each entry) plus that layer's PNG path (`file`). Layer order in this
   array is bottom-to-top and must match the physical stacking order; there's

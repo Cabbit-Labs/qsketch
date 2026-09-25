@@ -641,6 +641,24 @@ pub enum Filter {
     Levels(Levels),
     Curves(Curves),
     ColorBalance(ColorBalance),
+    /// Snap every pixel to the nearest color of a palette, optionally
+    /// dithering between the two closest candidates.
+    Palettize {
+        colors: Vec<Rgba8>,
+        pattern: DitherPattern,
+        /// 0..=1: how strongly the dither pattern is allowed to pick the
+        /// second-closest color.
+        strength: f32,
+    },
+    /// Replace one color (within a tolerance) by another, keeping alpha.
+    ReplaceColor {
+        from: Rgba8,
+        to: Rgba8,
+        /// 0..=255 max per-channel difference.
+        tolerance: u8,
+        /// Whether pixels near the tolerance edge blend toward `to`.
+        soft: bool,
+    },
     // Blur
     GaussianBlur {
         radius: f32,
@@ -825,6 +843,8 @@ impl Filter {
             Filter::BrightnessContrast { .. } => "brightness_contrast",
             Filter::Levels(_) => "levels",
             Filter::Curves(_) => "curves",
+            Filter::Palettize { .. } => "palettize",
+            Filter::ReplaceColor { .. } => "replace_color",
             Filter::ColorBalance(_) => "color_balance",
             Filter::GaussianBlur { .. } => "gaussian_blur",
             Filter::BoxBlur { .. } => "box_blur",
@@ -879,6 +899,8 @@ impl Filter {
             Filter::BrightnessContrast { .. } => "Brightness/Contrast",
             Filter::Levels(_) => "Levels",
             Filter::Curves(_) => "Curves",
+            Filter::Palettize { .. } => "Snap to Palette",
+            Filter::ReplaceColor { .. } => "Replace Color",
             Filter::ColorBalance(_) => "Color Balance",
             Filter::GaussianBlur { .. } => "Gaussian Blur",
             Filter::BoxBlur { .. } => "Box Blur",
@@ -937,6 +959,8 @@ impl Filter {
             Filter::HueSaturation { .. } => "Shifts hue, saturation and lightness; Colorize tints everything one hue.",
             Filter::BrightnessContrast { .. } => "Lightens or darkens, and pushes tones away from or toward mid-gray.",
             Filter::Levels(_) => "Remaps black, midtones and white. Drag the input sliders to the ends of the histogram for contrast.",
+            Filter::Palettize { .. } => "Snaps every pixel to the closest palette color; a dither pattern trades between the two closest.",
+            Filter::ReplaceColor { .. } => "Swaps one color for another everywhere it appears, within a tolerance. It starts from the foreground (Alt+click picks one) and background colors.",
             Filter::Curves(_) => "Reshapes tones freely: click the curve to add a point, drag to bend, right-click a point to remove it. An S-curve adds contrast.",
             Filter::ColorBalance(_) => "Tints the shadows, midtones and highlights separately toward or away from each primary.",
             Filter::GaussianBlur { .. } => "Smooth, even blur. The everyday one for softening.",
@@ -993,7 +1017,9 @@ impl Filter {
             | Filter::BrightnessContrast { .. }
             | Filter::Levels(_)
             | Filter::Curves(_)
-            | Filter::ColorBalance(_) => 0,
+            | Filter::ColorBalance(_)
+            | Filter::Palettize { .. }
+            | Filter::ReplaceColor { .. } => 0,
             Filter::GaussianBlur { radius } => g(radius),
             Filter::BoxBlur { radius } => radius as i32,
             Filter::MotionBlur { distance, .. } => (distance * 0.5).ceil() as i32 + 1,
@@ -1043,6 +1069,8 @@ impl Filter {
             }
             Filter::Levels(l) => adjust::levels(src, l),
             Filter::Curves(c) => adjust::curves(src, c),
+            Filter::Palettize { colors, pattern, strength } => fx::palettize(src, colors, *pattern, *strength),
+            Filter::ReplaceColor { from, to, tolerance, soft } => fx::replace_color(src, *from, *to, *tolerance, *soft),
             Filter::ColorBalance(b) => adjust::color_balance(src, b),
             Filter::GaussianBlur { radius } => blur::gaussian(src, *radius),
             Filter::BoxBlur { radius } => blur::box_blur(src, *radius),
@@ -1258,6 +1286,12 @@ mod tests {
             Filter::Offset { dx: 10, dy: -5, edge: OffsetEdge::Repeat },
             Filter::ChromaticAberration { amount: 3.0, radial: true, angle: 0.0 },
             Filter::Dither { levels: 2, pattern: DitherPattern::Bayer4 },
+            Filter::Palettize {
+                colors: vec![Rgba8::BLACK, Rgba8::WHITE, Rgba8::rgb(200, 30, 30)],
+                pattern: DitherPattern::Bayer4,
+                strength: 0.5,
+            },
+            Filter::ReplaceColor { from: Rgba8::WHITE, to: Rgba8::rgb(0, 200, 0), tolerance: 30, soft: true },
             Filter::PixelSort { threshold: 0.4, vertical: false, reverse: false },
             Filter::PixelSort { threshold: 0.4, vertical: true, reverse: true },
             Filter::Scanlines { spacing: 4, darkness: 0.5, rgb_mask: true },

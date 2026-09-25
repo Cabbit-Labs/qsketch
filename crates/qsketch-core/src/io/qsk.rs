@@ -15,6 +15,7 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 use crate::document::DocState;
 use crate::layer::{Layer, LayerProps};
 use crate::mask::Mask;
+use crate::palette::Palette;
 use crate::raster::Raster;
 
 pub const FORMAT_VERSION: u32 = 1;
@@ -31,6 +32,10 @@ struct Manifest {
     layers: Vec<LayerEntry>,
     #[serde(default)]
     selection: Option<String>,
+    #[serde(default)]
+    palette: Option<Palette>,
+    #[serde(default)]
+    palette_lock: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -102,6 +107,8 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
             next_layer_id: doc.next_layer_id,
             layers: entries,
             selection,
+            palette: (!doc.palette.is_empty()).then(|| doc.palette.clone()),
+            palette_lock: doc.palette_lock,
         };
         zip.start_file("manifest.json", deflated)?;
         zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
@@ -154,6 +161,8 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         layers,
         selection,
         next_layer_id,
+        palette: manifest.palette.unwrap_or_default(),
+        palette_lock: manifest.palette_lock,
     };
     doc.repair_groups();
     Ok(doc)

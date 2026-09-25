@@ -559,8 +559,22 @@ impl AseSprite {
         }
         let active = layers.iter().rposition(|l| !l.is_group()).unwrap_or(layers.len() - 1);
         let next_layer_id = layers.len() as LayerId + 1;
-        let mut doc =
-            DocState { width: self.width, height: self.height, layers, active, selection: None, next_layer_id };
+        let mut doc = DocState {
+            width: self.width,
+            height: self.height,
+            layers,
+            active,
+            selection: None,
+            next_layer_id,
+            // Indexed sprites carry their palette; RGBA ones only a default
+            // one, which is not worth keeping.
+            palette: if self.depth == 8 {
+                crate::palette::Palette::new("Aseprite", self.palette.iter().copied().take(256).collect())
+            } else {
+                Default::default()
+            },
+            palette_lock: self.depth == 8,
+        };
         doc.repair_groups();
         Ok((doc, warnings))
     }

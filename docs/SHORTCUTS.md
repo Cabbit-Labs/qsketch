@@ -64,6 +64,10 @@ reachable from its menu until you assign one.
 | Disable/Enable Layer Mask | `Shift+Ctrl+M` |
 | Color Balance… | `Ctrl+B` |
 | Hue/Saturation… | `Ctrl+H` (also `Ctrl+U`) |
+| Replace Color… | — |
+| Index Colors… | — |
+| Snap to Palette… | — |
+| Lock to Palette | — |
 
 ## Layer
 
@@ -255,6 +259,7 @@ with the current brush.
 | History | — |
 | Color | `F6` |
 | Swatches | — |
+| Palette | — |
 | Navigator | — |
 | Brushes | `F5` |
 | Info | `F8` |

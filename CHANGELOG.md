@@ -2,6 +2,29 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.39.0 — 2026-09-25
+
+- **Palette panel** (Window ▸ Palette): the document's own color palette,
+  saved in the `.qsk`. Click a slot for the foreground, right-click for the
+  background, Shift+click to select a run, drag to reorder, edit a slot in
+  place, ramp between the two ends of a selection (Oklab, so the middle
+  never goes muddy), sort by hue or lightness, build one from the image
+  (median cut, 4–256 colors), and load / save `.gpl`, `.hex`, `.pal`,
+  `.act`, `.aco`, PNG strips and Aseprite files. Presets: PICO-8, Sweetie 16,
+  DawnBringer 16/32, Endesga 32, Commodore 64, CGA, Game Boy, grayscale.
+- **Lock to Palette** (Image ▸ Palette, or the padlock in the panel): the
+  indexed-color workflow. Every edit snaps to the palette when it is
+  committed, whatever painted it, and the foreground / background colors
+  always come from the palette. Undo takes palette edits back like any
+  other change.
+- **Image ▸ Palette ▸ Index Colors…** converts the whole document to a
+  palette (the document's, or one generated from the image) with optional
+  Bayer / noise dither, then adopts and locks it. **Snap to Palette…** does
+  the same for the selected layers only, without changing the mode.
+- **Image ▸ Adjustments ▸ Replace Color…** swaps the foreground color for
+  the background one everywhere it appears, with a tolerance and soft edges.
+- Indexed Aseprite files now open with their palette, locked.
+
 ## 0.38.0 — 2026-09-25
 
 - **Liquify** (Filter ▸ Liquify…): push, twirl (both ways), pinch, bloat and

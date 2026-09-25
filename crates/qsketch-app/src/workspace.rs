@@ -20,6 +20,7 @@ pub enum PanelKind {
     History,
     Color,
     Swatches,
+    Palette,
     Navigator,
     Brushes,
     BrushSettings,
@@ -28,12 +29,13 @@ pub enum PanelKind {
 
 impl PanelKind {
     #[allow(dead_code)]
-    pub const PANELS: [PanelKind; 9] = [
+    pub const PANELS: [PanelKind; 10] = [
         PanelKind::Tools,
         PanelKind::Layers,
         PanelKind::History,
         PanelKind::Color,
         PanelKind::Swatches,
+        PanelKind::Palette,
         PanelKind::Navigator,
         PanelKind::Brushes,
         PanelKind::BrushSettings,
@@ -49,6 +51,7 @@ impl PanelKind {
             PanelKind::History => "History",
             PanelKind::Color => "Color",
             PanelKind::Swatches => "Swatches",
+            PanelKind::Palette => "Palette",
             PanelKind::Navigator => "Navigator",
             PanelKind::Brushes => "Brushes",
             PanelKind::BrushSettings => "Brush Settings",
@@ -62,7 +65,7 @@ impl PanelKind {
             PanelKind::Home | PanelKind::Document(_) => None,
             PanelKind::Tools => Some(Section::Tools),
             PanelKind::Layers | PanelKind::History => Some(Section::Layers),
-            PanelKind::Color | PanelKind::Swatches => Some(Section::Color),
+            PanelKind::Color | PanelKind::Swatches | PanelKind::Palette => Some(Section::Color),
             PanelKind::Navigator | PanelKind::Info => Some(Section::View),
             PanelKind::Brushes | PanelKind::BrushSettings => Some(Section::Brush),
         }
@@ -77,6 +80,7 @@ impl PanelKind {
             PanelKind::History => icons::CLOCK_COUNTER_CLOCKWISE,
             PanelKind::Color => icons::PALETTE,
             PanelKind::Swatches => icons::SWATCHES,
+            PanelKind::Palette => icons::GRID_FOUR,
             PanelKind::Navigator => icons::COMPASS,
             PanelKind::Brushes => icons::PAINT_BRUSH_HOUSEHOLD,
             PanelKind::BrushSettings => icons::SLIDERS_HORIZONTAL,
@@ -97,7 +101,8 @@ impl Workspace {
         // Tools strip on the left.
         let [center, _tools] = tree.split_left(root, 0.05, vec![PanelKind::Tools]);
         // Right column.
-        let [_center, right_top] = tree.split_right(center, 0.78, vec![PanelKind::Color, PanelKind::Swatches]);
+        let [_center, right_top] =
+            tree.split_right(center, 0.78, vec![PanelKind::Color, PanelKind::Swatches, PanelKind::Palette]);
         let [_right_top, right_mid] =
             tree.split_below(right_top, 0.32, vec![PanelKind::Navigator, PanelKind::Brushes, PanelKind::Info]);
         let [_right_mid, _right_bottom] = tree.split_below(right_mid, 0.4, vec![PanelKind::Layers, PanelKind::History]);
@@ -181,6 +186,7 @@ impl Workspace {
             PanelKind::History => PanelKind::Layers,
             PanelKind::Color => PanelKind::Swatches,
             PanelKind::Swatches => PanelKind::Color,
+            PanelKind::Palette => PanelKind::Swatches,
             PanelKind::Navigator | PanelKind::Brushes | PanelKind::Info => PanelKind::Layers,
             PanelKind::BrushSettings => PanelKind::Brushes,
             _ => PanelKind::Home,
@@ -422,6 +428,7 @@ impl TabViewer for Viewer<'_> {
             PanelKind::History => panels::history::ui(ui, self.state),
             PanelKind::Color => panels::color::ui(ui, self.state),
             PanelKind::Swatches => panels::swatches::ui(ui, self.state),
+            PanelKind::Palette => panels::palette::ui(ui, self.state),
             PanelKind::Navigator => panels::navigator::ui(ui, self.state),
             PanelKind::Brushes => panels::brushes::ui(ui, self.state),
             PanelKind::BrushSettings => panels::brush_settings::ui(ui, self.state),

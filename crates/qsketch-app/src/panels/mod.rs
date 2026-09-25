@@ -8,6 +8,7 @@ pub mod home;
 pub mod info;
 pub mod layers;
 pub mod navigator;
+pub mod palette;
 pub mod swatches;
 pub mod thumbs;
 pub mod tool_options;

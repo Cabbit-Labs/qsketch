@@ -22,6 +22,11 @@ keyboard.
   Flat Marker, Dry Bristle). Import brush tips from PNGs or from GIMP
   (`.gbr`, `.gih`) and Photoshop (`.abr`, sampled brushes) files, or drop
   your own texture PNGs into the config folder's `textures/` directory.
+- **Palettes and indexed color.** A per-document palette panel with ramps,
+  sorting, presets (PICO-8, DawnBringer, Endesga…), median-cut generation
+  from the image and `.gpl`/`.hex`/`.pal`/`.act`/`.aco`/Aseprite files.
+  Lock it and every edit snaps to it; Index Colors converts a document with
+  optional dither; Replace Color swaps one color for another.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
 - **Retouching brushes.** Smudge drags colors along under the stroke; the
@@ -154,8 +159,9 @@ file to get a document tab alongside it. The default layout has:
 - A **Tools** strip on the left (selection, crop, eyedropper, paint, fill,
   shape and view tools — see [`docs/SHORTCUTS.md`](docs/SHORTCUTS.md) for the
   full list and their keys).
-- **Color** and **Swatches** panels top-right for your foreground/background
-  colors and palette.
+- **Color**, **Swatches** and **Palette** panels top-right for your
+  foreground/background colors, saved swatches and the document's own
+  palette (with a lock for indexed-color work).
 - **Navigator**, **Brushes** and **Info** in the middle-right, and **Layers**
   and **History** (a Photoshop-style linear undo list you can jump to any
   point in) at the bottom-right.

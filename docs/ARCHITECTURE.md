@@ -249,7 +249,7 @@ to start.
 
 [`Workspace`](../crates/qsketch-app/src/workspace.rs) wraps `egui_dock`'s
 `DockState<PanelKind>`. `PanelKind` distinguishes the singleton panels
-(Tools, Layers, History, Color, Swatches, Navigator, Brushes, Info, Home)
+(Tools, Layers, History, Color, Swatches, Palette, Navigator, Brushes, Info, Home)
 from `PanelKind::Document(DocId)`, one tab per open document. The
 `TabViewer` impl (`workspace.rs::Viewer`) dispatches each tab's `ui()` to the
 matching module under `panels/` (or `canvas::show()` for documents), routes

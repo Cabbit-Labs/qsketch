@@ -124,6 +124,10 @@ actions! {
     Levels => (Image, "Levels…", ["Ctrl+L"]),
     Curves => (Image, "Curves…", ["Ctrl+M"]),
     ColorBalance => (Image, "Color Balance…", ["Ctrl+B"]),
+    ReplaceColor => (Image, "Replace Color…", []),
+    SnapToPalette => (Image, "Snap to Palette…", []),
+    IndexColors => (Image, "Index Colors…", []),
+    TogglePaletteLock => (Image, "Lock to Palette", []),
     HueSaturation => (Image, "Hue/Saturation…", ["Ctrl+H", "Ctrl+U"]),
     // Layer
     NewLayer => (Layer, "New Layer", ["Ctrl+Shift+N"]),
@@ -274,6 +278,7 @@ actions! {
     ShowBrushes => (Window, "Brushes", ["F5"]),
     ShowBrushSettings => (Window, "Brush Settings", ["F9"]),
     ShowInfo => (Window, "Info", ["F8"]),
+    ShowPalette => (Window, "Palette", []),
     ResetLayout => (Window, "Reset Workspace", []),
     // Help
     KeyboardShortcuts => (Help, "Keyboard Shortcuts…", ["Ctrl+Alt+Shift+K"]),

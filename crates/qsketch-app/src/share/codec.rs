@@ -192,7 +192,19 @@ pub fn decode_snapshot(bytes: &[u8]) -> Result<(DocState, String)> {
     }
     let active = layers.iter().position(|l| l.props.id == h.active).unwrap_or(0);
     let next = layers.iter().map(|l| l.props.id).max().unwrap_or(0) + 1;
-    Ok((DocState { width: h.w, height: h.h, layers, active, selection: None, next_layer_id: next }, h.title))
+    Ok((
+        DocState {
+            width: h.w,
+            height: h.h,
+            layers,
+            active,
+            selection: None,
+            next_layer_id: next,
+            palette: Default::default(),
+            palette_lock: false,
+        },
+        h.title,
+    ))
 }
 
 // --- patch ----------------------------------------------------------------

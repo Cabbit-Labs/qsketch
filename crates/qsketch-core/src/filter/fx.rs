@@ -56,13 +56,7 @@ const BAYER8: [[u8; 8]; 8] = [
 pub fn dither(src: &Src, levels: u32, pattern: DitherPattern) -> Img {
     let l = (levels.clamp(2, 256) - 1) as f32;
     src.map(|x, y| {
-        let t = match pattern {
-            DitherPattern::None => 0.5,
-            DitherPattern::Bayer2 => (BAYER2[(y & 1) as usize][(x & 1) as usize] as f32 + 0.5) / 4.0,
-            DitherPattern::Bayer4 => (BAYER4[(y & 3) as usize][(x & 3) as usize] as f32 + 0.5) / 16.0,
-            DitherPattern::Bayer8 => (BAYER8[(y & 7) as usize][(x & 7) as usize] as f32 + 0.5) / 64.0,
-            DitherPattern::Noise => rand01(x, y, 0x1234),
-        };
+        let t = dither_threshold(x, y, pattern);
         let p = src.at(x, y);
         if p[3] <= 0.0 {
             return p;
@@ -70,6 +64,101 @@ pub fn dither(src: &Src, levels: u32, pattern: DitherPattern) -> Img {
         let c = unpremul(p);
         let q = |v: f32| ((v * l + t).floor() / l).clamp(0.0, 1.0);
         premul([q(c[0]), q(c[1]), q(c[2]), c[3]])
+    })
+}
+
+/// Threshold for an ordered/noise dither at `(x, y)`, `0..1`.
+fn dither_threshold(x: i32, y: i32, pattern: DitherPattern) -> f32 {
+    match pattern {
+        DitherPattern::None => 0.5,
+        DitherPattern::Bayer2 => (BAYER2[(y & 1) as usize][(x & 1) as usize] as f32 + 0.5) / 4.0,
+        DitherPattern::Bayer4 => (BAYER4[(y & 3) as usize][(x & 3) as usize] as f32 + 0.5) / 16.0,
+        DitherPattern::Bayer8 => (BAYER8[(y & 7) as usize][(x & 7) as usize] as f32 + 0.5) / 64.0,
+        DitherPattern::Noise => rand01(x, y, 0x1234),
+    }
+}
+
+/// Snap every pixel to the closest of `colors` (Oklab distance). With a
+/// pattern, a pixel sitting between its two closest colors is dithered
+/// between them; `strength` scales how far from the midpoint that reaches.
+pub fn palettize(src: &Src, colors: &[Rgba8], pattern: DitherPattern, strength: f32) -> Img {
+    if colors.is_empty() {
+        return src.copy();
+    }
+    let labs: Vec<([f32; 3], [f32; 4])> = colors
+        .iter()
+        .filter(|c| c.a > 0)
+        .map(|c| (crate::palette::oklab(*c), [c.r as f32 / 255.0, c.g as f32 / 255.0, c.b as f32 / 255.0, 0.0]))
+        .collect();
+    if labs.is_empty() {
+        return src.copy();
+    }
+    let strength = strength.clamp(0.0, 1.0);
+    src.map(|x, y| {
+        let p = src.at(x, y);
+        if p[3] <= 0.0 {
+            return p;
+        }
+        let c = unpremul(p);
+        let lab = crate::palette::oklab(Rgba8::from_f32(c));
+        // Two closest candidates.
+        let (mut b0, mut d0, mut b1, mut d1) = (0usize, f32::MAX, 0usize, f32::MAX);
+        for (i, (l, _)) in labs.iter().enumerate() {
+            let d = (l[0] - lab[0]).powi(2) + (l[1] - lab[1]).powi(2) + (l[2] - lab[2]).powi(2);
+            if d < d0 {
+                b1 = b0;
+                d1 = d0;
+                b0 = i;
+                d0 = d;
+            } else if d < d1 {
+                b1 = i;
+                d1 = d;
+            }
+        }
+        let pick = if pattern == DitherPattern::None || strength <= 0.0 || d1 == f32::MAX {
+            b0
+        } else {
+            // How close to a tie the two candidates are (1 = exact tie).
+            let closeness = (d0 / d1.max(1e-9)).sqrt();
+            let t = dither_threshold(x, y, pattern);
+            // The pattern picks the runner-up when it is nearly as good.
+            if t < closeness * strength {
+                b1
+            } else {
+                b0
+            }
+        };
+        let rgb = labs[pick].1;
+        premul([rgb[0], rgb[1], rgb[2], c[3]])
+    })
+}
+
+/// Replace `from` (within `tolerance` per channel) by `to`, keeping alpha.
+/// `soft` blends pixels that are near the edge of the tolerance.
+pub fn replace_color(src: &Src, from: Rgba8, to: Rgba8, tolerance: u8, soft: bool) -> Img {
+    let tol = tolerance as f32 / 255.0;
+    let f = from.to_f32();
+    let t = to.to_f32();
+    src.map(|x, y| {
+        let p = src.at(x, y);
+        if p[3] <= 0.0 {
+            return p;
+        }
+        let c = unpremul(p);
+        let d = (c[0] - f[0]).abs().max((c[1] - f[1]).abs()).max((c[2] - f[2]).abs());
+        let k = if d <= tol {
+            if soft && tol > 0.0 {
+                1.0 - smoothstep(tol * 0.6, tol, d)
+            } else {
+                1.0
+            }
+        } else {
+            0.0
+        };
+        if k <= 0.0 {
+            return p;
+        }
+        premul([c[0] + (t[0] - c[0]) * k, c[1] + (t[1] - c[1]) * k, c[2] + (t[2] - c[2]) * k, c[3]])
     })
 }
 

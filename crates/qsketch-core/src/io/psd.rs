@@ -215,7 +215,16 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         return Ok(DocState::from_raster(name, raster));
     }
     let active = layers.len() - 1;
-    Ok(DocState { width, height, layers, active, selection: None, next_layer_id: next_id })
+    Ok(DocState {
+        width,
+        height,
+        layers,
+        active,
+        selection: None,
+        next_layer_id: next_id,
+        palette: Default::default(),
+        palette_lock: false,
+    })
 }
 
 fn read_layer_record(c: &mut Cur) -> anyhow::Result<LayerRecord> {

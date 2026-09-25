@@ -12,6 +12,7 @@ use crate::geom::IRect;
 use crate::history::History;
 use crate::layer::{Layer, LayerId};
 use crate::mask::Mask;
+use crate::palette::Palette;
 use crate::raster::Raster;
 
 /// An immutable-by-convention snapshot of everything undoable.
@@ -25,6 +26,12 @@ pub struct DocState {
     pub active: usize,
     pub selection: Option<Arc<Mask>>,
     pub next_layer_id: LayerId,
+    /// The document's color palette (empty = none). Undoable like everything
+    /// else here so a palette edit can be taken back.
+    pub palette: Palette,
+    /// Indexed-color workflow: every edit is snapped to `palette` on commit
+    /// and the color panel only hands out palette colors.
+    pub palette_lock: bool,
 }
 
 impl DocState {
@@ -43,7 +50,16 @@ impl DocState {
             }
             _ => Layer::new(1, "Layer 1", width, height),
         };
-        Self { width, height, layers: vec![layer], active: 0, selection: None, next_layer_id: 2 }
+        Self {
+            width,
+            height,
+            layers: vec![layer],
+            active: 0,
+            selection: None,
+            next_layer_id: 2,
+            palette: Palette::default(),
+            palette_lock: false,
+        }
     }
 
     pub fn from_raster(name: impl Into<String>, raster: Raster) -> Self {
@@ -55,6 +71,8 @@ impl DocState {
             active: 0,
             selection: None,
             next_layer_id: 2,
+            palette: Palette::default(),
+            palette_lock: false,
         }
     }
 
@@ -403,9 +421,65 @@ impl Document {
         self.dirty.insert_all();
     }
 
-    /// Push the working state onto the history as a new undo step.
+    /// Lock or unlock the palette without an undo step: like visibility it
+    /// is a mode, so it is applied to every history state.
+    pub fn set_palette_lock(&mut self, on: bool) {
+        self.working.palette_lock = on;
+        self.history.for_each_state_mut(|s| s.palette_lock = on);
+    }
+
+    /// Push the working state onto the history as a new undo step. With the
+    /// palette locked, pixels that changed since the last step are snapped
+    /// to the palette first, so every edit lands on palette colors.
     pub fn commit(&mut self, label: impl Into<String>) {
+        self.enforce_palette();
         self.history.push(label, self.working.clone());
+    }
+
+    /// Snap the tiles that differ from the current history state to the
+    /// document palette (indexed-color workflow). Only rasters: masks and
+    /// the selection are coverage, not color.
+    pub fn enforce_palette(&mut self) {
+        if !self.working.palette_lock || self.working.palette.is_empty() {
+            return;
+        }
+        let prev = self.history.current();
+        let pal = self.working.palette.clone();
+        let mut cache: std::collections::HashMap<[u8; 3], [u8; 3]> = std::collections::HashMap::new();
+        let mut touched = TileSet::for_size(self.working.width, self.working.height);
+        for layer in &mut self.working.layers {
+            let before = prev.layers.iter().find(|l| l.props.id == layer.props.id);
+            let (tx, ty) = (layer.raster.tiles_x(), layer.raster.tiles_y());
+            for idx in 0..layer.raster.tile_count() {
+                let same = before.is_some_and(|b| {
+                    b.raster.tiles_x() == tx && b.raster.tiles_y() == ty && b.raster.tile_ptr_eq(&layer.raster, idx)
+                });
+                if same || layer.raster.tile_at_index(idx).is_none() {
+                    continue;
+                }
+                let (x, y) = (idx as u32 % tx, idx as u32 / tx);
+                let mut changed = false;
+                let tile = layer.raster.tile_mut(x, y);
+                for px in tile.px.chunks_exact_mut(4) {
+                    if px[3] == 0 {
+                        continue;
+                    }
+                    let key = [px[0], px[1], px[2]];
+                    let out = *cache.entry(key).or_insert_with(|| {
+                        let c = pal.snap(Rgba8::new(key[0], key[1], key[2], 255));
+                        [c.r, c.g, c.b]
+                    });
+                    if out != key {
+                        px[..3].copy_from_slice(&out);
+                        changed = true;
+                    }
+                }
+                if changed {
+                    touched.insert_index(idx);
+                }
+            }
+        }
+        self.dirty.union_with(&touched);
     }
 
     /// Replace the working state with the current history state (e.g. to
@@ -651,5 +725,26 @@ mod tests {
         s.merge_down(1);
         let p = s.layers[0].raster.get_pixel(0, 0);
         assert!((p.r as i32 - 128).abs() <= 1);
+    }
+
+    #[test]
+    fn locked_palette_snaps_changed_pixels_on_commit() {
+        let mut doc = Document::new(8, 8, Some(Rgba8::WHITE), "t");
+        doc.state_mut().palette = Palette::new("bw", vec![Rgba8::BLACK, Rgba8::WHITE]);
+        doc.set_palette_lock(true);
+        doc.state_mut().layers[0].raster.set_pixel(1, 1, Rgba8::rgb(40, 40, 40));
+        doc.state_mut().layers[0].raster.set_pixel(2, 2, Rgba8::rgb(220, 220, 220));
+        doc.state_mut().layers[0].raster.set_pixel(3, 3, Rgba8::new(40, 40, 40, 100));
+        doc.commit("paint");
+        let r = &doc.state().layers[0].raster;
+        assert_eq!(r.get_pixel(1, 1), Rgba8::BLACK);
+        assert_eq!(r.get_pixel(2, 2), Rgba8::WHITE);
+        assert_eq!(r.get_pixel(3, 3), Rgba8::new(0, 0, 0, 100), "alpha is kept");
+        assert_eq!(doc.history.current().layers[0].raster.get_pixel(1, 1), Rgba8::BLACK);
+        // Unlocked: nothing is touched.
+        doc.set_palette_lock(false);
+        doc.state_mut().layers[0].raster.set_pixel(4, 4, Rgba8::rgb(40, 40, 40));
+        doc.commit("paint");
+        assert_eq!(doc.state().layers[0].raster.get_pixel(4, 4), Rgba8::rgb(40, 40, 40));
     }
 }

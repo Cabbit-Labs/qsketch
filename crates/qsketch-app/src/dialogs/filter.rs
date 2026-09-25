@@ -38,6 +38,9 @@ pub struct FilterDialog {
     /// Luma / R / G / B histograms of the target pixels (Levels only),
     /// taken from the committed state when the dialog opened.
     pub hist: Option<Box<[[u32; 256]; 4]>>,
+    /// Image ▸ Index Colors: on OK the palette used becomes the document
+    /// palette and the palette lock goes on.
+    pub index_mode: bool,
 }
 
 /// Default parameters for a Filter-menu action. Color parameters start from
@@ -149,6 +152,77 @@ pub fn open_with(state: &mut AppState, f: Filter) {
         last_ms: 0.0,
         base,
         hist,
+        index_mode: false,
+    });
+}
+
+/// Image ▸ Replace Color: swap the foreground color for the background one
+/// (pick the color to replace first, with Alt or the eyedropper).
+pub fn open_replace_color(state: &mut AppState) {
+    let (from, to) = (state.fg, state.bg);
+    let mut f = state.filter_memory.get("replace_color").cloned().unwrap_or(Filter::ReplaceColor {
+        from,
+        to,
+        tolerance: 24,
+        soft: true,
+    });
+    if let Filter::ReplaceColor { from: a, to: b, .. } = &mut f {
+        *a = from;
+        *b = to;
+    }
+    open_with(state, f);
+}
+
+/// Snap to Palette / Index Colors. With `index`, every editable layer is
+/// targeted, a palette is generated from the image when the document has
+/// none, and OK adopts the palette and locks it.
+pub fn open_snap_to_palette(state: &mut AppState, index: bool) {
+    let Some(e) = state.active() else { return };
+    let s = e.doc.state();
+    let colors = if s.palette.is_empty() {
+        let flat = qsketch_core::composite::flatten(s).to_rgba();
+        let mut p = qsketch_core::Palette::from_rgba("", &flat, 32);
+        p.sort_by_luma();
+        p.colors
+    } else {
+        s.palette.colors.clone()
+    };
+    let remembered = state.filter_memory.get("palettize").cloned();
+    let (pattern, strength) = match remembered {
+        Some(Filter::Palettize { pattern, strength, .. }) => (pattern, strength),
+        _ => (DitherPattern::None, 0.5),
+    };
+    let f = Filter::Palettize { colors, pattern, strength };
+    if !index {
+        open_with(state, f);
+        return;
+    }
+    state.settle();
+    let Some(e) = state.active() else { return };
+    let s = e.doc.state();
+    let layers: Vec<LayerId> = (0..s.layers.len())
+        .filter(|i| s.layer_editable(*i) && !s.layers[*i].is_group())
+        .map(|i| s.layers[i].props.id)
+        .collect();
+    if layers.is_empty() {
+        state.toasts.push(Level::Info, "No editable layers to index.");
+        return;
+    }
+    let doc = e.id;
+    if let Some(prev) = state.dialogs.filter.take() {
+        revert(state, &prev);
+    }
+    let base = state.doc(doc).map(|e| e.doc.history.current_id()).unwrap_or(0);
+    state.dialogs.filter = Some(FilterDialog {
+        doc,
+        layers,
+        filter: f,
+        applied: None,
+        preview: true,
+        last_ms: 0.0,
+        base,
+        hist: None,
+        index_mode: true,
     });
 }
 
@@ -294,7 +368,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
     }
     let (mut ok, mut cancel, mut open) = (false, false, true);
     let screen = ctx.content_rect();
-    egui::Window::new(d.filter.name())
+    egui::Window::new(if d.index_mode { "Index Colors" } else { d.filter.name() })
         .id(egui::Id::new("filter_dialog"))
         .open(&mut open)
         .collapsible(false)
@@ -308,6 +382,9 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                 Filter::Levels(l) => levels_ui(ui, l, d.hist.as_deref()),
                 Filter::Curves(c) => curves_ui(ui, c, d.hist.as_deref()),
                 Filter::ColorBalance(b) => color_balance_ui(ui, b),
+                Filter::Palettize { colors, pattern, strength } => {
+                    palettize_ui(ui, colors, pattern, strength, d.index_mode, state.doc(d.doc))
+                }
                 f => params_ui(ui, f),
             }
             ui.add_space(8.0);
@@ -373,7 +450,17 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                 }
                 run(e, &d.layers, &d.filter);
             }
-            e.doc.commit(d.filter.name());
+            if d.index_mode {
+                if let Filter::Palettize { colors, .. } = &d.filter {
+                    let s = e.doc.state_mut();
+                    if s.palette.name.is_empty() {
+                        s.palette.name = "Indexed".into();
+                    }
+                    s.palette.colors = colors.clone();
+                }
+                e.doc.set_palette_lock(true);
+            }
+            e.doc.commit(if d.index_mode { "Index Colors" } else { d.filter.name() });
         }
         remember(state, d.filter);
     } else {
@@ -725,8 +812,89 @@ fn levels_ui(ui: &mut Ui, l: &mut Levels, hist: Option<&[[u32; 256]; 4]>) {
     });
 }
 
+/// Snap to Palette / Index Colors controls: the palette in use (editable
+/// count when generating from the image) and the dither.
+fn palettize_ui(
+    ui: &mut Ui,
+    colors: &mut Vec<Rgba8>,
+    pattern: &mut DitherPattern,
+    strength: &mut f32,
+    index_mode: bool,
+    entry: Option<&DocEntry>,
+) {
+    let doc_pal = entry.map(|e| &e.doc.state().palette);
+    let using_doc = doc_pal.is_some_and(|p| !p.is_empty() && p.colors == *colors);
+    ui.horizontal(|ui| {
+        ui.label(format!("{} colors", colors.len()));
+        if using_doc {
+            ui.label(RichText::new("(document palette)").weak().small());
+        }
+    });
+    // Palette strip.
+    let size = 12.0;
+    let cols = ((ui.available_width() + 2.0) / (size + 2.0)).floor().max(1.0) as usize;
+    let rows = colors.len().div_ceil(cols).min(6);
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), rows as f32 * (size + 2.0)), egui::Sense::hover());
+    for (i, c) in colors.iter().enumerate().take(cols * rows) {
+        let (x, y) = ((i % cols) as f32, (i / cols) as f32);
+        let r = egui::Rect::from_min_size(
+            rect.min + egui::vec2(x * (size + 2.0), y * (size + 2.0)),
+            egui::Vec2::splat(size),
+        );
+        ui.painter().rect_filled(r, 0.0, egui::Color32::from_rgb(c.r, c.g, c.b));
+    }
+    ui.horizontal(|ui| {
+        let id = ui.id().with("gen_count");
+        let mut count: usize = ui.data(|d| d.get_temp(id)).unwrap_or(colors.len().clamp(2, 256));
+        ui.label("Generate");
+        if ui.add(egui::DragValue::new(&mut count).range(2..=256)).changed() {
+            ui.data_mut(|d| d.insert_temp(id, count));
+        }
+        if ui.button("from image").on_hover_text("Median-cut the image's colors down to this many").clicked() {
+            if let Some(e) = entry {
+                let flat = qsketch_core::composite::flatten(e.doc.history.current()).to_rgba();
+                let mut p = qsketch_core::Palette::from_rgba("", &flat, count);
+                p.sort_by_luma();
+                *colors = p.colors;
+            }
+        }
+        if let Some(p) = doc_pal.filter(|p| !p.is_empty() && !using_doc) {
+            if ui.button("use document palette").clicked() {
+                *colors = p.colors.clone();
+            }
+        }
+    });
+    ui.add_space(4.0);
+    ui.label("Dither");
+    ui.horizontal_wrapped(|ui| {
+        ui.selectable_value(pattern, DitherPattern::None, "None");
+        ui.selectable_value(pattern, DitherPattern::Bayer2, "Bayer 2×2");
+        ui.selectable_value(pattern, DitherPattern::Bayer4, "Bayer 4×4");
+        ui.selectable_value(pattern, DitherPattern::Bayer8, "Bayer 8×8");
+        ui.selectable_value(pattern, DitherPattern::Noise, "Noise");
+    });
+    if *pattern != DitherPattern::None {
+        slider(ui, strength, 0.0..=1.0, "Dither strength", "");
+    }
+    if index_mode {
+        ui.label(
+            RichText::new("OK makes this the document palette and locks it: from then on every edit snaps to it.")
+                .weak()
+                .small(),
+        );
+    }
+}
+
 fn params_ui(ui: &mut Ui, f: &mut Filter) {
     match f {
+        Filter::ReplaceColor { from, to, tolerance, soft } => {
+            color_ui(ui, "Replace", from);
+            color_ui(ui, "With", to);
+            slider(ui, tolerance, 0..=255, "Tolerance", "");
+            ui.checkbox(soft, "Soft edges");
+        }
+        Filter::Palettize { .. } => {}
         Filter::BrightnessContrast { brightness, contrast } => {
             slider(ui, brightness, -100.0..=100.0, "Brightness", "");
             slider(ui, contrast, -100.0..=100.0, "Contrast", "");
