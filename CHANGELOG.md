@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.35.0 — 2026-09-25
 
 - **Curves** (Image ▸ Adjustments ▸ Curves…, `Ctrl+M`): a Photoshop-style
   tone curve per channel with the histogram behind it. Click to add a point,
