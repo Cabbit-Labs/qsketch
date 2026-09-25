@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.34.1 — 2026-09-25
 
 - Painting and the shape tools now refuse a hidden layer at the press, including
   a layer inside a hidden or locked group; before, a stroke could land on a
