@@ -93,10 +93,12 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         state.close_floating_requests.push(crate::workspace::PanelKind::BrushSettings);
     }
     {
-        let AppState { brush, pencil, eraser, library, brush_page, fg, bg, presets, .. } = state;
+        let AppState { brush, pencil, eraser, smudge, clone, library, brush_page, fg, bg, presets, .. } = state;
         let b: &mut BrushSettings = match tool {
             ToolKind::Pencil => pencil,
             ToolKind::Eraser => eraser,
+            ToolKind::Smudge => smudge,
+            ToolKind::Clone => clone,
             _ => brush,
         };
         let (fg, bg) = (*fg, *bg);

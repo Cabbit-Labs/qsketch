@@ -950,6 +950,8 @@ pub struct PaintSettings {
     pub pencil: BrushSettings,
     pub eraser: BrushSettings,
     pub select_brush: BrushSettings,
+    pub smudge: BrushSettings,
+    pub clone: BrushSettings,
     pub presets: Vec<BrushSettings>,
     pub foreground: Rgba8,
     pub background: Rgba8,
@@ -972,6 +974,16 @@ impl Default for PaintSettings {
                 flow: 1.0,
                 ..BrushSettings::preset("Hard Round")
             },
+            smudge: BrushSettings {
+                name: "Smudge".into(),
+                size: 30.0,
+                hardness: 0.5,
+                opacity: 0.7,
+                flow: 1.0,
+                spacing: 0.08,
+                ..BrushSettings::preset("Soft Round")
+            },
+            clone: BrushSettings { name: "Clone".into(), size: 40.0, ..BrushSettings::preset("Soft Round") },
             presets: BrushSettings::presets(),
             foreground: Rgba8::BLACK,
             background: Rgba8::WHITE,

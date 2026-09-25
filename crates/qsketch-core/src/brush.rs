@@ -529,6 +529,13 @@ impl BrushSettings {
 pub enum PaintMode {
     Paint,
     Erase,
+    /// Clone stamp: each pixel takes its color from a source raster at a
+    /// fixed offset (see [`StrokeEngine::with_clone_source`]); the brush
+    /// shape, flow and opacity apply as for paint.
+    Clone,
+    /// Smudge: the dab picks up what is under it and drags it along; the
+    /// brush's opacity is the strength (1 = never fades, never picks up).
+    Smudge,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -559,8 +566,16 @@ pub struct StrokeEngine {
     original: Raster,
     selection: Option<Arc<Mask>>,
     coverage: HashMap<usize, Box<[f32; TILE_PX]>>,
-    /// Per-pixel accumulated dab color (only with color dynamics).
-    colors: Option<HashMap<usize, Box<[[f32; 3]; TILE_PX]>>>,
+    /// Per-pixel accumulated dab color (color dynamics, or clone stamp where
+    /// the alpha carries the source's transparency).
+    colors: Option<HashMap<usize, Box<[[f32; 4]; TILE_PX]>>>,
+    /// Clone source: the raster to sample and the offset added to each
+    /// destination pixel to find its source pixel.
+    clone: Option<(Arc<Raster>, i32, i32)>,
+    /// Smudge pickup: colors under the previous dab, stored relative to that
+    /// dab's center (side `smudge_side`), so moving the dab drags them along.
+    smudge: Option<(Vec<[f32; 4]>, Pt)>,
+    smudge_side: i32,
     last: Option<StrokeSample>,
     smooth_pos: Option<Pt>,
     /// The last raw (unsmoothed) input position, so the stroke can finish
@@ -598,7 +613,12 @@ impl StrokeEngine {
         selection: Option<Arc<Mask>>,
     ) -> Self {
         settings.clamp();
-        let colors = if settings.color_dynamics && mode == PaintMode::Paint { Some(HashMap::new()) } else { None };
+        let colors = if (settings.color_dynamics && mode == PaintMode::Paint) || mode == PaintMode::Clone {
+            Some(HashMap::new())
+        } else {
+            None
+        };
+        let smudge_side = (settings.size.ceil() as i32 + 4).max(3);
         let smooth_len = smoothing_len(settings.smoothing);
         Self {
             settings,
@@ -612,6 +632,9 @@ impl StrokeEngine {
             selection,
             coverage: HashMap::new(),
             colors,
+            clone: None,
+            smudge: None,
+            smudge_side,
             last: None,
             smooth_pos: None,
             last_raw: None,
@@ -626,6 +649,12 @@ impl StrokeEngine {
 
     /// Scale the smoothing length to the view: the slider is tuned in screen
     /// pixels, so a zoomed-in canvas smooths over fewer document pixels.
+    /// Clone stamp source: pixels are read from `src` at `(x + dx, y + dy)`.
+    pub fn with_clone_source(mut self, src: Arc<Raster>, dx: i32, dy: i32) -> Self {
+        self.clone = Some((src, dx, dy));
+        self
+    }
+
     pub fn with_zoom(mut self, zoom: f32) -> Self {
         self.smooth_len = smoothing_len(self.settings.smoothing) / zoom.max(0.01);
         self
@@ -880,8 +909,88 @@ impl StrokeEngine {
         dirty
     }
 
+    /// Smudge: drop the pickup buffer onto the dab, then refill it from what
+    /// is now there. Round tip, hardness honored; custom tips are not.
+    fn smudge_dab(&mut self, raster: &mut Raster, center: Pt, pressure: f32) -> IRect {
+        let r = self.radius_for(pressure).max(0.5);
+        let strength = self.settings.opacity.clamp(0.0, 1.0) * self.alpha_for(pressure).clamp(0.0, 1.0);
+        let side = self.smudge_side;
+        let half = side / 2;
+        // Buffer cell (bx, by) holds the pixel at center + (bx - half, by - half).
+        let cx = center.x.floor() as i32;
+        let cy = center.y.floor() as i32;
+        let rect = IRect::new(cx - half, cy - half, side, side).intersect(&raster.rect());
+        if rect.is_empty() {
+            return IRect::EMPTY;
+        }
+        let hardness = self.settings.hardness;
+        let aa = self.settings.antialias;
+        let sel = self.selection.clone();
+        let alpha_lock = self.alpha_lock;
+        let read = |raster: &Raster, x: i32, y: i32| raster.get_pixel(x, y).to_f32();
+        if let Some((buf, _prev)) = self.smudge.take() {
+            // Deposit what we carry at the same offset from the new center.
+            for y in rect.y..rect.bottom() {
+                for x in rect.x..rect.right() {
+                    let (px, py) = (x as f32 + 0.5 - center.x, y as f32 + 0.5 - center.y);
+                    let mut f = falloff((px * px + py * py).sqrt(), r, hardness, aa) * strength;
+                    if f <= 0.0 {
+                        continue;
+                    }
+                    if let Some(m) = &sel {
+                        f *= m.coverage(x, y);
+                    }
+                    let bx = x - cx + half;
+                    let by = y - cy + half;
+                    if bx < 0 || by < 0 || bx >= side || by >= side {
+                        continue;
+                    }
+                    let src = buf[(by * side + bx) as usize];
+                    let dst = read(raster, x, y);
+                    let mut out = [0.0; 4];
+                    for k in 0..4 {
+                        out[k] = dst[k] + (src[k] - dst[k]) * f;
+                    }
+                    if alpha_lock {
+                        out[3] = dst[3];
+                    }
+                    raster.set_pixel(x, y, Rgba8::from_f32(out));
+                }
+            }
+            // Pick up: keep most of what we carry, take some of what is here.
+            let keep = strength;
+            let mut nb = vec![[0.0f32; 4]; (side * side) as usize];
+            for by in 0..side {
+                for bx in 0..side {
+                    let (x, y) = (cx - half + bx, cy - half + by);
+                    let here = read(raster, x, y);
+                    let old = buf[(by * side + bx) as usize];
+                    let mut v = [0.0; 4];
+                    for k in 0..4 {
+                        v[k] = here[k] + (old[k] - here[k]) * keep;
+                    }
+                    nb[(by * side + bx) as usize] = v;
+                }
+            }
+            self.smudge = Some((nb, center));
+        } else {
+            let mut nb = vec![[0.0f32; 4]; (side * side) as usize];
+            for by in 0..side {
+                for bx in 0..side {
+                    nb[(by * side + bx) as usize] = read(raster, cx - half + bx, cy - half + by);
+                }
+            }
+            self.smudge = Some((nb, center));
+        }
+        self.dirty_total = self.dirty_total.union(&rect);
+        rect
+    }
+
     fn dab(&mut self, raster: &mut Raster, center: Pt, pressure: f32) -> IRect {
         self.dabs += 1;
+        if self.mode == PaintMode::Smudge {
+            return self.smudge_dab(raster, center, pressure);
+        }
         let shape = self.shape_for(pressure);
         let alpha = self.flow_for(pressure);
         if alpha <= 0.0 {
@@ -914,13 +1023,14 @@ impl StrokeEngine {
         let noise = s.noise;
         let noise_seed = self.rng.next_u64();
         let use_colors = self.colors.is_some();
+        let clone = self.clone.clone();
         let dab_seed = self.dabs as u64;
         for (tx, ty) in raster.tiles_in_rect(rect) {
             let tr = tile_rect(tx, ty);
             let sub = rect.intersect(&tr);
             let idx = raster.tile_index(tx, ty);
             let cov = self.coverage.entry(idx).or_insert_with(|| Box::new([0.0; TILE_PX]));
-            let mut col = self.colors.as_mut().map(|m| m.entry(idx).or_insert_with(|| Box::new([[0.0; 3]; TILE_PX])));
+            let mut col = self.colors.as_mut().map(|m| m.entry(idx).or_insert_with(|| Box::new([[0.0; 4]; TILE_PX])));
             for y in sub.y..sub.bottom() {
                 let py = y as f32 + 0.5 - center.y;
                 for x in sub.x..sub.right() {
@@ -979,12 +1089,18 @@ impl StrokeEngine {
                     if add <= 0.0 {
                         continue;
                     }
+                    // The clone stamp's color is whatever sits under the
+                    // source point; its alpha travels with it.
+                    let dab_color = match &clone {
+                        Some((src, dx, dy)) => src.get_pixel(x + dx, y + dy).to_f32(),
+                        None => dab_color,
+                    };
                     if use_colors {
                         if let Some(col) = col.as_deref_mut() {
                             let total = *c + add;
                             let w = add / total;
                             let pc = &mut col[li];
-                            for i in 0..3 {
+                            for i in 0..4 {
                                 pc[i] += (dab_color[i] - pc[i]) * w;
                             }
                         }
@@ -1028,7 +1144,8 @@ impl StrokeEngine {
                     let color = match colors {
                         Some(cm) => {
                             let pc = cm[li];
-                            [pc[0], pc[1], pc[2], base_color[3]]
+                            let a = if self.mode == PaintMode::Clone { pc[3] } else { base_color[3] };
+                            [pc[0], pc[1], pc[2], a]
                         }
                         None => base_color,
                     };
@@ -1038,7 +1155,7 @@ impl StrokeEngine {
                     };
                     let of = o.to_f32();
                     let out = match self.mode {
-                        PaintMode::Paint if self.alpha_lock => {
+                        PaintMode::Paint | PaintMode::Clone if self.alpha_lock => {
                             if o.a == 0 {
                                 continue;
                             }
@@ -1050,7 +1167,10 @@ impl StrokeEngine {
                                 of[3],
                             ]
                         }
-                        PaintMode::Paint => src_over(of, [color[0], color[1], color[2], color[3] * eff]),
+                        PaintMode::Paint | PaintMode::Clone => {
+                            src_over(of, [color[0], color[1], color[2], color[3] * eff])
+                        }
+                        PaintMode::Smudge => continue,
                         PaintMode::Erase if self.alpha_lock => {
                             if o.a == 0 {
                                 continue;
@@ -1347,6 +1467,52 @@ mod tests {
         assert!(tipped.dab_spans(Pt::new(10.0, 10.0), 1.0).is_none());
         let scattered = BrushSettings { scattering: true, scatter: 2.0, ..Default::default() };
         assert!(scattered.dab_spans(Pt::new(10.0, 10.0), 1.0).is_none());
+    }
+
+    /// The clone stamp paints what sits at the source offset, transparency
+    /// included; smudge drags a color into empty space.
+    #[test]
+    fn clone_and_smudge() {
+        let mut src = Raster::new(64, 64);
+        src.fill_rect(IRect::new(0, 0, 8, 8), Rgba8::new(10, 200, 30, 255));
+        let l = layer();
+        let mut s = BrushSettings::preset("Hard Round");
+        s.size = 4.0;
+        s.opacity = 1.0;
+        s.flow = 1.0;
+        let mut e = StrokeEngine::new(s.clone(), PaintMode::Clone, Rgba8::BLACK, &l, None).with_clone_source(
+            Arc::new(src),
+            -30,
+            -30,
+        );
+        let mut r = l.raster.clone();
+        e.extend(&mut r, StrokeSample { pos: Pt::new(34.0, 34.0), pressure: 1.0 });
+        e.finish(&mut r);
+        assert_eq!(r.get_pixel(34, 34), Rgba8::new(10, 200, 30, 255), "source (4,4) lands at (34,34)");
+        let mut e2 = StrokeEngine::new(s.clone(), PaintMode::Clone, Rgba8::BLACK, &l, None).with_clone_source(
+            Arc::new(Raster::new(64, 64)),
+            0,
+            0,
+        );
+        let mut r2 = l.raster.clone();
+        e2.extend(&mut r2, StrokeSample { pos: Pt::new(34.0, 34.0), pressure: 1.0 });
+        e2.finish(&mut r2);
+        assert_eq!(r2.get_pixel(34, 34).a, 0, "a transparent source paints nothing");
+
+        let mut base = l.clone();
+        base.raster.fill_rect(IRect::new(0, 0, 20, 64), Rgba8::new(255, 0, 0, 255));
+        let mut sm = s.clone();
+        sm.opacity = 0.8;
+        sm.spacing = 0.1;
+        let mut e3 = StrokeEngine::new(sm, PaintMode::Smudge, Rgba8::BLACK, &base, None);
+        let mut r3 = base.raster.clone();
+        for x in 18..30 {
+            e3.extend(&mut r3, StrokeSample { pos: Pt::new(x as f32, 32.0), pressure: 1.0 });
+        }
+        e3.finish(&mut r3);
+        let p = r3.get_pixel(23, 32);
+        assert!(p.a > 0 && p.r > 100, "red got dragged right: {p:?}");
+        assert_eq!(r3.get_pixel(5, 32), Rgba8::new(255, 0, 0, 255), "untouched area stays");
     }
 
     #[test]

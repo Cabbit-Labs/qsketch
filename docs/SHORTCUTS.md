@@ -184,6 +184,8 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Brush | `B` |
 | Pencil | `N` |
 | Eraser | `E` |
+| Smudge | — |
+| Clone Stamp | `S` |
 | Paint Bucket | `G` |
 | Gradient | `Shift+G` |
 | Line | `U` |

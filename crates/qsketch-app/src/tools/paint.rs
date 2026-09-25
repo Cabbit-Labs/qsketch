@@ -152,6 +152,8 @@ fn brush_for(state: &AppState, tool: ToolKind) -> (BrushSettings, PaintMode, Rgb
         ToolKind::Pencil => (state.pencil.clone(), PaintMode::Paint, state.fg),
         ToolKind::Eraser => (state.eraser.clone(), PaintMode::Erase, state.bg),
         ToolKind::SelectBrush => (state.select_brush.clone(), PaintMode::Paint, Rgba8::WHITE),
+        ToolKind::Smudge => (state.smudge.clone(), PaintMode::Smudge, state.fg),
+        ToolKind::Clone => (state.clone.clone(), PaintMode::Clone, state.fg),
         _ => (state.brush.clone(), PaintMode::Paint, state.fg),
     }
 }
@@ -180,6 +182,12 @@ pub(super) fn begin_engine_with(
     let symmetry = state.symmetry;
     let zoom = state.doc(doc_id).map(|d| d.view.zoom).unwrap_or(1.0);
     let erase_sel = state.tool_opts.select_brush_erase;
+    let clone_offset = state.tool_opts.clone_offset;
+    let clone_merged = state.tool_opts.clone_sample_merged;
+    if mode == PaintMode::Clone && clone_offset.is_none() {
+        state.toasts.push(Level::Info, "Alt+click to set the clone source first.");
+        return None;
+    }
     let entry = state.doc_mut(doc_id)?;
     let (w, h) = (entry.doc.width(), entry.doc.height());
     let s = entry.doc.state();
@@ -198,6 +206,19 @@ pub(super) fn begin_engine_with(
         return None;
     }
     let erase_alpha_locked = mode == PaintMode::Erase && layer.props.alpha_locked;
+    // The clone stamp needs a source: the layer (or everything) as it is now,
+    // read at the offset the press established.
+    let clone_src: Option<(Arc<Raster>, i32, i32)> = if let (PaintMode::Clone, Some((dx, dy))) = (mode, clone_offset) {
+        let src = if clone_merged {
+            let comp = &entry.doc.composite;
+            Raster::from_rgba(comp.width(), comp.height(), &comp.to_rgba_straight())
+        } else {
+            layer.raster.clone()
+        };
+        Some((Arc::new(src), dx, dy))
+    } else {
+        None
+    };
     let clip = if to_selection { None } else { s.selection.clone() };
     let target = if to_selection {
         StrokeTarget::Selection { scratch: Raster::new(w, h), base: s.selection.clone(), erase: erase_sel }
@@ -207,12 +228,16 @@ pub(super) fn begin_engine_with(
         StrokeTarget::Layer
     };
     let make = |seed: u64| {
-        StrokeEngine::new(settings.clone(), mode, color, layer, clip.clone())
+        let e = StrokeEngine::new(settings.clone(), mode, color, layer, clip.clone())
             .with_tip(tip.clone())
             .with_texture(texture.clone())
             .with_background(bg)
             .with_seed(seed)
-            .with_zoom(zoom)
+            .with_zoom(zoom);
+        match &clone_src {
+            Some((src, dx, dy)) => e.with_clone_source(src.clone(), *dx, *dy),
+            None => e,
+        }
     };
     let base_seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -236,6 +261,8 @@ fn stroke_label(tool: ToolKind) -> &'static str {
         ToolKind::Pencil => "Pencil",
         ToolKind::Eraser => "Eraser",
         ToolKind::SelectBrush => "Selection Brush",
+        ToolKind::Smudge => "Smudge",
+        ToolKind::Clone => "Clone Stamp",
         ToolKind::Line => "Line",
         ToolKind::Rect => "Rectangle",
         ToolKind::Ellipse => "Ellipse",
@@ -403,6 +430,20 @@ pub fn handle_stroke(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: Ca
             } else {
                 None
             };
+            // Clone stamp: the offset from where the stroke starts to the
+            // source point, kept between strokes when aligned.
+            if tool == ToolKind::Clone {
+                let o = &mut state.tool_opts;
+                match o.clone_source {
+                    Some((d, src)) if d == doc_id => {
+                        if !o.clone_aligned || o.clone_offset.is_none() {
+                            o.clone_offset =
+                                Some(((src.x - inp.doc.x).round() as i32, (src.y - inp.doc.y).round() as i32));
+                        }
+                    }
+                    _ => o.clone_offset = None,
+                }
+            }
             let Some((engine, layer, mut extra)) = begin_engine_with(state, doc_id, tool) else { return };
             // Alt flips the selection brush between select and deselect for
             // this one stroke, the way Alt means subtract for the marquees.

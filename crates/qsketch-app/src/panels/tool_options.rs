@@ -48,7 +48,23 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
             | ToolKind::Eraser
             | ToolKind::Line
             | ToolKind::Rect
-            | ToolKind::Ellipse => brush_options(ui, state, tool),
+            | ToolKind::Ellipse
+            | ToolKind::Smudge => brush_options(ui, state, tool),
+            ToolKind::Clone => {
+                brush_options(ui, state, tool);
+                group(ui, &theme, Section::Tools, |ui| {
+                    let o = &mut state.tool_opts;
+                    ui.checkbox(&mut o.clone_aligned, "Aligned")
+                        .on_hover_text("Keep the same offset from source to brush across strokes");
+                    ui.checkbox(&mut o.clone_sample_merged, "Sample all layers")
+                        .on_hover_text("Copy from the whole picture, not just the active layer");
+                    let text = match o.clone_source {
+                        Some((_, p)) => format!("Source {}, {}", p.x.round() as i32, p.y.round() as i32),
+                        None => "Alt+click to set the source".to_string(),
+                    };
+                    ui.label(egui::RichText::new(text).weak().small());
+                });
+            }
             ToolKind::SelectBrush => {
                 group(ui, &theme, Section::Tools, |ui| {
                     let erase = state.tool_opts.select_brush_erase;

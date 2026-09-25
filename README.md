@@ -22,6 +22,9 @@ keyboard.
   Flat Marker, Dry Bristle). Import brush tips from PNGs or from GIMP
   (`.gbr`, `.gih`) and Photoshop (`.abr`, sampled brushes) files, or drop
   your own texture PNGs into the config folder's `textures/` directory.
+- **Retouching brushes.** Smudge drags colors along under the stroke; the
+  Clone Stamp copies from an Alt+clicked source point (aligned or not, from
+  one layer or all), both through the full brush engine.
 - **Photoshop `.psd` open and save** (8/16-bit RGB or grayscale; layer names,
   visibility, opacity, blend modes and clipping round-trip; groups flatten
   into the layer list on open).

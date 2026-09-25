@@ -2,6 +2,18 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- **Smudge tool**: drags the colors under the brush along with the stroke,
+  like a finger through wet paint. Opacity is the strength: at 100% the
+  brush never fades and never picks up new paint; lower values blend as they
+  go. Honors the selection and transparency lock.
+- **Clone Stamp** (`S`): Alt+click sets a source point, then painting copies
+  pixels from there, transparency included, through any brush shape, flow and
+  opacity. *Aligned* keeps the source-to-brush offset between strokes;
+  *Sample all layers* copies from the whole picture instead of the active
+  layer. A crosshair marks the source.
+
 ## 0.36.0 — 2026-09-25
 
 - **Layer masks.** Layer ▸ Layer Mask ▸ Reveal All / Hide All / From

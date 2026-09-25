@@ -144,6 +144,14 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                     let poly_open = matches!(state.session, Some(ToolSession::PolyLasso { .. }))
                         && state.session_doc == Some(doc_id);
                     if hovered && rect.contains(*pos) && (state.session.is_none() || poly_open) {
+                        // Clone stamp: Alt+click sets the source point (and a
+                        // new source resets the aligned offset).
+                        if state.tool == ToolKind::Clone && modifiers.alt && *button == egui::PointerButton::Primary {
+                            let p = state.doc(doc_id).unwrap().view.screen_to_doc(*pos);
+                            state.tool_opts.clone_source = Some((doc_id, p));
+                            state.tool_opts.clone_offset = None;
+                            continue;
+                        }
                         // A pick chord without modifiers (bare right-click, say)
                         // can't arm the temporary eyedropper, so pick here.
                         if state.temp_tool.is_none() && state.tool.uses_color() {
@@ -780,7 +788,9 @@ fn draw_shift_line_preview(
     tool: ToolKind,
 ) {
     let Some(pos) = hover else { return };
-    if !matches!(tool, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser) || state.session.is_some() {
+    if !matches!(tool, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Clone)
+        || state.session.is_some()
+    {
         return;
     }
     let Some((d, from)) = state.last_stroke_end else { return };

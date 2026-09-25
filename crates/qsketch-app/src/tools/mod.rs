@@ -51,10 +51,14 @@ pub enum ToolKind {
     Zoom,
     Hand,
     RotateView,
+    /// Drags colors along under the pointer.
+    Smudge,
+    /// Paints pixels copied from a source point (Alt+click sets it).
+    Clone,
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 22] = [
+    pub const ALL: [ToolKind; 24] = [
         ToolKind::Move,
         ToolKind::RectSelect,
         ToolKind::EllipseSelect,
@@ -67,6 +71,8 @@ impl ToolKind {
         ToolKind::Brush,
         ToolKind::Pencil,
         ToolKind::Eraser,
+        ToolKind::Smudge,
+        ToolKind::Clone,
         ToolKind::Fill,
         ToolKind::Gradient,
         ToolKind::Line,
@@ -93,6 +99,8 @@ impl ToolKind {
             ToolKind::Brush => "Brush",
             ToolKind::Pencil => "Pencil",
             ToolKind::Eraser => "Eraser",
+            ToolKind::Smudge => "Smudge",
+            ToolKind::Clone => "Clone Stamp",
             ToolKind::Fill => "Paint Bucket",
             ToolKind::Gradient => "Gradient",
             ToolKind::Line => "Line",
@@ -126,6 +134,8 @@ impl ToolKind {
             ToolKind::Brush => icons::PAINT_BRUSH,
             ToolKind::Pencil => icons::PENCIL_SIMPLE,
             ToolKind::Eraser => icons::ERASER,
+            ToolKind::Smudge => icons::HAND_SWIPE_RIGHT,
+            ToolKind::Clone => icons::STAMP,
             ToolKind::Fill => icons::PAINT_BUCKET,
             ToolKind::Gradient => icons::GRADIENT,
             ToolKind::Line => icons::LINE_SEGMENT,
@@ -150,7 +160,7 @@ impl ToolKind {
             | ToolKind::MagicWand
             | ToolKind::SelectBrush => 1,
             ToolKind::Crop | ToolKind::Eyedropper => 2,
-            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => 3,
+            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Clone => 3,
             ToolKind::Fill | ToolKind::Gradient => 4,
             ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse | ToolKind::Contour => 5,
             ToolKind::Text => 6,
@@ -171,13 +181,22 @@ impl ToolKind {
     }
 
     pub fn is_paint(self) -> bool {
-        matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser)
+        matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Clone)
     }
 
     /// Tools that lay down brush dabs. The Rectangle and Ellipse tools do not:
     /// they paint hard pixels in the foreground color.
     pub fn uses_brush(self) -> bool {
-        matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Line | ToolKind::SelectBrush)
+        matches!(
+            self,
+            ToolKind::Brush
+                | ToolKind::Pencil
+                | ToolKind::Eraser
+                | ToolKind::Line
+                | ToolKind::SelectBrush
+                | ToolKind::Smudge
+                | ToolKind::Clone
+        )
     }
 
     /// Strokes that go into the selection instead of a layer.
@@ -206,7 +225,9 @@ impl ToolKind {
             ToolKind::Hand => egui::CursorIcon::Grab,
             ToolKind::Zoom => egui::CursorIcon::ZoomIn,
             ToolKind::RotateView => egui::CursorIcon::Alias,
-            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => egui::CursorIcon::None,
+            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Clone => {
+                egui::CursorIcon::None
+            }
             ToolKind::Text => egui::CursorIcon::Text,
             _ => egui::CursorIcon::Crosshair,
         }
@@ -238,6 +259,14 @@ pub struct ToolOptions {
     /// Outline width in pixels for the Rectangle / Ellipse tools.
     pub shape_thickness: u32,
     pub eyedropper_sample_merged: bool,
+    /// Clone stamp: the source point (document, position) set by Alt+click.
+    pub clone_source: Option<(crate::state::DocId, Pt)>,
+    /// Source-minus-destination offset of the current/last stroke.
+    pub clone_offset: Option<(i32, i32)>,
+    /// Aligned: keep the offset between strokes; off: every stroke starts
+    /// again from the source point.
+    pub clone_aligned: bool,
+    pub clone_sample_merged: bool,
     pub zoom_scrub: bool,
     /// Contour: stroke the edge with the current brush after filling.
     pub contour_outline: bool,
@@ -271,6 +300,10 @@ impl Default for ToolOptions {
             shape_filled: false,
             shape_thickness: 1,
             eyedropper_sample_merged: true,
+            clone_source: None,
+            clone_offset: None,
+            clone_aligned: true,
+            clone_sample_merged: false,
             zoom_scrub: true,
             contour_outline: false,
             text: TextStyle::default(),
@@ -456,9 +489,12 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         }
     }
     match tool {
-        ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::SelectBrush => {
-            paint::handle_stroke(state, doc_id, tool, ev)
-        }
+        ToolKind::Brush
+        | ToolKind::Pencil
+        | ToolKind::Eraser
+        | ToolKind::SelectBrush
+        | ToolKind::Smudge
+        | ToolKind::Clone => paint::handle_stroke(state, doc_id, tool, ev),
         ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse => paint::handle_shape(state, doc_id, tool, ev),
         ToolKind::Contour => contour::handle(state, doc_id, ev),
         ToolKind::Text => text::handle(state, doc_id, ev),
@@ -486,6 +522,21 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     let shadow = egui::Stroke::new(3.0, egui::Color32::from_black_alpha(120));
     let to_s = |p: Pt| view.doc_to_screen(p);
 
+    // The clone stamp's source point: a small crosshair.
+    if state.effective_tool() == ToolKind::Clone {
+        if let Some((d, p)) = state.tool_opts.clone_source {
+            if d == doc_id {
+                let c = to_s(p);
+                for (a, b) in
+                    [(egui::vec2(-7.0, 0.0), egui::vec2(7.0, 0.0)), (egui::vec2(0.0, -7.0), egui::vec2(0.0, 7.0))]
+                {
+                    painter.line_segment([c + a, c + b], shadow);
+                    painter.line_segment([c + a, c + b], stroke);
+                }
+                painter.circle_stroke(c, 4.0, stroke);
+            }
+        }
+    }
     if state.session_doc == Some(doc_id) {
         match &state.session {
             Some(ToolSession::DragRect { start, cur, mods }) => {
