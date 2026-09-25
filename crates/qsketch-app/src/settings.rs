@@ -668,6 +668,11 @@ pub struct CanvasSettings {
     /// Tile grid over the canvas (View ▸ Grid), every `grid_size` pixels.
     pub show_grid: bool,
     pub grid_size: u32,
+    /// Shape, marquee, crop, move and gradient drags land on grid lines.
+    pub snap_to_grid: bool,
+    /// Tiled preview: repeat the document around itself (0 off, 1 across,
+    /// 2 down, 3 both) so seamless tiles can be judged while painting.
+    pub tiled: u8,
     pub wheel: WheelBehavior,
     /// What the wheel does per modifier. Checked ctrl, then alt, then shift,
     /// then plain, so the most specific chord held wins.
@@ -726,6 +731,8 @@ impl Default for CanvasSettings {
             show_pixel_grid: false,
             show_grid: false,
             grid_size: 16,
+            snap_to_grid: false,
+            tiled: 0,
             transform_filter: qsketch_core::raster::ResizeFilter::Bilinear,
             wheel: WheelBehavior::Zoom,
             wheel_plain: WheelAction::Zoom,

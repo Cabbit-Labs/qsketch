@@ -414,6 +414,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     let grid_min = settings.pixel_grid_min_zoom;
     let tile_grid = settings.show_grid.then_some(settings.grid_size.max(1));
     let smooth_out = settings.smooth_zoom_out;
+    let tiled = settings.tiled.min(3) as f32;
     let tint_tools = settings.selection_tint_mode == crate::settings::SelectionTintMode::SelectionTools;
     let tint_on = settings.selection_tint
         && (!tint_tools || tool.is_selection() || tool == ToolKind::SelectBrush || tool == ToolKind::Move);
@@ -461,6 +462,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         checker_a: c(checker_a),
         checker_b: c(checker_b),
         outside: c(outside),
+        tiled,
+        _pad: [0.0; 3],
     };
     let callback =
         CanvasCallback { doc_id, width: dw, height: dh, tiles, uniforms, linear: view.zoom < 1.0 && smooth_out, full };

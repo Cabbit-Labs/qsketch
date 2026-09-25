@@ -186,6 +186,44 @@ pub fn export(state: &mut AppState, doc_id: DocId) -> bool {
     }
 }
 
+/// Export the flattened image scaled up by an integer factor with
+/// nearest-neighbor sampling, so pixel art stays crisp.
+pub fn export_scaled(state: &mut AppState, doc_id: DocId, k: u32) -> bool {
+    let Some(entry) = state.doc(doc_id) else { return false };
+    let base = entry.doc.title.trim_end_matches('*').to_string();
+    let stem = Path::new(&base).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or(base);
+    let (w, h) = (entry.doc.width(), entry.doc.height());
+    if w.saturating_mul(k) > 16_384 || h.saturating_mul(k) > 16_384 {
+        state.toasts.push(Level::Error, format!("{k}× would exceed 16384 px on a side."));
+        return false;
+    }
+    let mut dlg = rfd::FileDialog::new()
+        .set_title(format!("Export at {k}×"))
+        .add_filter("PNG", &["png"])
+        .add_filter("WebP", &["webp"])
+        .add_filter("BMP", &["bmp"])
+        .set_file_name(format!("{stem}@{k}x.png"));
+    if let Some(dir) = entry.doc.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
+        dlg = dlg.set_directory(dir);
+    }
+    let Some(mut path) = dlg.save_file() else { return false };
+    if path.extension().is_none() {
+        path.set_extension("png");
+    }
+    let flat = qsketch_core::composite::flatten(entry.doc.state());
+    let big = flat.resized(w * k, h * k, qsketch_core::raster::ResizeFilter::Nearest);
+    match io::image_io::export_raster(&path, &big) {
+        Ok(()) => {
+            state.toasts.push(Level::Success, format!("Exported {} at {k}×", path.display()));
+            true
+        }
+        Err(e) => {
+            state.toasts.push(Level::Error, format!("Export failed: {e:#}"));
+            false
+        }
+    }
+}
+
 /// Close without any confirmation.
 pub fn force_close(state: &mut AppState, doc_id: DocId) {
     if let Some(rs) = &state.render_state {

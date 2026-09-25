@@ -798,6 +798,14 @@ impl QSketchApp {
                 self.menu_item(ui, Action::Save, has_doc);
                 self.menu_item(ui, Action::SaveAs, has_doc);
                 self.menu_item(ui, Action::ExportImage, has_doc);
+                ui.menu_button("Export Scaled", |ui| {
+                    ui.label(egui::RichText::new("Nearest-neighbor, for pixel art").weak().small());
+                    for a in
+                        [Action::ExportScaled2, Action::ExportScaled3, Action::ExportScaled4, Action::ExportScaled8]
+                    {
+                        self.menu_item(ui, a, has_doc);
+                    }
+                });
                 ui.separator();
                 let shared = self.state.active().is_some_and(|d| d.share.is_some());
                 self.menu_item(ui, Action::ShareCanvas, true);
@@ -985,6 +993,38 @@ impl QSketchApp {
                             c.show_grid = true;
                         }
                     });
+                    ui.separator();
+                    let btn = egui::Button::new(format!(
+                        "{} {}",
+                        if c.snap_to_grid { icons::CHECK } else { " " },
+                        Action::ToggleSnapToGrid.label()
+                    ))
+                    .shortcut_text(self.state.keymap.primary_text(Action::ToggleSnapToGrid));
+                    if ui
+                        .add(btn)
+                        .on_hover_text("Shapes, marquees, crop, move and gradient drags land on grid lines")
+                        .clicked()
+                    {
+                        c.snap_to_grid = !c.snap_to_grid;
+                        ui.close();
+                    }
+                });
+                let tiled = self.state.settings.canvas.tiled;
+                ui.menu_button(format!("{} Tiled Mode", if tiled > 0 { icons::CHECK } else { " " }), |ui| {
+                    ui.label(
+                        egui::RichText::new("Repeat the document around itself to check seamless tiles").weak().small(),
+                    );
+                    for (a, v) in
+                        [(Action::TiledOff, 0u8), (Action::TiledX, 1), (Action::TiledY, 2), (Action::TiledBoth, 3)]
+                    {
+                        let btn =
+                            egui::Button::new(format!("{} {}", if tiled == v { icons::CHECK } else { " " }, a.label()))
+                                .shortcut_text(self.state.keymap.primary_text(a));
+                        if ui.add(btn).clicked() {
+                            self.state.pending.push(a);
+                            ui.close();
+                        }
+                    }
                 });
                 ui.separator();
                 ui.menu_button("Symmetry", |ui| {
@@ -1305,6 +1345,24 @@ impl QSketchApp {
                     crate::files::export(&mut self.state, id);
                 }
             }
+            Action::ExportScaled2 | Action::ExportScaled3 | Action::ExportScaled4 | Action::ExportScaled8 => {
+                let k = match action {
+                    Action::ExportScaled2 => 2,
+                    Action::ExportScaled3 => 3,
+                    Action::ExportScaled4 => 4,
+                    _ => 8,
+                };
+                if let Some(id) = active {
+                    crate::files::export_scaled(&mut self.state, id, k);
+                }
+            }
+            Action::ToggleSnapToGrid => {
+                self.state.settings.canvas.snap_to_grid = !self.state.settings.canvas.snap_to_grid
+            }
+            Action::TiledOff => self.state.settings.canvas.tiled = 0,
+            Action::TiledX => self.state.settings.canvas.tiled = 1,
+            Action::TiledY => self.state.settings.canvas.tiled = 2,
+            Action::TiledBoth => self.state.settings.canvas.tiled = 3,
             Action::ShareCanvas => dialogs::share::open(&mut self.state, ctx),
             Action::StopSharing => {
                 if let Some(id) = active {

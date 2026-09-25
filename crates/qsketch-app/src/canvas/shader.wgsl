@@ -17,6 +17,12 @@ struct Uniforms {
     checker_a: vec4<f32>,
     checker_b: vec4<f32>,
     outside: vec4<f32>,
+    tiled: f32,
+    // Three scalars, not a vec3: a vec3 would be aligned to 16 and grow the
+    // struct past the 128-byte buffer.
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -52,13 +58,32 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     if (u.flip > 0.5) {
         d.x = -d.x;
     }
-    let doc = u.center + d / u.zoom;
+    let raw = u.center + d / u.zoom;
+    // Tiled preview wraps the document around itself (the copies are drawn
+    // a little darker so the real one stays obvious).
+    var doc = raw;
+    var copy = false;
+    if (u.tiled > 0.5 && u.tiled < 2.5 || u.tiled > 2.5) {
+        // 1 or 3: wrap across.
+        let wx = raw.x - u.doc_size.x * floor(raw.x / u.doc_size.x);
+        if (wx != raw.x) { copy = true; }
+        doc.x = wx;
+    }
+    if (u.tiled > 1.5) {
+        // 2 or 3: wrap down.
+        let wy = raw.y - u.doc_size.y * floor(raw.y / u.doc_size.y);
+        if (wy != raw.y) { copy = true; }
+        doc.y = wy;
+    }
 
     // Sample regardless of branch (uniform control flow), then decide.
-    let col = textureSampleLevel(tex, samp, doc / u.tex_size, 0.0);
+    var col = textureSampleLevel(tex, samp, doc / u.tex_size, 0.0);
 
     if (doc.x < 0.0 || doc.y < 0.0 || doc.x >= u.doc_size.x || doc.y >= u.doc_size.y) {
         return u.outside;
+    }
+    if (copy) {
+        col = vec4<f32>(col.rgb * 0.85, col.a);
     }
 
     let cell = floor(screen * u.ppp / u.checker_size);

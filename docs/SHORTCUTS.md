@@ -21,6 +21,7 @@ reachable from its menu until you assign one.
 | Save | `Ctrl+S` |
 | Save As… | `Ctrl+Shift+S` |
 | Export Image… | `Ctrl+Shift+E` |
+| Export at 2× / 3× / 4× / 8×… | — |
 | Share via Leyline… | — |
 | Stop Sharing | — |
 | Close | `Ctrl+W` |
@@ -145,6 +146,8 @@ selection tool applies it and starts a new selection there.
 | Reset View | `Escape` |
 | Flip View Horizontal | `Shift+F` |
 | Pixel Grid | `Ctrl+'` |
+| Snap to Grid | `Ctrl+Shift+;` |
+| Tiled: Off / Across / Down / Both | — |
 | Fullscreen | `F11` |
 | Hide/Show Panels | `Tab` |
 

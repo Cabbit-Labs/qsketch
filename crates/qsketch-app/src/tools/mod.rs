@@ -448,6 +448,34 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         return;
     }
     let tool = state.effective_tool();
+    // Snap to grid: geometric tools land on grid lines (brushes never do).
+    let ev = if state.settings.canvas.snap_to_grid
+        && matches!(
+            tool,
+            ToolKind::RectSelect
+                | ToolKind::EllipseSelect
+                | ToolKind::Line
+                | ToolKind::Rect
+                | ToolKind::Ellipse
+                | ToolKind::Crop
+                | ToolKind::Move
+                | ToolKind::Gradient
+        ) {
+        let g = state.settings.canvas.grid_size.max(1) as f32;
+        let snap = |mut inp: CanvasInput| {
+            inp.doc = Pt::new((inp.doc.x / g).round() * g, (inp.doc.y / g).round() * g);
+            inp
+        };
+        match ev {
+            CanvasEvent::Press(i) => CanvasEvent::Press(snap(i)),
+            CanvasEvent::Drag(i) => CanvasEvent::Drag(snap(i)),
+            CanvasEvent::Release(i) => CanvasEvent::Release(snap(i)),
+            CanvasEvent::Hover(i) => CanvasEvent::Hover(snap(i)),
+            other => other,
+        }
+    } else {
+        ev
+    };
     // A filter dialog previews by holding its result in the working state;
     // editing underneath would bake that preview into the next undo step and
     // the following parameter change would then filter an already-filtered

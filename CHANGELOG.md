@@ -2,6 +2,17 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.41.0 — 2026-09-25
+
+- **Snap to Grid** (View ▸ Grid, `Ctrl+Shift+;`): marquee, rectangle,
+  ellipse, line, gradient, crop and move drags land on the tile grid's
+  lines. Brushes never snap.
+- **Tiled Mode** (View ▸ Tiled Mode: across, down or both): the document
+  repeats around itself on the canvas, slightly dimmed, so seamless tiles
+  can be judged while painting.
+- **File ▸ Export Scaled** at 2×, 3×, 4× or 8× with nearest-neighbor
+  sampling, so pixel art exports crisp.
+
 ## 0.40.0 — 2026-09-25
 
 - **Pixel-perfect freehand** for hard round tips (Pencil options, the

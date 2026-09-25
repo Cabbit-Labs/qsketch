@@ -27,6 +27,9 @@ pub struct Uniforms {
     pub checker_a: [f32; 4],
     pub checker_b: [f32; 4],
     pub outside: [f32; 4],
+    /// Tiled preview: 0 off, 1 wrap x, 2 wrap y, 3 both.
+    pub tiled: f32,
+    pub _pad: [f32; 3],
 }
 
 /// A 64×64 premultiplied RGBA8 tile to upload.
