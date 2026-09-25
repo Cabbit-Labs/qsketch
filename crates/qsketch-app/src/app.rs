@@ -32,6 +32,7 @@ pub struct QSketchApp {
     app_icon: egui::TextureHandle,
     /// Startup animation while it runs.
     splash: Option<crate::ui::splash::Splash>,
+    cloak: Option<crate::startup_cloak::StartupCloak>,
     trace: crate::startup_trace::StartupTrace,
     /// Frames painted so far (saturating).
     frames: u32,
@@ -102,6 +103,7 @@ impl QSketchApp {
         }
 
         let workspace = state.settings.layout.as_deref().and_then(Workspace::from_json).unwrap_or_else(Workspace::new);
+        let cloak = crate::startup_cloak::StartupCloak::install(cc, state.settings.window_maximized);
         crate::win_pointer::install(cc);
         let wintab = if state.settings.tablet.use_wintab { crate::wintab::WinTab::new(cc) } else { None };
         let tablet = if wintab.is_none() && state.settings.tablet.use_octotablet {
@@ -122,6 +124,7 @@ impl QSketchApp {
             fullscreen_fix_at: None,
             app_icon,
             splash: None,
+            cloak,
             trace,
             frames: 0,
             last_settings_save: Instant::now(),
@@ -2166,7 +2169,10 @@ impl eframe::App for QSketchApp {
             }
         }
 
-        self.record_window_geometry(&ctx);
+        // While cloaked the window may not have its final geometry yet.
+        if self.cloak.is_none() {
+            self.record_window_geometry(&ctx);
+        }
         if self.last_settings_save.elapsed() > Duration::from_secs(30) {
             self.persist();
         }
@@ -2179,9 +2185,17 @@ impl eframe::App for QSketchApp {
             self.splash = Some(crate::ui::splash::Splash::new());
         }
         if let Some(s) = &mut self.splash {
+            // Painted while cloaked too (it is what gets uncloaked), but the
+            // clock only starts once the window can be seen.
+            if self.cloak.is_some() {
+                s.hold();
+            }
             if !s.paint(&ctx, &self.state.settings.ui.palette(), &self.app_icon) {
                 self.splash = None;
             }
+        }
+        if self.cloak.as_mut().is_some_and(|c| !c.tick(&ctx)) {
+            self.cloak = None;
         }
         self.frames = self.frames.saturating_add(1);
     }

@@ -2,6 +2,18 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.43.2 — 2026-09-25
+
+- **Launch flicker fixed on Windows.** Two causes: eframe kept restoring a
+  window state saved by pre-0.43 versions (a stale "maximized" flag) over
+  the geometry qsketch now provides, and creating a window hidden and
+  maximized makes winit show it, blank, on every style update during setup.
+  That stale entry is removed once, the window is no longer created
+  maximized on Windows, and it is DWM-cloaked from the moment the app has
+  its handle: maximized and painted while invisible, then uncloaked after
+  frames at the final size have been presented. Verified with screen
+  capture: no blank frames on any launch.
+
 ## 0.43.1 — 2026-09-25
 
 - Startup trace: for the first six seconds after launch, every change to

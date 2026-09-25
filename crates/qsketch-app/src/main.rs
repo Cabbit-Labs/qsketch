@@ -14,6 +14,7 @@ mod panels;
 mod settings;
 mod share;
 mod single_instance;
+mod startup_cloak;
 mod startup_trace;
 mod state;
 mod tablet;
@@ -45,16 +46,20 @@ fn main() -> eframe::Result<()> {
         .with_inner_size(rect.map(|r| [r[2], r[3]]).unwrap_or([1600.0, 950.0]))
         .with_min_inner_size([900.0, 560.0])
         .with_decorations(native_frame)
-        .with_maximized(saved.window_maximized)
+        .with_maximized(startup_cloak::builder_maximized(saved.window_maximized))
         .with_icon(icon);
     if let Some(r) = rect {
         viewport = viewport.with_position([r[0], r[1]]);
     }
 
     let mut trace = startup_trace::StartupTrace::new();
+    if forget_eframe_window_state() {
+        trace.note("removed stale window state from eframe storage");
+    }
     trace.note(&format!(
-        "builder: saved_rect={rect:?} maximized={} centered={} native_frame={native_frame}",
+        "builder: saved_rect={rect:?} maximized={} (on builder: {}) centered={} native_frame={native_frame}",
         saved.window_maximized,
+        startup_cloak::builder_maximized(saved.window_maximized),
         rect.is_none()
     ));
 
@@ -104,6 +109,24 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(app::QSketchApp::new(cc, files, primary, trace)))
         }),
     )
+}
+
+/// Before 0.43 eframe saved the window geometry in its own storage. It still
+/// loads that entry (`persist_window: false` only stops the saving) and
+/// applies it over the builder, so a window maximized back then opened
+/// maximized forever, flashing blank on Windows (see `startup_cloak`).
+/// Returns whether an entry was removed.
+fn forget_eframe_window_state() -> bool {
+    let Some(path) = eframe::storage_dir("qsketch").map(|d| d.join("app.ron")) else { return false };
+    let Ok(text) = std::fs::read_to_string(&path) else { return false };
+    let Ok(mut kv) = ron::from_str::<std::collections::HashMap<String, String>>(&text) else { return false };
+    if kv.remove("window").is_none() {
+        return false;
+    }
+    match ron::ser::to_string_pretty(&kv, ron::ser::PrettyConfig::default()) {
+        Ok(out) => std::fs::write(&path, out).is_ok(),
+        Err(_) => false,
+    }
 }
 
 fn load_icon() -> egui::IconData {

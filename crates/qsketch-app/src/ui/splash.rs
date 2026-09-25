@@ -30,6 +30,11 @@ impl Splash {
         Self { started: None }
     }
 
+    /// Keep the animation at its first frame (restart the clock).
+    pub fn hold(&mut self) {
+        self.started = None;
+    }
+
     /// Paint this frame of the animation. Returns false once it is over (or
     /// was skipped), so the caller can drop it.
     pub fn paint(&mut self, ctx: &Context, p: &Palette, icon: &TextureHandle) -> bool {
