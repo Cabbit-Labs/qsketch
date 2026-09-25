@@ -233,7 +233,7 @@ with the current brush.
 
 | Command | Default shortcut |
 | --- | --- |
-| Increase Brush Size | `]` |
+| Increase Brush Size | `]` (also Ctrl+wheel / Alt+wheel up) |
 | Decrease Brush Size | `[` |
 | Increase Hardness | `Shift+]` |
 | Decrease Hardness | `Shift+[` |

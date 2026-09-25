@@ -54,6 +54,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         // both run a command and move the canvas.
         let wheel = state.settings.canvas.wheel_map();
         let pointer = ui.input(|i| i.pointer.hover_pos());
+        let mut size_steps: i32 = 0;
         if let Some(entry) = state.doc_mut(doc_id) {
             for ev in &events {
                 match ev {
@@ -75,6 +76,12 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                             }
                             WheelAction::ScrollHorizontal => entry.view.pan_by_screen(egui::vec2(dy + dx, 0.0)),
                             WheelAction::ScrollVertical => entry.view.pan_by_screen(egui::vec2(dx, dy)),
+                            // Wheel up = bigger. Counted here, applied below
+                            // through the same steps the [ ] keys take.
+                            WheelAction::BrushSize => {
+                                let n = (dy / 40.0).abs().ceil().max(1.0) as i32;
+                                size_steps += if dy > 0.0 { n } else { -n };
+                            }
                             WheelAction::Nothing => {}
                         }
                     }
@@ -89,6 +96,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             }
             let (w, h) = (entry.doc.width(), entry.doc.height());
             entry.view.clamp_to_document(w, h);
+        }
+        for _ in 0..size_steps.abs() {
+            state.pending.push(if size_steps > 0 {
+                crate::actions::Action::BrushSizeUp
+            } else {
+                crate::actions::Action::BrushSizeDown
+            });
         }
     }
 

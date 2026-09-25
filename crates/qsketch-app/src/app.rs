@@ -1692,7 +1692,12 @@ impl QSketchApp {
             }
             Action::SymmetryResetCenter => self.state.symmetry.center = None,
             Action::BrushSizeUp | Action::BrushSizeDown => {
-                if let Some(b) = self.state.current_brush_mut() {
+                // The tool the user picked, not a held-modifier stand-in: with
+                // Alt down the eyedropper is in hand, but Alt+wheel means the
+                // brush underneath.
+                let tool =
+                    if self.state.current_brush().is_some() { self.state.effective_tool() } else { self.state.tool };
+                if let Some(b) = self.state.brush_for_tool_mut(tool) {
                     let step = if b.size < 10.0 {
                         1.0
                     } else if b.size < 50.0 {

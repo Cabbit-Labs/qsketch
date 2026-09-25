@@ -150,6 +150,33 @@ mod palette_tests {
 
     /// Old settings keep the behavior they had, and the most specific
     /// modifier held wins.
+    /// Old files get the new Ctrl/Alt = brush size defaults once; a user's
+    /// own choice for either chord is left alone.
+    #[test]
+    fn ctrl_and_alt_wheel_migrate_to_brush_size() {
+        let mut c = CanvasSettings {
+            wheel_ctrl: WheelAction::ScrollVertical,
+            wheel_alt: WheelAction::Zoom,
+            ctrl_wheel_migrated: false,
+            ..Default::default()
+        };
+        c.migrate_ctrl_wheel();
+        assert_eq!(c.wheel_ctrl, WheelAction::BrushSize);
+        assert_eq!(c.wheel_alt, WheelAction::BrushSize);
+        let mut own = CanvasSettings {
+            wheel_ctrl: WheelAction::ScrollHorizontal,
+            wheel_alt: WheelAction::Nothing,
+            ctrl_wheel_migrated: false,
+            ..Default::default()
+        };
+        own.migrate_ctrl_wheel();
+        assert_eq!(own.wheel_ctrl, WheelAction::ScrollHorizontal);
+        assert_eq!(own.wheel_alt, WheelAction::Nothing);
+        own.wheel_ctrl = WheelAction::ScrollVertical;
+        own.migrate_ctrl_wheel();
+        assert_eq!(own.wheel_ctrl, WheelAction::ScrollVertical, "runs once");
+    }
+
     #[test]
     fn wheel_migrates_and_picks_the_specific_chord() {
         let m =
@@ -334,6 +361,22 @@ impl CanvasSettings {
         self.wheel_ctrl = ctrl;
         self.wheel_alt = alt;
     }
+
+    /// Ctrl+wheel and Alt+wheel became "brush size" (0.37.1). A file that
+    /// still carries the old default for either takes the new one, once;
+    /// anything the user chose themselves stays.
+    pub fn migrate_ctrl_wheel(&mut self) {
+        if self.ctrl_wheel_migrated {
+            return;
+        }
+        self.ctrl_wheel_migrated = true;
+        if self.wheel_ctrl == WheelAction::ScrollVertical {
+            self.wheel_ctrl = WheelAction::BrushSize;
+        }
+        if self.wheel_alt == WheelAction::Zoom {
+            self.wheel_alt = WheelAction::BrushSize;
+        }
+    }
 }
 
 /// What one turn of the mouse wheel does on the canvas, per modifier.
@@ -343,18 +386,26 @@ pub enum WheelAction {
     Zoom,
     ScrollVertical,
     ScrollHorizontal,
+    /// Grow / shrink the current tool's brush, a notch per step.
+    BrushSize,
     Nothing,
 }
 
 impl WheelAction {
-    pub const ALL: [WheelAction; 4] =
-        [WheelAction::Zoom, WheelAction::ScrollVertical, WheelAction::ScrollHorizontal, WheelAction::Nothing];
+    pub const ALL: [WheelAction; 5] = [
+        WheelAction::Zoom,
+        WheelAction::ScrollVertical,
+        WheelAction::ScrollHorizontal,
+        WheelAction::BrushSize,
+        WheelAction::Nothing,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             WheelAction::Zoom => "Zoom",
             WheelAction::ScrollVertical => "Scroll up / down",
             WheelAction::ScrollHorizontal => "Scroll left / right",
+            WheelAction::BrushSize => "Brush size",
             WheelAction::Nothing => "Nothing",
         }
     }
@@ -610,6 +661,8 @@ pub struct CanvasSettings {
     pub wheel_alt: WheelAction,
     /// Whether the one-time migration from `wheel` has run.
     pub wheel_migrated: bool,
+    #[serde(default)]
+    pub ctrl_wheel_migrated: bool,
     pub invert_wheel_zoom: bool,
     pub zoom_to_cursor: bool,
     pub brush_cursor: BrushCursor,
@@ -659,9 +712,10 @@ impl Default for CanvasSettings {
             wheel: WheelBehavior::Zoom,
             wheel_plain: WheelAction::Zoom,
             wheel_shift: WheelAction::ScrollHorizontal,
-            wheel_ctrl: WheelAction::ScrollVertical,
-            wheel_alt: WheelAction::Zoom,
+            wheel_ctrl: WheelAction::BrushSize,
+            wheel_alt: WheelAction::BrushSize,
             wheel_migrated: false,
+            ctrl_wheel_migrated: false,
             invert_wheel_zoom: false,
             zoom_to_cursor: true,
             brush_cursor: BrushCursor::Outline,
@@ -1089,6 +1143,7 @@ impl Settings {
 
     pub fn sanitize(&mut self) {
         self.canvas.migrate_wheel();
+        self.canvas.migrate_ctrl_wheel();
         self.general.undo_limit = self.general.undo_limit.clamp(2, 2000);
         self.ui.scale = self.ui.scale.clamp(0.5, 3.0);
         self.tablet.pressure_gamma = self.tablet.pressure_gamma.clamp(0.2, 5.0);

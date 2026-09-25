@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- **Ctrl+wheel and Alt+wheel resize the brush** of the current tool (wheel
+  up = bigger), in the same steps as `[` and `]`. Both are the new defaults
+  and stay changeable in Preferences ▸ Canvas, where "Brush size" is now a
+  choice for any wheel chord; a setting you had changed yourself is kept.
+
 ## 0.37.0 — 2026-09-25
 
 - **Smudge tool**: drags the colors under the brush along with the stroke,
