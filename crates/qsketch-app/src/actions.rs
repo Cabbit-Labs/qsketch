@@ -191,6 +191,7 @@ actions! {
     FilterRipple => (Filter, "Ripple…", []),
     FilterWave => (Filter, "Wave…", []),
     FilterTwirl => (Filter, "Twirl…", []),
+    Liquify => (Filter, "Liquify…", []),
     FilterSpherize => (Filter, "Spherize…", []),
     FilterZigZag => (Filter, "ZigZag…", []),
     FilterPolarCoordinates => (Filter, "Polar Coordinates…", []),

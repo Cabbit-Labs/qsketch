@@ -2,6 +2,18 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- **Liquify** (Filter ▸ Liquify…): push, twirl (both ways), pinch, bloat and
+  reconstruct the picture with a brush, previewed live on the canvas and
+  committed as one step on OK. Brush size and strength sliders, pen pressure
+  scales the strength, the selection limits what moves, Reset starts over.
+- History panel: the snapshot row shows a thumbnail of the document as it
+  was opened or last saved.
+- Layers panel: the eye in the visibility box is smaller; making a layer
+  inside a collapsed group active (from the canvas, a shortcut, undo) opens
+  its groups and scrolls to it.
+
 ## 0.37.2 — 2026-09-25
 
 - Alt+wheel is back to zoom: Alt belongs to the color picker. Ctrl+wheel

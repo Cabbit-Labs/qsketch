@@ -76,6 +76,32 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let generation = entry.generation;
     let entry_mask_edit = entry.mask_edit;
     let selected_ids = entry.selected_ids();
+    // A layer that became active inside a collapsed group (from the canvas,
+    // a shortcut, undo) opens its groups so its row can be scrolled to.
+    {
+        let seen_id = ui.id().with("seen_active");
+        let st = entry.doc.state();
+        let active_id = st.layers.get(st.active).map(|l| l.props.id);
+        let seen = ui.data(|d| d.get_temp::<Option<LayerId>>(seen_id)).flatten();
+        if seen != active_id {
+            let collapsed: Vec<LayerId> = st
+                .ancestors(st.active)
+                .into_iter()
+                .filter(|g| st.layer_by_id(*g).is_some_and(|l| !l.props.expanded))
+                .collect();
+            if !collapsed.is_empty() {
+                let open = |st: &mut qsketch_core::DocState| {
+                    for l in st.layers.iter_mut() {
+                        if collapsed.contains(&l.props.id) {
+                            l.props.expanded = true;
+                        }
+                    }
+                };
+                open(entry.doc.state_mut());
+                entry.doc.history.for_each_state_mut(open);
+            }
+        }
+    }
     let s = entry.doc.state_mut();
     let active = s.active.min(s.layers.len() - 1);
     let n = s.layers.len();
@@ -348,7 +374,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                         box_rect.center(),
                         egui::Align2::CENTER_CENTER,
                         icons::EYE,
-                        egui::FontId::new(11.0, ICON_FAMILY()),
+                        egui::FontId::new(9.0, ICON_FAMILY()),
                         color,
                     );
                 }

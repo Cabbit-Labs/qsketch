@@ -2,6 +2,7 @@
 //! layer properties, unsaved-changes confirmation, about, and preferences.
 
 pub mod filter;
+pub mod liquify;
 pub mod settings;
 pub mod share;
 
@@ -94,6 +95,7 @@ pub struct Dialogs {
     pub save_confirm: Option<SaveConfirm>,
     pub settings: Option<settings::SettingsDialog>,
     pub share: Option<share::ShareDialog>,
+    pub liquify: Option<liquify::LiquifyDialog>,
     pub about: bool,
     /// Autosave snapshots found at startup, offered for recovery.
     pub recover: Option<Vec<crate::autosave::Recoverable>>,
@@ -157,6 +159,7 @@ pub fn show_all(ctx: &Context, state: &mut AppState) {
     show_save_confirm(ctx, state);
     settings::show(ctx, state);
     share::show(ctx, state);
+    liquify::show(ctx, state);
     show_about(ctx, state);
     show_update(ctx, state);
     show_recover(ctx, state);

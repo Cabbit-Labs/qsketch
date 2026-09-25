@@ -11,6 +11,7 @@ pub mod adjust;
 pub mod blur;
 pub mod distort;
 pub mod fx;
+pub mod liquify;
 pub mod noise;
 pub mod other;
 pub mod pixelate;

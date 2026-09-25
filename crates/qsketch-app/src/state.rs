@@ -368,12 +368,20 @@ impl AppState {
                 }
             }
         }
+        crate::dialogs::liquify::revert(self);
         self.cancel_session();
         crate::tools::floating::commit(self);
         crate::tools::text::commit(self);
     }
 
     pub fn cancel_session(&mut self) {
+        // A Liquify drag only captures the pointer; its preview belongs to the
+        // dialog and must not be reverted from under it.
+        if matches!(self.session, Some(crate::tools::ToolSession::Liquify)) {
+            self.session = None;
+            self.session_doc = None;
+            return;
+        }
         if self.session.take().is_some() {
             if let Some(id) = self.session_doc.take() {
                 if let Some(d) = self.doc_mut(id) {

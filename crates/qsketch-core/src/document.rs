@@ -322,6 +322,8 @@ pub struct Document {
     /// saved), kept outside the undo limit so there is always a way back to
     /// it however long the history grows.
     snapshot: (String, DocState),
+    /// Bumped whenever the snapshot changes, so a thumbnail of it can be cached.
+    snapshot_rev: u64,
     pub composite: Composite,
     dirty: TileSet,
 }
@@ -338,6 +340,7 @@ impl Document {
         let mut doc = Self {
             history: History::new(state.clone(), label),
             snapshot: (label.to_string(), state.clone()),
+            snapshot_rev: 1,
             working: state,
             path,
             title: title.into(),
@@ -492,6 +495,11 @@ impl Document {
     pub fn mark_saved(&mut self) {
         self.saved_at = Some(self.history.current_id());
         self.snapshot = ("Saved".to_string(), self.working.clone());
+        self.snapshot_rev += 1;
+    }
+
+    pub fn snapshot_rev(&self) -> u64 {
+        self.snapshot_rev
     }
 
     /// The snapshot row: what the document looked like when opened, or when

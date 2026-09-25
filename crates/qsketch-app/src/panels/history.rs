@@ -6,6 +6,18 @@ use crate::state::AppState;
 use crate::ui::icons;
 
 pub fn ui(ui: &mut Ui, state: &mut AppState) {
+    // Thumbnail of the snapshot (the document as opened / last saved), cached
+    // until the snapshot itself changes.
+    let snap_tex = {
+        let AppState { docs, thumbs, active_doc, .. } = &mut *state;
+        active_doc.and_then(|id| docs.iter().find(|d| d.id == id)).map(|d| {
+            let (_, st) = d.doc.snapshot();
+            thumbs.get(&ui.ctx().clone(), (d.id, u64::MAX - 1), d.doc.snapshot_rev(), [48, 36], |m| {
+                let flat = qsketch_core::composite::flatten(st);
+                crate::panels::thumbs::raster_thumb(&flat, m, true)
+            })
+        })
+    };
     let Some(entry) = state.active_mut() else {
         ui.centered_and_justified(|ui| ui.label(egui::RichText::new("No document").weak()));
         return;
@@ -27,7 +39,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         // reachable even after the oldest states have been trimmed.
         {
             let (label, _) = entry.doc.snapshot();
-            let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_h + 4.0), Sense::click());
+            let snap_h = 42.0;
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), snap_h), Sense::click());
             let fill = if resp.hovered() {
                 crate::ui::chrome::row_fill(ui.visuals().widgets.hovered.bg_fill)
             } else {
@@ -35,19 +48,47 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             };
             ui.painter().rect_filled(rect, 3, fill);
             let color = ui.visuals().text_color();
+            let mut x = 8.0;
+            if let Some(tex) = &snap_tex {
+                let thumb_rect = egui::Rect::from_min_size(rect.min + egui::vec2(x, 3.0), egui::vec2(48.0, 36.0));
+                let size = tex.size_vec2();
+                let scale = (thumb_rect.width() / size.x).min(thumb_rect.height() / size.y);
+                let draw = egui::Rect::from_center_size(thumb_rect.center(), size * scale);
+                ui.painter().image(
+                    tex.id(),
+                    draw,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+                ui.painter().rect_stroke(
+                    draw,
+                    0,
+                    egui::Stroke::new(1.0, Color32::from_black_alpha(120)),
+                    egui::StrokeKind::Outside,
+                );
+                x += 56.0;
+            }
             ui.painter().text(
-                rect.left_center() + egui::vec2(8.0, 0.0),
+                rect.left_center() + egui::vec2(x, -7.0),
                 egui::Align2::LEFT_CENTER,
-                icons::CAMERA,
-                egui::FontId::new(13.0, crate::ui::iconset::family()),
-                color,
-            );
-            ui.painter().text(
-                rect.left_center() + egui::vec2(28.0, 0.0),
-                egui::Align2::LEFT_CENTER,
-                format!("{}  ·  {}", entry.doc.title, label.to_lowercase()),
+                &entry.doc.title,
                 egui::FontId::proportional(13.0),
                 color,
+            );
+            let dim = crate::ui::theme::dim_text(ui.visuals());
+            ui.painter().text(
+                rect.left_center() + egui::vec2(x, 8.0),
+                egui::Align2::LEFT_CENTER,
+                icons::CAMERA,
+                egui::FontId::new(11.0, crate::ui::iconset::family()),
+                dim,
+            );
+            ui.painter().text(
+                rect.left_center() + egui::vec2(x + 16.0, 8.0),
+                egui::Align2::LEFT_CENTER,
+                label.to_lowercase(),
+                egui::FontId::proportional(11.0),
+                dim,
             );
             if resp.on_hover_text("Revert to the document as it was opened or last saved (undoable)").clicked() {
                 revert = true;

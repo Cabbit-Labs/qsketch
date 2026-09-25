@@ -267,6 +267,12 @@ pub struct ToolOptions {
     /// again from the source point.
     pub clone_aligned: bool,
     pub clone_sample_merged: bool,
+    #[serde(default)]
+    pub liquify_tool: crate::dialogs::liquify::LiquifyTool,
+    #[serde(default = "default_liquify_size")]
+    pub liquify_size: f32,
+    #[serde(default = "default_liquify_strength")]
+    pub liquify_strength: f32,
     pub zoom_scrub: bool,
     /// Contour: stroke the edge with the current brush after filling.
     pub contour_outline: bool,
@@ -277,6 +283,13 @@ pub struct ToolOptions {
     pub text_italic: bool,
     #[serde(skip)]
     pub crop_rect: Option<IRect>,
+}
+
+fn default_liquify_size() -> f32 {
+    120.0
+}
+fn default_liquify_strength() -> f32 {
+    0.5
 }
 
 impl Default for ToolOptions {
@@ -304,6 +317,9 @@ impl Default for ToolOptions {
             clone_offset: None,
             clone_aligned: true,
             clone_sample_merged: false,
+            liquify_tool: crate::dialogs::liquify::LiquifyTool::Push,
+            liquify_size: 120.0,
+            liquify_strength: 0.5,
             zoom_scrub: true,
             contour_outline: false,
             text: TextStyle::default(),
@@ -337,6 +353,9 @@ pub enum CanvasEvent {
 }
 
 pub enum ToolSession {
+    /// A Liquify brush drag (the dialog owns the state; this only keeps the
+    /// pointer captured so drags reach it).
+    Liquify,
     Stroke {
         engine: Box<StrokeEngine>,
         layer: usize,
@@ -425,6 +444,11 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     // the following parameter change would then filter an already-filtered
     // image. Navigation stays live so the preview can be inspected.
     if state.dialogs.filter.is_some() && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView) {
+        return;
+    }
+    // Liquify takes the canvas for its own brush while it is open.
+    if state.dialogs.liquify.is_some() && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView) {
+        crate::dialogs::liquify::handle(state, doc_id, ev);
         return;
     }
     // Symmetry "set center": the next canvas press places the axes.
@@ -522,6 +546,7 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     let shadow = egui::Stroke::new(3.0, egui::Color32::from_black_alpha(120));
     let to_s = |p: Pt| view.doc_to_screen(p);
 
+    crate::dialogs::liquify::draw_overlay(state, doc_id, painter);
     // The clone stamp's source point: a small crosshair.
     if state.effective_tool() == ToolKind::Clone {
         if let Some((d, p)) = state.tool_opts.clone_source {

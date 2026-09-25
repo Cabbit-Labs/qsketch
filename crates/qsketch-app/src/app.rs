@@ -1068,6 +1068,7 @@ impl QSketchApp {
         self.menu_item(ui, Action::LastFilterDialog, has_doc && last.is_some());
         ui.separator();
         self.menu_item(ui, Action::FilterOilPaint, has_doc);
+        self.menu_item(ui, Action::Liquify, has_doc);
         ui.separator();
         let groups: [(&str, &[Action]); 8] = [
             (
@@ -1401,6 +1402,7 @@ impl QSketchApp {
             | Action::Curves
             | Action::ColorBalance
             | Action::HueSaturation => dialogs::filter::open(&mut self.state, action),
+            Action::Liquify => dialogs::liquify::open(&mut self.state),
             Action::LastFilter => dialogs::filter::repeat_last(&mut self.state),
             Action::LastFilterDialog => dialogs::filter::reopen_last(&mut self.state),
             a if a.category() == Category::Filter => dialogs::filter::open(&mut self.state, a),
