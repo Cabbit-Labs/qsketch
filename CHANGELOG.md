@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.37.0 — 2026-09-25
 
 - **Smudge tool**: drags the colors under the brush along with the stroke,
   like a finger through wet paint. Opacity is the strength: at 100% the
