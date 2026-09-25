@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.38.0 — 2026-09-25
 
 - **Liquify** (Filter ▸ Liquify…): push, twirl (both ways), pinch, bloat and
   reconstruct the picture with a brush, previewed live on the canvas and
