@@ -2,6 +2,21 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Painting and the shape tools now refuse a hidden layer at the press, including
+  a layer inside a hidden or locked group; before, a stroke could land on a
+  layer nobody could see.
+- The Layers panel visibility control is a quiet eye in a box, empty when the
+  layer is hidden; press still toggles at once and dragging across several
+  still sets them all.
+- A shared canvas's dot now reports the link: green while someone else is
+  drawing, grey when connected but idle, and gone while Leyline is not
+  connected.
+- A click with a selection tool outside the selection clears it even with a
+  little pointer wobble (the threshold is a few screen pixels, not half a
+  document pixel), and a tiny lasso counts as a click too.
+
 ## 0.34.0 — 2026-09-23
 
 - **Draw together over Leyline.** File ▸ Share via Leyline… sends the current

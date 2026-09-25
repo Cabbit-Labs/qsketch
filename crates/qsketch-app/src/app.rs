@@ -1142,7 +1142,9 @@ impl QSketchApp {
                 }
                 // Shared canvas: the conversation's dot, and who else is drawing.
                 if let Some(sh) = d.share.as_ref() {
-                    ui.label(crate::share::dot(sh.color, 8.0));
+                    if let Some(c) = crate::share::status_color(&self.state, sh) {
+                        ui.label(crate::share::dot(c, 8.0));
+                    }
                     let others = sh.present();
                     let who = match others.len() {
                         0 => format!("{} · only you", sh.conv.name),

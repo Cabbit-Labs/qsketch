@@ -150,12 +150,10 @@ pub(super) fn begin_engine_with(
         Some(l) => l,
         None => &s.layers[li],
     };
-    if !to_selection && !layer.props.visible {
-        state.toasts.push(Level::Info, "The active layer is hidden.");
-        return None;
-    }
-    if !to_selection && layer.props.locked {
-        state.toasts.push(Level::Info, "The active layer is locked.");
+    // Hidden or locked, including by an enclosing group: nothing to paint on.
+    if !to_selection && !s.layer_editable(li) {
+        let why = if !s.effectively_visible(li) { "hidden" } else { "locked" };
+        state.toasts.push(Level::Info, format!("The active layer is {why}."));
         return None;
     }
     let erase_alpha_locked = mode == PaintMode::Erase && layer.props.alpha_locked;
@@ -426,6 +424,16 @@ pub fn constrain_line(start: Pt, cur: Pt, snap: bool) -> Pt {
 pub fn handle_shape(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: CanvasEvent) {
     match ev {
         CanvasEvent::Press(inp) if inp.button == egui::PointerButton::Primary => {
+            // Refuse at press, not release, so a hidden or locked layer never
+            // shows a shape being dragged that could not land anywhere.
+            if let Some(entry) = state.doc(doc_id) {
+                let s = entry.doc.state();
+                if !s.layer_editable(s.active) {
+                    let why = if !s.effectively_visible(s.active) { "hidden" } else { "locked" };
+                    state.toasts.push(Level::Info, format!("The active layer is {why}."));
+                    return;
+                }
+            }
             if state.session.is_none() {
                 state.session = Some(ToolSession::Shape { start: inp.doc, cur: inp.doc, mods: inp.mods });
                 state.session_doc = Some(doc_id);

@@ -60,7 +60,6 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         state.eye_drag = None;
     }
     let eye_sweep = state.eye_drag;
-    let state_accent = state.settings.ui.palette().accent;
     let pointer = ui.input(|i| i.pointer.latest_pos());
     let mut start_sweep: Option<bool> = None;
     let mut toggle_expand: Option<usize> = None;
@@ -331,27 +330,23 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             // click_and_drag so the sweep is ours and the scroll area does
             // not start drag-scrolling the list.
             let eye = ui.interact(eye_rect, ui.id().with(("eye", layer_id)), Sense::click_and_drag());
-            // Drawn as a checkbox: a ticked box is a visible layer. A layer
-            // hidden by an ancestor keeps its own tick but fades, like a
-            // checked-but-disabled control.
+            // A quiet box with an eye in it while the layer is visible and
+            // empty while it is hidden — furniture, not a control that shouts.
+            // A layer hidden by an ancestor keeps its eye but fades.
             {
                 let p = ui.painter();
-                let box_rect = egui::Rect::from_center_size(eye_rect.center(), egui::vec2(13.0, 13.0));
-                let accent = state_accent;
-                let (fill, stroke_c) = if vis {
-                    (if dim { accent.gamma_multiply(0.45) } else { accent }, Color32::TRANSPARENT)
-                } else {
-                    (Color32::TRANSPARENT, hidden_eye_color(ui))
-                };
-                p.rect(box_rect, 3.0, fill, egui::Stroke::new(1.0, stroke_c), egui::StrokeKind::Inside);
+                let box_rect = egui::Rect::from_center_size(eye_rect.center(), egui::vec2(14.0, 14.0));
+                let frame = hidden_eye_color(ui).gamma_multiply(if eye.hovered() { 1.0 } else { 0.55 });
+                p.rect_stroke(box_rect, 3.0, egui::Stroke::new(1.0, frame), egui::StrokeKind::Inside);
                 if vis {
-                    let c = box_rect.center();
-                    let tick = egui::Stroke::new(1.8, Color32::WHITE);
-                    p.line_segment([c + egui::vec2(-3.5, 0.0), c + egui::vec2(-1.0, 2.8)], tick);
-                    p.line_segment([c + egui::vec2(-1.0, 2.8), c + egui::vec2(3.8, -2.8)], tick);
-                }
-                if eye.hovered() {
-                    p.rect_stroke(box_rect.expand(2.0), 4.0, egui::Stroke::new(1.0, accent), egui::StrokeKind::Outside);
+                    let color = if dim { hidden_eye_color(ui) } else { ui.visuals().text_color().gamma_multiply(0.8) };
+                    p.text(
+                        box_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        icons::EYE,
+                        egui::FontId::new(11.0, ICON_FAMILY()),
+                        color,
+                    );
                 }
             }
             eye.on_hover_text("Visible (drag across the boxes to set several)");

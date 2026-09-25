@@ -1,7 +1,7 @@
 //! File ▸ Share via Leyline: pick a conversation, then either share the
 //! current canvas with it or open its shared canvas as a new tab.
 
-use egui::{Context, RichText};
+use egui::{Color32, Context, RichText};
 
 use super::modal;
 use crate::share;
@@ -32,8 +32,9 @@ pub fn show(ctx: &Context, state: &mut AppState) {
         None => (false, None, Vec::new(), None),
     };
     let active = state.active_doc;
-    let active_share =
-        state.active().and_then(|d| d.share.as_ref()).map(|s| (s.conv.name.clone(), s.color, s.present().len()));
+    let active_share = state.active().and_then(|d| d.share.as_ref()).map(|s| {
+        (s.conv.name.clone(), share::status_color(state, s).unwrap_or(Color32::from_gray(140)), s.present().len())
+    });
     let active_title = state.active().map(|d| d.doc.title.clone());
     let mut selected = state.dialogs.share.as_ref().and_then(|d| d.selected.clone());
 

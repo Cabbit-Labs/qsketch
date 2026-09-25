@@ -66,8 +66,6 @@ pub struct RemoteCursor {
 
 pub struct ShareSession {
     pub conv: Conversation,
-    /// The tab dot / cursor color for this conversation.
-    pub color: Color32,
     /// The committed state everyone else has seen (None until a joiner's first
     /// snapshot arrives).
     synced: Option<DocState>,
@@ -93,7 +91,6 @@ pub struct ShareSession {
 impl ShareSession {
     fn new(conv: Conversation, host: bool) -> Self {
         Self {
-            color: conv_color(&conv.id),
             conv,
             synced: None,
             synced_id: u64::MAX,
@@ -114,6 +111,11 @@ impl ShareSession {
         self.synced.is_none()
     }
 
+    /// Someone else did something here within the last half minute.
+    pub fn active(&self) -> bool {
+        self.seen.values().any(|t| t.elapsed().as_secs_f32() < 30.0)
+    }
+
     /// Everyone who moved a cursor recently, for the status line.
     pub fn present(&self) -> Vec<&RemoteCursor> {
         let mut v: Vec<&RemoteCursor> = self.cursors.values().collect();
@@ -122,9 +124,18 @@ impl ShareSession {
     }
 }
 
-/// The colored dot a shared canvas wears (tab, dialog, status bar): a filled
-/// circle from the icon font, which every theme has, rather than a text glyph
-/// the UI font may lack.
+/// The color of a shared canvas's dot: green while someone else is active,
+/// grey when connected but nobody is, none at all while Leyline is not there.
+pub fn status_color(state: &AppState, sess: &ShareSession) -> Option<Color32> {
+    if !state.share.as_ref().is_some_and(|l| l.connected) {
+        return None;
+    }
+    Some(if sess.active() { Color32::from_rgb(70, 200, 110) } else { Color32::from_gray(140) })
+}
+
+/// The dot a shared canvas wears (tab, dialog, status bar): a filled circle
+/// from the icon font, which every theme has, rather than a text glyph the UI
+/// font may lack.
 pub fn dot(color: Color32, size: f32) -> egui::RichText {
     egui::RichText::new(crate::ui::icons::CIRCLE)
         .family(egui::FontFamily::Name(crate::ui::theme::ICON_FONT_FILL.into()))
@@ -324,6 +335,9 @@ pub fn tick(state: &mut AppState, ctx: &egui::Context) {
                 }
                 if op.text == session_tag() {
                     continue; // our own, echoed
+                }
+                if !op.mine {
+                    sess.seen.insert(op.author.clone(), Instant::now());
                 }
                 if op.kind == kind::REQUEST {
                     if sess.synced.is_some() && sess.joined {

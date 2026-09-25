@@ -7,6 +7,10 @@ use super::{apply_selection, op_from_mods, rect_from_drag, CanvasEvent, ToolKind
 use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
 
+/// How far (in screen pixels) the pointer may travel and still count as a
+/// click rather than a drag, for the "click clears the selection" rule.
+const CLICK_PX: f32 = 4.0;
+
 pub fn handle_marquee(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: CanvasEvent) {
     match ev {
         CanvasEvent::Press(inp) if inp.button == egui::PointerButton::Primary => {
@@ -35,8 +39,10 @@ pub fn handle_marquee(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: C
             // Shift constrains to a square unless it means "add to selection".
             let square = mods.shift && (!has_sel || mods.alt);
             let r = rect_from_drag(start, cur, square);
-            // A click (no drag) deselects, like Photoshop.
-            if start.dist(cur) < 0.5 {
+            // A click (no drag) deselects, like Photoshop. Measured on screen,
+            // so a tablet's jitter or a zoomed-out view can't turn it into a
+            // one-pixel selection.
+            if start.dist(cur) * entry.view.zoom < CLICK_PX {
                 if op == SelectionOp::Replace {
                     let entry = state.doc_mut(doc_id).unwrap();
                     if entry.doc.state().selection.is_some() {
@@ -80,7 +86,9 @@ pub fn handle_lasso(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             let op = op_from_mods(state.tool_opts.selection_op, inp.mods);
             let Some(entry) = state.doc(doc_id) else { return };
             let (w, h) = (entry.doc.width(), entry.doc.height());
-            if pts.len() < 3 {
+            // A click, or a lasso too small to mean anything: deselect.
+            let extent = pts.iter().map(|p| p.dist(pts[0])).fold(0.0, f32::max) * entry.view.zoom;
+            if pts.len() < 3 || extent < CLICK_PX {
                 if op == SelectionOp::Replace {
                     let entry = state.doc_mut(doc_id).unwrap();
                     if entry.doc.state().selection.is_some() {

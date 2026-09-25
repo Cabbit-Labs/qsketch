@@ -344,10 +344,12 @@ impl TabViewer for Viewer<'_> {
                 job.into()
             }
             PanelKind::Document(id) => match self.state.doc(*id) {
-                // A shared canvas wears the conversation's colored dot.
-                Some(d) if d.share.is_some() => {
+                // A shared canvas wears a status dot: green while others are
+                // active, grey when idle, none while Leyline is not connected.
+                Some(d) if d.share.as_ref().is_some_and(|s| crate::share::status_color(self.state, s).is_some()) => {
                     let p = self.state.settings.ui.palette();
                     let s = d.share.as_ref().unwrap();
+                    let color = crate::share::status_color(self.state, s).unwrap();
                     let mut job = egui::text::LayoutJob::default();
                     job.append(
                         icons::CIRCLE,
@@ -357,7 +359,7 @@ impl TabViewer for Viewer<'_> {
                                 8.0,
                                 egui::FontFamily::Name(crate::ui::theme::ICON_FONT_FILL.into()),
                             ),
-                            color: s.color,
+                            color,
                             ..Default::default()
                         },
                     );
