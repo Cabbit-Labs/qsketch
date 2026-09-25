@@ -14,6 +14,7 @@ mod panels;
 mod settings;
 mod share;
 mod single_instance;
+mod startup_trace;
 mod state;
 mod tablet;
 mod tools;
@@ -49,6 +50,13 @@ fn main() -> eframe::Result<()> {
     if let Some(r) = rect {
         viewport = viewport.with_position([r[0], r[1]]);
     }
+
+    let mut trace = startup_trace::StartupTrace::new();
+    trace.note(&format!(
+        "builder: saved_rect={rect:?} maximized={} centered={} native_frame={native_frame}",
+        saved.window_maximized,
+        rect.is_none()
+    ));
 
     let options = eframe::NativeOptions {
         viewport,
@@ -92,7 +100,8 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |cc| {
             let _ = wake_tx.send(cc.egui_ctx.clone());
-            Ok(Box::new(app::QSketchApp::new(cc, files, primary)))
+            trace.note("window created; first frame next");
+            Ok(Box::new(app::QSketchApp::new(cc, files, primary, trace)))
         }),
     )
 }

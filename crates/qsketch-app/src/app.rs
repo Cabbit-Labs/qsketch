@@ -32,6 +32,7 @@ pub struct QSketchApp {
     app_icon: egui::TextureHandle,
     /// Startup animation while it runs.
     splash: Option<crate::ui::splash::Splash>,
+    trace: crate::startup_trace::StartupTrace,
     /// Frames painted so far (saturating).
     frames: u32,
     last_settings_save: Instant,
@@ -69,6 +70,7 @@ impl QSketchApp {
         cc: &eframe::CreationContext<'_>,
         files: Vec<std::path::PathBuf>,
         instance: crate::single_instance::Primary,
+        trace: crate::startup_trace::StartupTrace,
     ) -> Self {
         let mut settings = Settings::load();
         settings.sanitize();
@@ -120,6 +122,7 @@ impl QSketchApp {
             fullscreen_fix_at: None,
             app_icon,
             splash: None,
+            trace,
             frames: 0,
             last_settings_save: Instant::now(),
             last_q_press: None,
@@ -1996,6 +1999,7 @@ impl eframe::App for QSketchApp {
     /// egui sees the events, so context menus and `secondary_clicked()`
     /// everywhere (Layers, Brushes, Swatches, ...) get it, not only the canvas.
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.trace.frame(raw_input);
         let barrel = self.state.pen.barrel_held || crate::win_pointer::barrel_held();
         for ev in &mut raw_input.events {
             let egui::Event::PointerButton { button, pressed, .. } = ev else { continue };

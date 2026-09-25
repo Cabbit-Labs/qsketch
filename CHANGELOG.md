@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.43.1 — 2026-09-25
+
+- Startup trace: for the first six seconds after launch, every change to
+  the window's size, position, scale, focus or maximized state is written to
+  `startup-trace.log` in the config folder, to pin down launch flicker on
+  machines we cannot watch.
+
 ## 0.43.0 — 2026-09-25
 
 - **No more flicker on launch.** The window's last size, position and
