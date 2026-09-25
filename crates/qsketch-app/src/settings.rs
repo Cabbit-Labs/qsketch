@@ -407,7 +407,7 @@ pub struct GeneralSettings {
 impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
-            undo_limit: 100,
+            undo_limit: 400,
             confirm_close: true,
             max_recent: 12,
             recent_files: Vec::new(),

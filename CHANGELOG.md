@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- History panel: a Photoshop-style **snapshot row** at the top holds the
+  document as it was opened (refreshed on every Save). Click it to go back
+  there as a normal, undoable step, however long the history has grown and
+  however many old states have been trimmed. The footer now says when the
+  oldest states are being dropped.
+- The default undo limit is 400 states (was 100); the slider goes to 2000.
+  States are copy-on-write snapshots, so a long history costs little memory.
+
 ## 0.34.1 — 2026-09-25
 
 - Painting and the shape tools now refuse a hidden layer at the press, including

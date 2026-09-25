@@ -112,7 +112,7 @@ fn general(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(6.0);
     egui::Grid::new("gen_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
         ui.label("Undo history limit");
-        if ui.add(egui::Slider::new(&mut g.undo_limit, 5..=1000).logarithmic(true)).changed() {
+        if ui.add(egui::Slider::new(&mut g.undo_limit, 5..=2000).logarithmic(true)).changed() {
             for d in &mut state.docs {
                 d.doc.history.set_limit(g.undo_limit);
             }

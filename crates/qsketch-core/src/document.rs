@@ -307,6 +307,10 @@ pub struct Document {
     pub title: String,
     /// `History` id of the state on disk; `None` when never saved.
     saved_at: Option<u64>,
+    /// Photoshop's snapshot row: the document as it was opened (or last
+    /// saved), kept outside the undo limit so there is always a way back to
+    /// it however long the history grows.
+    snapshot: (String, DocState),
     pub composite: Composite,
     dirty: TileSet,
 }
@@ -322,6 +326,7 @@ impl Document {
         dirty.insert_all();
         let mut doc = Self {
             history: History::new(state.clone(), label),
+            snapshot: (label.to_string(), state.clone()),
             working: state,
             path,
             title: title.into(),
@@ -475,6 +480,20 @@ impl Document {
 
     pub fn mark_saved(&mut self) {
         self.saved_at = Some(self.history.current_id());
+        self.snapshot = ("Saved".to_string(), self.working.clone());
+    }
+
+    /// The snapshot row: what the document looked like when opened, or when
+    /// last saved. `(label, state)`.
+    pub fn snapshot(&self) -> (&str, &DocState) {
+        (&self.snapshot.0, &self.snapshot.1)
+    }
+
+    /// Go back to the snapshot as a new, undoable history step.
+    pub fn revert_to_snapshot(&mut self) {
+        let s = self.snapshot.1.clone();
+        self.restore(s);
+        self.commit("Revert");
     }
 
     /// Treat the document as never saved (e.g. recovered from an autosave), so
@@ -495,6 +514,29 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The snapshot outlives the undo limit: after more steps than the
+    /// history keeps, the opened state is gone from the list but revert still
+    /// reaches it, and as an undoable step.
+    #[test]
+    fn snapshot_survives_the_undo_limit() {
+        let mut doc = Document::new(8, 8, None, "t");
+        doc.history.set_limit(3);
+        for i in 0..6u8 {
+            doc.state_mut().layers[0].raster.set_pixel(0, 0, Rgba8::new(i, 0, 0, 255));
+            doc.commit("paint");
+        }
+        assert_eq!(doc.history.len(), 3);
+        assert_eq!(doc.state().layers[0].raster.get_pixel(0, 0).r, 5);
+        doc.revert_to_snapshot();
+        assert_eq!(doc.state().layers[0].raster.get_pixel(0, 0).a, 0, "back to the blank opened state");
+        assert_eq!(doc.history.undo_label(), Some("Revert"));
+        assert!(doc.undo());
+        assert_eq!(doc.state().layers[0].raster.get_pixel(0, 0).r, 5, "revert is one undoable step");
+        doc.mark_saved();
+        assert_eq!(doc.snapshot().0, "Saved");
+        assert_eq!(doc.snapshot().1.layers[0].raster.get_pixel(0, 0).r, 5);
+    }
 
     #[test]
     fn layer_ops() {
