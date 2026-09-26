@@ -2,6 +2,11 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.43.3 — 2026-09-25
+
+- Color panel: the picker square and hue strip respond on the press itself
+  instead of waiting for a release or for a drag to get going.
+
 ## 0.43.2 — 2026-09-25
 
 - **Launch flicker fixed on Windows.** Two causes: eframe kept restoring a

@@ -77,7 +77,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     ui.horizontal_top(|ui| {
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(sv_w, sv_h), Sense::click_and_drag());
         paint_sv_square(ui, rect, hsv.h);
-        if resp.dragged() || resp.clicked() {
+        // From the press itself: `clicked` waits for release and `dragged` for
+        // the drag threshold, so neither moves the picker on a plain click.
+        if resp.is_pointer_button_down_on() || resp.clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
                 hsv.s = ((p.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
                 hsv.v = 1.0 - ((p.y - rect.top()) / rect.height()).clamp(0.0, 1.0);
@@ -90,7 +92,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 
         let (hrect, hresp) = ui.allocate_exact_size(Vec2::new(strip_w, sv_h), Sense::click_and_drag());
         paint_hue_strip(ui, hrect);
-        if hresp.dragged() || hresp.clicked() {
+        if hresp.is_pointer_button_down_on() || hresp.clicked() {
             if let Some(p) = hresp.interact_pointer_pos() {
                 hsv.h = ((p.y - hrect.top()) / hrect.height()).clamp(0.0, 0.9999) * 360.0;
                 changed = true;
