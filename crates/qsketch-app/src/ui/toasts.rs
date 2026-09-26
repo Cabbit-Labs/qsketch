@@ -73,7 +73,7 @@ impl Toasts {
                         egui::Frame::new()
                             .fill(ui.visuals().window_fill.gamma_multiply(alpha))
                             .stroke(egui::Stroke::new(1.0, bar.gamma_multiply(alpha)))
-                            .corner_radius(6)
+                            .corner_radius(crate::ui::theme::radius(6))
                             .inner_margin(egui::Margin::symmetric(10, 8))
                             .show(ui, |ui| {
                                 ui.set_max_width(420.0);

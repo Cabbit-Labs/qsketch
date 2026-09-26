@@ -61,7 +61,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             } else {
                 Color32::TRANSPARENT
             };
-            ui.painter().rect_filled(rect, 3, fill);
+            crate::ui::chrome::fill_box(ui.painter(), rect, 3.0, fill);
             // Real stroke preview in the panel's text color.
             if ui.is_rect_visible(rect) {
                 let tex = library.stroke_preview(

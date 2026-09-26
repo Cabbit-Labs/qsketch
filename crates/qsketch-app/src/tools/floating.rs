@@ -824,8 +824,8 @@ pub fn draw_selection_handles(state: &AppState, doc_id: DocId, painter: &egui::P
     let accent = Color32::from_rgb(23, 227, 180);
     for (_, p) in grabs {
         let r = Rect::from_center_size(p, Vec2::splat(8.0));
-        painter.rect_filled(r, 1.0, Color32::from_black_alpha(160));
-        painter.rect_stroke(r.shrink(1.0), 1.0, Stroke::new(1.5, accent), egui::StrokeKind::Inside);
+        crate::ui::chrome::fill_box(painter, r, 1.0, Color32::from_black_alpha(160));
+        crate::ui::chrome::stroke_box(painter, r.shrink(1.0), 1.0, Stroke::new(1.5, accent), egui::StrokeKind::Inside);
     }
 }
 
@@ -1141,8 +1141,14 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
         let r = Rect::from_center_size(p, Vec2::splat(8.0));
         match g {
             Grab::Box(_) => {
-                painter.rect_filled(r, 1.0, Color32::from_black_alpha(160));
-                painter.rect_stroke(r.shrink(1.0), 1.0, Stroke::new(1.5, accent), egui::StrokeKind::Inside);
+                crate::ui::chrome::fill_box(painter, r, 1.0, Color32::from_black_alpha(160));
+                crate::ui::chrome::stroke_box(
+                    painter,
+                    r.shrink(1.0),
+                    1.0,
+                    Stroke::new(1.5, accent),
+                    egui::StrokeKind::Inside,
+                );
             }
             Grab::Node(_) => {
                 painter.circle_filled(p, 4.5, Color32::from_black_alpha(160));

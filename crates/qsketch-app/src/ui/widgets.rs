@@ -31,7 +31,7 @@ pub fn small_button(ui: &mut Ui, text: impl Into<String>) -> Response {
 pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected: bool) -> Response {
     let btn = egui::Button::new(icon(glyph, size * 0.62))
         .min_size(Vec2::splat(size))
-        .corner_radius(4)
+        .corner_radius(crate::ui::theme::radius(4))
         .selected(selected)
         // Flat at rest, but light up on hover so it reads as clickable.
         .frame(true)
@@ -65,7 +65,7 @@ pub fn icon_toggle(
     let mut r = ui.add(
         egui::Button::new(text)
             .selected(*value)
-            .corner_radius(4)
+            .corner_radius(crate::ui::theme::radius(4))
             .frame(true)
             .frame_when_inactive(*value)
             .min_size(Vec2::splat(size)),
@@ -173,7 +173,7 @@ impl Widget for Swatch {
             if self.color.a < 255 {
                 checkerboard(p, rect, 4.0);
             }
-            p.rect_filled(rect, 2, rgba_to_color32(self.color));
+            crate::ui::chrome::fill_box(p, rect, 2.0, rgba_to_color32(self.color));
             let stroke = if self.selected {
                 egui::Stroke::new(2.0, ui.visuals().selection.stroke.color)
             } else if resp.hovered() {
@@ -181,7 +181,7 @@ impl Widget for Swatch {
             } else {
                 egui::Stroke::new(1.0, Color32::from_black_alpha(120))
             };
-            p.rect_stroke(rect, 2, stroke, egui::StrokeKind::Inside);
+            crate::ui::chrome::stroke_box(p, rect, 2.0, stroke, egui::StrokeKind::Inside);
         }
         resp
     }
@@ -274,10 +274,10 @@ pub fn param(
         rect.right_bottom() - Vec2::new(2.0, 0.0),
     );
     let p = ui.painter();
-    p.rect_filled(bar, 1, ui.visuals().widgets.noninteractive.bg_stroke.color);
+    crate::ui::chrome::fill_box(p, bar, 1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
     let fill = egui::Rect::from_min_max(bar.min, egui::pos2(bar.left() + bar.width() * t, bar.bottom()));
     // Faint: this is a position hint, not a highlight.
-    p.rect_filled(fill, 1, ui.visuals().selection.stroke.color.gamma_multiply(0.35));
+    crate::ui::chrome::fill_box(p, fill, 1.0, ui.visuals().selection.stroke.color.gamma_multiply(0.35));
     r
 }
 
@@ -297,7 +297,7 @@ pub fn param_pct(ui: &mut Ui, label: &str, value: &mut f32) -> bool {
 /// left edge. The edge is deliberately subtle so several chips in a row read as
 /// one bar rather than a run of colored dividers.
 pub fn chip<R>(ui: &mut Ui, color: Color32, tint: Color32, contents: impl FnOnce(&mut Ui) -> R) -> R {
-    let frame = egui::Frame::new().fill(tint).corner_radius(4).inner_margin(egui::Margin {
+    let frame = egui::Frame::new().fill(tint).corner_radius(crate::ui::theme::radius(4)).inner_margin(egui::Margin {
         left: 6,
         right: 5,
         top: 1,
@@ -312,7 +312,7 @@ pub fn chip<R>(ui: &mut Ui, color: Color32, tint: Color32, contents: impl FnOnce
         egui::pos2(rect.left(), rect.top() + 3.0),
         egui::pos2(rect.left() + 1.5, rect.bottom() - 3.0),
     );
-    ui.painter().rect_filled(edge, 1, color.gamma_multiply(0.35));
+    crate::ui::chrome::fill_box(ui.painter(), edge, 1.0, color.gamma_multiply(0.35));
     r.inner
 }
 
@@ -405,7 +405,7 @@ pub fn scroll_left_bar<R>(
     // it reads as one control in every theme.
     let v = ui.visuals();
     let p = ui.painter();
-    p.rect_filled(track, 3.0, v.extreme_bg_color);
+    crate::ui::chrome::fill_box(p, track, 3.0, v.extreme_bg_color);
     let handle =
         egui::Rect::from_min_size(egui::pos2(track.left(), handle_top(offset)), egui::vec2(LEFT_BAR_W, handle_h));
     let w = if resp.dragged() {

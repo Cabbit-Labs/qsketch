@@ -46,7 +46,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             } else {
                 Color32::TRANSPARENT
             };
-            ui.painter().rect_filled(rect, 3, fill);
+            crate::ui::chrome::fill_box(ui.painter(), rect, 3.0, fill);
             let color = ui.visuals().text_color();
             let mut x = 8.0;
             if let Some(tex) = &snap_tex {
@@ -108,7 +108,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             } else {
                 Color32::TRANSPARENT
             };
-            ui.painter().rect_filled(rect, 3, fill);
+            crate::ui::chrome::fill_box(ui.painter(), rect, 3.0, fill);
             let color = if future { crate::ui::theme::dim_text(ui.visuals()) } else { ui.visuals().text_color() };
             let glyph = if i == 0 { icons::FILE } else { icons::PAINT_BRUSH };
             ui.painter().text(

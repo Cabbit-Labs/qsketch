@@ -96,7 +96,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                             ui.allocate_exact_size(egui::vec2(ui.available_width(), 2.0), egui::Sense::hover());
                         let w = (columns as f32 * btn + (columns as f32 - 1.0) * 2.0).min(r.width());
                         let line = egui::Rect::from_center_size(r.center(), egui::vec2(w, 2.0));
-                        ui.painter().rect_filled(line, 1, palette.border);
+                        crate::ui::chrome::fill_box(ui.painter(), line, 1.0, palette.border);
                         ui.add_space(2.0);
                     }
                     last_group = Some(t.group());
@@ -110,7 +110,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 2.0), egui::Sense::hover());
                 let w = (columns as f32 * btn + (columns as f32 - 1.0) * 2.0).min(r.width());
                 let line = egui::Rect::from_center_size(r.center(), egui::vec2(w, 2.0));
-                ui.painter().rect_filled(line, 1, palette.border);
+                crate::ui::chrome::fill_box(ui.painter(), line, 1.0, palette.border);
                 ui.add_space(3.0);
                 color_pair(ui, state);
             });
@@ -170,13 +170,25 @@ pub fn color_pair(ui: &mut Ui, state: &mut AppState) {
     if state.bg.a < 255 {
         checkerboard(p, bg_rect, 4.0);
     }
-    p.rect_filled(bg_rect, 2, rgba_to_color32(state.bg));
-    p.rect_stroke(bg_rect, 2, egui::Stroke::new(1.0, egui::Color32::from_gray(90)), egui::StrokeKind::Outside);
+    crate::ui::chrome::fill_box(p, bg_rect, 2.0, rgba_to_color32(state.bg));
+    crate::ui::chrome::stroke_box(
+        p,
+        bg_rect,
+        2.0,
+        egui::Stroke::new(1.0, egui::Color32::from_gray(90)),
+        egui::StrokeKind::Outside,
+    );
     if state.fg.a < 255 {
         checkerboard(p, fg_rect, 4.0);
     }
-    p.rect_filled(fg_rect, 2, rgba_to_color32(state.fg));
-    p.rect_stroke(fg_rect, 2, egui::Stroke::new(1.0, egui::Color32::from_gray(90)), egui::StrokeKind::Outside);
+    crate::ui::chrome::fill_box(p, fg_rect, 2.0, rgba_to_color32(state.fg));
+    crate::ui::chrome::stroke_box(
+        p,
+        fg_rect,
+        2.0,
+        egui::Stroke::new(1.0, egui::Color32::from_gray(90)),
+        egui::StrokeKind::Outside,
+    );
     // swap + reset mini buttons
     let swap_rect = egui::Rect::from_min_size(rect.min + egui::vec2(size * 0.7, 0.0), egui::Vec2::splat(14.0));
     let reset_rect = egui::Rect::from_min_size(rect.min + egui::vec2(0.0, size * 0.72), egui::Vec2::splat(14.0));
@@ -192,10 +204,22 @@ pub fn color_pair(ui: &mut Ui, state: &mut AppState) {
     );
     let mini_fg = egui::Rect::from_min_size(reset_rect.min, egui::Vec2::splat(9.0));
     let mini_bg = egui::Rect::from_min_size(reset_rect.min + egui::vec2(4.0, 4.0), egui::Vec2::splat(9.0));
-    p.rect_filled(mini_bg, 1, egui::Color32::WHITE);
-    p.rect_stroke(mini_bg, 1, egui::Stroke::new(1.0, egui::Color32::from_gray(60)), egui::StrokeKind::Outside);
-    p.rect_filled(mini_fg, 1, egui::Color32::BLACK);
-    p.rect_stroke(mini_fg, 1, egui::Stroke::new(1.0, egui::Color32::from_gray(160)), egui::StrokeKind::Outside);
+    crate::ui::chrome::fill_box(p, mini_bg, 1.0, egui::Color32::WHITE);
+    crate::ui::chrome::stroke_box(
+        p,
+        mini_bg,
+        1.0,
+        egui::Stroke::new(1.0, egui::Color32::from_gray(60)),
+        egui::StrokeKind::Outside,
+    );
+    crate::ui::chrome::fill_box(p, mini_fg, 1.0, egui::Color32::BLACK);
+    crate::ui::chrome::stroke_box(
+        p,
+        mini_fg,
+        1.0,
+        egui::Stroke::new(1.0, egui::Color32::from_gray(160)),
+        egui::StrokeKind::Outside,
+    );
 
     if swap.on_hover_text(format!("Swap colors ({})", state.keymap.primary_text(Action::SwapColors))).clicked() {
         std::mem::swap(&mut state.fg, &mut state.bg);

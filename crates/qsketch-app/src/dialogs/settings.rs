@@ -248,6 +248,21 @@ fn interface(ui: &mut Ui, state: &mut AppState) {
         ui.add_space(6.0);
         custom_palette_editor(ui, &mut u.custom_palette);
     }
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.label("Shape");
+        for s in crate::settings::UiShape::ALL {
+            ui.selectable_value(&mut u.shape, s, s.label());
+        }
+        ui.label(
+            egui::RichText::new(match u.shape {
+                crate::settings::UiShape::Rounded => "soft corners, roomy spacing",
+                crate::settings::UiShape::Angular => "chamfered corners, flat outlines, tighter spacing",
+            })
+            .weak()
+            .small(),
+        );
+    });
     ui.add_space(8.0);
     texture_editor(ui, &mut u.texture);
     ui.add_space(8.0);
@@ -301,7 +316,7 @@ fn theme_card(ui: &mut Ui, current: &mut Theme, t: Theme, custom: &CustomPalette
     let selected = *current == t;
     let painter = ui.painter();
     let preview = egui::Rect::from_min_size(rect.min, egui::vec2(size.x, 46.0));
-    painter.rect_filled(preview, 4, p.bg);
+    crate::ui::chrome::fill_box(painter, preview, 4.0, p.bg);
     // Top bar.
     painter.rect_filled(
         egui::Rect::from_min_size(preview.min, egui::vec2(size.x, 7.0)),
@@ -353,7 +368,7 @@ fn theme_card(ui: &mut Ui, current: &mut Theme, t: Theme, custom: &CustomPalette
     } else {
         egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
     };
-    painter.rect_stroke(preview, 4, stroke, egui::StrokeKind::Outside);
+    crate::ui::chrome::stroke_box(painter, preview, 4.0, stroke, egui::StrokeKind::Outside);
     let text = RichText::new(t.label()).small();
     let text = if selected { text.strong() } else { text };
     painter.text(
@@ -553,7 +568,7 @@ fn icon_set_card(ui: &mut Ui, current: &mut IconSet, set: IconSet) {
     let selected = *current == set;
     let painter = ui.painter();
     let preview = egui::Rect::from_min_size(rect.min, egui::vec2(size.x, 40.0));
-    painter.rect_filled(preview, 4, ui.visuals().extreme_bg_color);
+    crate::ui::chrome::fill_box(painter, preview, 4.0, ui.visuals().extreme_bg_color);
     let family = egui::FontFamily::Name(if set.filled() { ICON_FONT_FILL } else { ICON_FONT }.into());
     let sample = [ToolKind::Move, ToolKind::Brush, ToolKind::Pencil, ToolKind::Fill, ToolKind::Text, ToolKind::Zoom];
     let step = preview.width() / sample.len() as f32;
@@ -573,7 +588,7 @@ fn icon_set_card(ui: &mut Ui, current: &mut IconSet, set: IconSet) {
     } else {
         egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
     };
-    painter.rect_stroke(preview, 4, stroke, egui::StrokeKind::Outside);
+    crate::ui::chrome::stroke_box(painter, preview, 4.0, stroke, egui::StrokeKind::Outside);
     painter.text(
         egui::pos2(rect.center().x, preview.bottom() + 9.0),
         egui::Align2::CENTER_CENTER,
@@ -942,7 +957,7 @@ fn tablet(ui: &mut Ui, state: &mut AppState) {
 fn pressure_curve_preview(ui: &mut Ui, gamma: f32, min: f32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(160.0, 90.0), egui::Sense::hover());
     let p = ui.painter();
-    p.rect_filled(rect, 3, ui.visuals().extreme_bg_color);
+    crate::ui::chrome::fill_box(p, rect, 3.0, ui.visuals().extreme_bg_color);
     let n = 40;
     let pts: Vec<egui::Pos2> = (0..=n)
         .map(|i| {

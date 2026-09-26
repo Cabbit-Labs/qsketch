@@ -67,6 +67,69 @@ pub fn row_fill(c: Color32) -> Color32 {
     c.gamma_multiply(0.85)
 }
 
+/// Outline a box to match `fill_box`: rounded, or chamfered in the angular
+/// look (drawn just inside the rect).
+pub fn stroke_box(painter: &Painter, rect: Rect, radius: f32, stroke: egui::Stroke, kind: egui::StrokeKind) {
+    if stroke.color.a() == 0 || stroke.width <= 0.0 {
+        return;
+    }
+    if !super::theme::angular() {
+        painter.rect_stroke(rect, radius, stroke, kind);
+        return;
+    }
+    let rect = match kind {
+        egui::StrokeKind::Inside => rect.shrink(stroke.width / 2.0),
+        egui::StrokeKind::Outside => rect.expand(stroke.width / 2.0),
+        egui::StrokeKind::Middle => rect,
+    };
+    let c = 3.0_f32.min(rect.width() / 3.0).min(rect.height() / 3.0);
+    if c < 1.0 {
+        painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Middle);
+        return;
+    }
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    let pts = vec![
+        egui::pos2(l + c, t),
+        egui::pos2(r - c, t),
+        egui::pos2(r, t + c),
+        egui::pos2(r, b - c),
+        egui::pos2(r - c, b),
+        egui::pos2(l + c, b),
+        egui::pos2(l, b - c),
+        egui::pos2(l, t + c),
+    ];
+    painter.add(egui::Shape::closed_line(pts, stroke));
+}
+
+/// Fill a box the way the current shape language draws boxes: rounded by
+/// `radius`, or, in the angular look, square with 3 px chamfered corners.
+pub fn fill_box(painter: &Painter, rect: Rect, radius: f32, fill: Color32) {
+    if fill.a() == 0 {
+        return;
+    }
+    if !super::theme::angular() {
+        painter.rect_filled(rect, radius, fill);
+        return;
+    }
+    let c = 3.0_f32.min(rect.width() / 3.0).min(rect.height() / 3.0);
+    if c < 1.0 {
+        painter.rect_filled(rect, 0.0, fill);
+        return;
+    }
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    let pts = vec![
+        egui::pos2(l + c, t),
+        egui::pos2(r - c, t),
+        egui::pos2(r, t + c),
+        egui::pos2(r, b - c),
+        egui::pos2(r - c, b),
+        egui::pos2(l + c, b),
+        egui::pos2(l, b - c),
+        egui::pos2(l, t + c),
+    ];
+    painter.add(egui::Shape::convex_polygon(pts, fill, egui::Stroke::NONE));
+}
+
 /// Horizontal brush streaks plus fine grain.
 fn brushed(x: usize, y: usize) -> f32 {
     let mut streak = 0.0;

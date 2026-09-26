@@ -230,7 +230,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         if checker {
             crate::ui::widgets::checkerboard(ui.painter(), rect, 8.0);
         } else {
-            ui.painter().rect_filled(rect, 3, ui.visuals().extreme_bg_color);
+            crate::ui::chrome::fill_box(ui.painter(), rect, 3.0, ui.visuals().extreme_bg_color);
         }
         ui.painter().image(
             tex.id(),
@@ -238,7 +238,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             Color32::WHITE,
         );
-        ui.painter().rect_stroke(rect, 3, ui.visuals().widgets.noninteractive.bg_stroke, egui::StrokeKind::Inside);
+        crate::ui::chrome::stroke_box(
+            ui.painter(),
+            rect,
+            3.0,
+            ui.visuals().widgets.noninteractive.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
     }
     run_deferred(ui, state, tool, deferred);
 }
@@ -274,7 +280,7 @@ fn section_list(ui: &mut Ui, b: &mut BrushSettings, page: &mut Page) {
         } else {
             Color32::TRANSPARENT
         };
-        ui.painter().rect_filled(rect, 3, fill);
+        crate::ui::chrome::fill_box(ui.painter(), rect, 3.0, fill);
         let mut x = rect.left() + 6.0;
         if let Some(flag) = p.flag(b) {
             let box_rect = egui::Rect::from_center_size(egui::pos2(x + 7.0, rect.center().y), Vec2::splat(14.0));
@@ -283,8 +289,14 @@ fn section_list(ui: &mut Ui, b: &mut BrushSettings, page: &mut Page) {
                 *flag = !*flag;
             }
             let v = ui.visuals();
-            ui.painter().rect_filled(box_rect, 2, v.widgets.inactive.bg_fill);
-            ui.painter().rect_stroke(box_rect, 2, v.widgets.inactive.bg_stroke, egui::StrokeKind::Inside);
+            crate::ui::chrome::fill_box(ui.painter(), box_rect, 2.0, v.widgets.inactive.bg_fill);
+            crate::ui::chrome::stroke_box(
+                ui.painter(),
+                box_rect,
+                2.0,
+                v.widgets.inactive.bg_stroke,
+                egui::StrokeKind::Inside,
+            );
             if *flag {
                 ui.painter().text(
                     box_rect.center(),
@@ -381,67 +393,72 @@ fn image_grid(
         items.push(None);
     }
     items.extend(names.into_iter().map(Some));
-    egui::Frame::new().fill(ui.visuals().extreme_bg_color).inner_margin(4.0).corner_radius(4).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        egui::Grid::new(("tip_grid", kind.dir_name())).spacing([4.0, 4.0]).show(ui, |ui| {
-            for (i, item) in items.iter().enumerate() {
-                let (name, builtin) = match item {
-                    None => (String::new(), true),
-                    Some((n, b)) => (n.clone(), *b),
-                };
-                let selected = if name.is_empty() {
-                    current.is_empty() || current == qsketch_core::brush::ROUND_TIP
-                } else {
-                    current == name
-                };
-                let (rect, resp) = ui.allocate_exact_size(Vec2::splat(cell), Sense::click());
-                let v = ui.visuals();
-                let fill = if selected {
-                    v.selection.bg_fill
-                } else if resp.hovered() {
-                    v.widgets.hovered.bg_fill
-                } else {
-                    v.faint_bg_color
-                };
-                ui.painter().rect_filled(rect, 4, fill);
-                if name.is_empty() {
-                    ui.painter().circle_filled(rect.center(), cell * 0.32, v.text_color());
-                } else if let Some(tex) = library.preview(ui.ctx(), kind, &name, 64) {
-                    let inner = rect.shrink(3.0);
-                    ui.painter().image(
-                        tex.id(),
-                        inner,
-                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                        v.text_color(),
-                    );
+    egui::Frame::new()
+        .fill(ui.visuals().extreme_bg_color)
+        .inner_margin(4.0)
+        .corner_radius(crate::ui::theme::radius(4))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            egui::Grid::new(("tip_grid", kind.dir_name())).spacing([4.0, 4.0]).show(ui, |ui| {
+                for (i, item) in items.iter().enumerate() {
+                    let (name, builtin) = match item {
+                        None => (String::new(), true),
+                        Some((n, b)) => (n.clone(), *b),
+                    };
+                    let selected = if name.is_empty() {
+                        current.is_empty() || current == qsketch_core::brush::ROUND_TIP
+                    } else {
+                        current == name
+                    };
+                    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(cell), Sense::click());
+                    let v = ui.visuals();
+                    let fill = if selected {
+                        v.selection.bg_fill
+                    } else if resp.hovered() {
+                        v.widgets.hovered.bg_fill
+                    } else {
+                        v.faint_bg_color
+                    };
+                    crate::ui::chrome::fill_box(ui.painter(), rect, 4.0, fill);
+                    if name.is_empty() {
+                        ui.painter().circle_filled(rect.center(), cell * 0.32, v.text_color());
+                    } else if let Some(tex) = library.preview(ui.ctx(), kind, &name, 64) {
+                        let inner = rect.shrink(3.0);
+                        ui.painter().image(
+                            tex.id(),
+                            inner,
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                            v.text_color(),
+                        );
+                    }
+                    if selected {
+                        ui.painter().rect_stroke(
+                            rect,
+                            4,
+                            egui::Stroke::new(1.5, v.selection.stroke.color),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    let label =
+                        if name.is_empty() { "Round (soft/hard by Hardness)".to_string() } else { name.clone() };
+                    let resp = resp.on_hover_text(label);
+                    if resp.clicked() {
+                        picked = Some(name.clone());
+                    }
+                    if !builtin {
+                        resp.context_menu(|ui| {
+                            if ui.button(format!("{} Delete \"{}\"", icons::TRASH, name)).clicked() {
+                                deferred.push(Deferred::Remove(kind, name.clone()));
+                                ui.close();
+                            }
+                        });
+                    }
+                    if (i + 1) % cols == 0 {
+                        ui.end_row();
+                    }
                 }
-                if selected {
-                    ui.painter().rect_stroke(
-                        rect,
-                        4,
-                        egui::Stroke::new(1.5, v.selection.stroke.color),
-                        egui::StrokeKind::Inside,
-                    );
-                }
-                let label = if name.is_empty() { "Round (soft/hard by Hardness)".to_string() } else { name.clone() };
-                let resp = resp.on_hover_text(label);
-                if resp.clicked() {
-                    picked = Some(name.clone());
-                }
-                if !builtin {
-                    resp.context_menu(|ui| {
-                        if ui.button(format!("{} Delete \"{}\"", icons::TRASH, name)).clicked() {
-                            deferred.push(Deferred::Remove(kind, name.clone()));
-                            ui.close();
-                        }
-                    });
-                }
-                if (i + 1) % cols == 0 {
-                    ui.end_row();
-                }
-            }
+            });
         });
-    });
     picked
 }
 
@@ -551,7 +568,7 @@ fn angle_widget(ui: &mut Ui, b: &mut BrushSettings) {
     let c = rect.center();
     let r = size * 0.42;
     let v = ui.visuals();
-    ui.painter().rect_filled(rect, 4, v.extreme_bg_color);
+    crate::ui::chrome::fill_box(ui.painter(), rect, 4.0, v.extreme_bg_color);
     ui.painter().circle_stroke(c, r, egui::Stroke::new(1.0, crate::ui::theme::dim_text(v)));
     if resp.dragged() || resp.clicked() {
         if let Some(p) = resp.interact_pointer_pos() {

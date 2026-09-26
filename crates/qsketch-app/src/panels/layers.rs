@@ -230,7 +230,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         .filter(|&i| s.ancestors(i).iter().all(|g| s.layer_by_id(*g).is_some_and(|l| l.props.expanded)))
         .map(|i| (i, s.depth(i)))
         .collect();
-    let row_h = 40.0;
+    // Layer rows are just tall enough for the 36 px thumbnail; group rows
+    // carry only a folder glyph and take a lot less.
+    let row_h = 38.0;
+    let group_h = 26.0;
     let footer_h = 34.0;
     let list_h = (ui.available_height() - footer_h).max(row_h);
     let rename_id = ui.id().with("rename");
@@ -295,14 +298,21 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             let is_selected = selected_ids.contains(&layer_id);
             let vis = s.layers[i].props.visible;
             let dim = !s.effectively_visible(i);
+            let row_h = if is_group { group_h } else { row_h };
+            ui.spacing_mut().item_spacing.y = 1.0;
             let (row_rect, row_resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_h), Sense::click());
             if is_active && jump_to_active {
                 ui.scroll_to_rect(row_rect, None);
             }
+            // Selection in the accent itself, strong enough to read against
+            // any chrome (the widget selection tint is too faint on mid-tone
+            // themes); other selected rows a step lighter.
+            let accent_fill = ui.visuals().selection.stroke.color;
+            let dark_ui = ui.visuals().dark_mode;
             let fill = if is_active {
-                crate::ui::chrome::row_fill(ui.visuals().selection.bg_fill)
+                accent_fill.gamma_multiply(if dark_ui { 0.55 } else { 0.4 })
             } else if is_selected {
-                ui.visuals().selection.bg_fill.gamma_multiply(0.45)
+                accent_fill.gamma_multiply(if dark_ui { 0.3 } else { 0.22 })
             } else if row_resp.hovered() {
                 crate::ui::chrome::row_fill(ui.visuals().widgets.hovered.bg_fill)
             } else if row_no % 2 == 0 {
@@ -312,7 +322,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             } else {
                 Color32::TRANSPARENT
             };
-            ui.painter().rect_filled(row_rect, 3, fill);
+            crate::ui::chrome::fill_box(ui.painter(), row_rect, 3.0, fill);
+            if is_active {
+                // A solid accent bar on the left edge, visible even when the
+                // row's tint is close to the panel color.
+                let bar = egui::Rect::from_min_size(row_rect.min, egui::vec2(3.0, row_rect.height()));
+                ui.painter().rect_filled(bar, 0.0, accent_fill);
+            }
             let indent = depth as f32 * INDENT;
 
             // Drag/click area (everything right of the eye toggle).
@@ -367,7 +383,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 let p = ui.painter();
                 let box_rect = egui::Rect::from_center_size(eye_rect.center(), egui::vec2(14.0, 14.0));
                 let frame = hidden_eye_color(ui).gamma_multiply(if eye.hovered() { 1.0 } else { 0.55 });
-                p.rect_stroke(box_rect, 3.0, egui::Stroke::new(1.0, frame), egui::StrokeKind::Inside);
+                crate::ui::chrome::stroke_box(
+                    p,
+                    box_rect,
+                    3.0,
+                    egui::Stroke::new(1.0, frame),
+                    egui::StrokeKind::Inside,
+                );
                 if vis {
                     let color = if dim { hidden_eye_color(ui) } else { ui.visuals().text_color().gamma_multiply(0.8) };
                     p.text(
@@ -421,7 +443,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 );
                 x += 40.0;
             } else {
-                let thumb_rect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 2.0), egui::vec2(48.0, 36.0));
+                let thumb_rect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 1.0), egui::vec2(48.0, 36.0));
                 let raster = &s.layers[i].raster;
                 let tex = thumbs.get(&ctx, (doc_id, layer_id), generation, [48, 36], |m| {
                     crate::panels::thumbs::raster_thumb(raster, m, true)

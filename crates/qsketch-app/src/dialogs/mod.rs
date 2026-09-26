@@ -310,7 +310,7 @@ fn show_update(ctx: &Context, state: &mut AppState) {
                         egui::Frame::new()
                             .fill(ui.visuals().extreme_bg_color)
                             .inner_margin(egui::Margin::symmetric(10, 8))
-                            .corner_radius(4)
+                            .corner_radius(crate::ui::theme::radius(4))
                             .show(ui, |ui| {
                                 egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(
                                     ui,

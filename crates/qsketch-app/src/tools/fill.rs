@@ -290,6 +290,6 @@ pub fn draw_pick_loupe(state: &AppState, doc_id: DocId, painter: &egui::Painter)
     let at = egui::pos2(c.x, if flipped { c.y + off } else { c.y - off });
     let galley = painter.layout_no_wrap(label, egui::FontId::proportional(12.0), egui::Color32::WHITE);
     let pill = egui::Rect::from_center_size(at, galley.size() + egui::vec2(10.0, 4.0));
-    painter.rect_filled(pill, 4.0, egui::Color32::from_black_alpha(190));
+    crate::ui::chrome::fill_box(painter, pill, 4.0, egui::Color32::from_black_alpha(190));
     painter.galley(pill.center() - galley.size() / 2.0, galley, egui::Color32::WHITE);
 }

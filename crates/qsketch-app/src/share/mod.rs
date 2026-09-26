@@ -664,7 +664,7 @@ pub fn draw_cursors(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
         let galley = painter.layout_no_wrap(label, font.clone(), Color32::WHITE);
         let at = pos + egui::vec2(9.0, -galley.size().y / 2.0);
         let bg = egui::Rect::from_min_size(at, galley.size()).expand2(egui::vec2(4.0, 2.0));
-        painter.rect_filled(bg, 3.0, c.color.gamma_multiply(0.9));
+        crate::ui::chrome::fill_box(painter, bg, 3.0, c.color.gamma_multiply(0.9));
         painter.galley(at, galley, Color32::WHITE);
     }
 }

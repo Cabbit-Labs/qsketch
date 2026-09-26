@@ -7,7 +7,34 @@
 
 use egui::{Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Stroke, Style, Visuals};
 
-use crate::settings::Theme;
+use crate::settings::{Theme, UiShape};
+
+/// The shape language currently applied, for painters that draw their own
+/// boxes (rows, chips) and need to match the widgets without every caller
+/// threading the setting through.
+static SHAPE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+pub fn shape() -> UiShape {
+    if SHAPE.load(std::sync::atomic::Ordering::Relaxed) == 1 {
+        UiShape::Angular
+    } else {
+        UiShape::Rounded
+    }
+}
+
+pub fn angular() -> bool {
+    shape() == UiShape::Angular
+}
+
+/// A corner radius for widgets and frames: as asked in the rounded look,
+/// square in the angular one.
+pub fn radius(r: u8) -> CornerRadius {
+    if angular() {
+        CornerRadius::ZERO
+    } else {
+        CornerRadius::same(r)
+    }
+}
 
 /// Name of the icon font family registered in egui.
 pub const ICON_FONT: &str = "phosphor";
@@ -177,16 +204,19 @@ pub fn dim_text(v: &Visuals) -> Color32 {
     v.widgets.noninteractive.fg_stroke.color
 }
 
-pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32) {
+pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32, shape: UiShape) {
+    SHAPE.store(u8::from(shape == UiShape::Angular), std::sync::atomic::Ordering::Relaxed);
+    let angular = shape == UiShape::Angular;
     let mut visuals = if p.dark { Visuals::dark() } else { Visuals::light() };
-    let r = CornerRadius::same(4);
+    let r = if angular { CornerRadius::ZERO } else { CornerRadius::same(4) };
+    let big_r = if angular { CornerRadius::ZERO } else { CornerRadius::same(6) };
     visuals.panel_fill = p.panel;
     visuals.window_fill = p.panel;
     visuals.extreme_bg_color = p.panel_alt;
     visuals.faint_bg_color = p.panel_alt;
     visuals.window_stroke = Stroke::new(1.0, p.border);
-    visuals.window_corner_radius = CornerRadius::same(6);
-    visuals.menu_corner_radius = CornerRadius::same(6);
+    visuals.window_corner_radius = big_r;
+    visuals.menu_corner_radius = big_r;
     visuals.selection.bg_fill = if p.dark { p.accent_dim.gamma_multiply(0.6) } else { p.accent.gamma_multiply(0.28) };
     visuals.selection.stroke = Stroke::new(1.0, p.accent);
     visuals.hyperlink_color = p.accent;
@@ -202,7 +232,8 @@ pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32) {
     visuals.widgets.noninteractive.corner_radius = r;
     visuals.widgets.inactive.bg_fill = p.widget;
     visuals.widgets.inactive.weak_bg_fill = p.widget;
-    visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+    // Angular: every control is a flat box with a hairline outline.
+    visuals.widgets.inactive.bg_stroke = if angular { Stroke::new(1.0, p.border) } else { Stroke::NONE };
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, p.text);
     visuals.widgets.inactive.corner_radius = r;
     visuals.widgets.hovered.bg_fill = p.widget_hover;
@@ -219,18 +250,31 @@ pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32) {
     visuals.widgets.open.weak_bg_fill = p.widget_active;
     visuals.widgets.open.corner_radius = r;
     visuals.slider_trailing_fill = true;
-    visuals.window_shadow.spread = 4;
-    visuals.popup_shadow.spread = 2;
+    if angular {
+        visuals.window_shadow = egui::epaint::Shadow::NONE;
+        visuals.popup_shadow = egui::epaint::Shadow::NONE;
+    } else {
+        visuals.window_shadow.spread = 4;
+        visuals.popup_shadow.spread = 2;
+    }
     visuals.striped = true;
     visuals.indent_has_left_vline = false;
 
     let mut style = Style { visuals, ..Style::default() };
-    style.spacing.item_spacing = egui::vec2(5.0, 3.0);
-    style.spacing.button_padding = egui::vec2(5.0, 2.0);
-    style.spacing.interact_size = egui::vec2(26.0, 18.0);
+    if angular {
+        style.spacing.item_spacing = egui::vec2(4.0, 2.0);
+        style.spacing.button_padding = egui::vec2(5.0, 1.0);
+        style.spacing.interact_size = egui::vec2(24.0, 17.0);
+        style.spacing.menu_margin = egui::Margin::same(4);
+        style.spacing.window_margin = egui::Margin::same(6);
+    } else {
+        style.spacing.item_spacing = egui::vec2(5.0, 3.0);
+        style.spacing.button_padding = egui::vec2(5.0, 2.0);
+        style.spacing.interact_size = egui::vec2(26.0, 18.0);
+        style.spacing.menu_margin = egui::Margin::same(6);
+        style.spacing.window_margin = egui::Margin::same(8);
+    }
     style.spacing.slider_width = 110.0;
-    style.spacing.menu_margin = egui::Margin::same(6);
-    style.spacing.window_margin = egui::Margin::same(8);
     style.interaction.selectable_labels = false;
     style.interaction.tooltip_delay = 0.4;
     style.animation_time = 0.08;
@@ -270,5 +314,15 @@ pub fn dock_style(ctx: &egui::Context, p: &Palette) -> egui_dock::Style {
     s.buttons.add_tab_color = p.text_dim;
     s.dock_area_padding = None;
     s.main_surface_border_stroke = Stroke::NONE;
+    if angular() {
+        s.tab_bar.height = 21.0;
+        s.tab.active.corner_radius = CornerRadius::ZERO;
+        s.tab.inactive.corner_radius = CornerRadius::ZERO;
+        s.tab.hovered.corner_radius = CornerRadius::ZERO;
+        s.tab.focused.corner_radius = CornerRadius::ZERO;
+        s.tab.tab_body.corner_radius = CornerRadius::ZERO;
+        s.tab.tab_body.inner_margin = egui::Margin::same(3);
+        s.main_surface_border_rounding = CornerRadius::ZERO;
+    }
     s
 }

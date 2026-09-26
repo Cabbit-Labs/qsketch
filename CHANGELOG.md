@@ -2,6 +2,19 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.44.0 — 2026-09-26
+
+- **Angular shape option** (Preferences ▸ Interface ▸ Shape): square
+  corners with small chamfers on rows and boxes, flat 1 px outlines on
+  every control, no shadows, and tighter spacing throughout: menus, tabs,
+  dialogs, tool options chips, toasts, the title strip and the panels. The
+  original look stays as "Rounded".
+- Layers panel: the active layer is a solid accent tint with an accent bar
+  on its left edge, and other selected layers a lighter accent, instead of
+  the faint widget selection color. Rows are tighter: layer rows are just
+  tall enough for the thumbnail (which keeps its size) and group rows,
+  which carry only a folder glyph, are shorter still.
+
 ## 0.43.4 — 2026-09-26
 
 - Layers panel: the Lock row's three buttons (transparency, layer, clipping

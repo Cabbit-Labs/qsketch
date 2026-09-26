@@ -77,7 +77,7 @@ impl QSketchApp {
         settings.sanitize();
         theme::install_fonts(&cc.egui_ctx, settings.ui.icon_set.filled());
         crate::ui::iconset::configure(settings.ui.icon_set, &settings.ui.icon_overrides);
-        theme::apply(&cc.egui_ctx, &settings.ui.palette(), settings.ui.scale);
+        theme::apply(&cc.egui_ctx, &settings.ui.palette(), settings.ui.scale, settings.ui.shape);
         // egui grows/shrinks the whole UI on Ctrl+= / Ctrl+- by default, on
         // top of the canvas zoom those keys mean here; the UI scale lives in
         // Preferences instead.
@@ -700,8 +700,12 @@ impl QSketchApp {
                     let label = RichText::new(format!("{} Update", icons::ARROW_CIRCLE_DOWN))
                         .color(egui::Color32::WHITE)
                         .small();
-                    let r = ui
-                        .add(egui::Button::new(label).fill(p.accent).corner_radius(4).min_size(egui::vec2(0.0, 18.0)));
+                    let r = ui.add(
+                        egui::Button::new(label)
+                            .fill(p.accent)
+                            .corner_radius(crate::ui::theme::radius(4))
+                            .min_size(egui::vec2(0.0, 18.0)),
+                    );
                     if r.on_hover_text("A new version is ready to install").clicked() {
                         self.state.updater.show_dialog = true;
                     }
@@ -1351,7 +1355,7 @@ impl QSketchApp {
         let pad = egui::vec2(10.0, 3.0);
         let size = galley.size() + pad * 2.0;
         let rect = egui::Rect::from_center_size(bar.center(), size.min(bar.size()));
-        painter.rect_filled(rect, 4.0, crate::ui::chrome::row_fill(ui.visuals().selection.bg_fill));
+        crate::ui::chrome::fill_box(painter, rect, 4.0, crate::ui::chrome::row_fill(ui.visuals().selection.bg_fill));
         painter.galley(rect.min + pad, galley, ui.visuals().strong_text_color());
         ui.ctx().request_repaint_after(SHOW_FOR - age);
     }
@@ -2033,8 +2037,12 @@ impl eframe::App for QSketchApp {
             if ui_now.icon_set != was.icon_set || ui_now.icon_overrides != was.icon_overrides {
                 crate::ui::iconset::configure(ui_now.icon_set, &ui_now.icon_overrides);
             }
-            if ui_now.theme != was.theme || ui_now.custom_palette != was.custom_palette || ui_now.scale != was.scale {
-                theme::apply(&ctx, &ui_now.palette(), ui_now.scale);
+            if ui_now.theme != was.theme
+                || ui_now.custom_palette != was.custom_palette
+                || ui_now.scale != was.scale
+                || ui_now.shape != was.shape
+            {
+                theme::apply(&ctx, &ui_now.palette(), ui_now.scale, ui_now.shape);
             }
             self.applied_theme = (ui_now.clone(), ui_now.scale);
         }

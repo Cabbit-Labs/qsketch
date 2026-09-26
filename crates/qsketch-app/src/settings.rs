@@ -260,6 +260,27 @@ fn mix_to(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
     [f(0), f(1), f(2)]
 }
 
+/// Overall shape language of the chrome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum UiShape {
+    /// Soft corners, roomy spacing (the original look).
+    #[default]
+    Rounded,
+    /// Square corners with small chamfers, flat 1 px outlines, tighter
+    /// spacing: a technical, angular look.
+    Angular,
+}
+
+impl UiShape {
+    pub const ALL: [UiShape; 2] = [UiShape::Rounded, UiShape::Angular];
+    pub fn label(self) -> &'static str {
+        match self {
+            UiShape::Rounded => "Rounded",
+            UiShape::Angular => "Angular",
+        }
+    }
+}
+
 /// Which glyphs draw the tools and panel chrome.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum IconSet {
@@ -505,6 +526,8 @@ pub struct UiSettings {
     /// Use the OS title bar instead of qsketch's own compact strip (menus,
     /// update indicator and window buttons in one bar).
     pub native_frame: bool,
+    /// Rounded or angular chrome (see `UiShape`).
+    pub shape: UiShape,
     /// Icon and wordmark dissolve into the workspace when the app opens.
     pub startup_animation: bool,
     pub custom_palette: CustomPalette,
@@ -646,6 +669,7 @@ impl Default for UiSettings {
             show_tooltips: true,
             compact_tool_options: false,
             native_frame: false,
+            shape: UiShape::default(),
             startup_animation: true,
             custom_palette: CustomPalette::default(),
             icon_set: IconSet::Outline,

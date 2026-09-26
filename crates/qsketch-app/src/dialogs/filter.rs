@@ -562,7 +562,7 @@ fn curves_ui(ui: &mut Ui, c: &mut Curves, hist: Option<&[[u32; 256]; 4]>) {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
     let inner = rect.shrink(6.0);
     let p = ui.painter();
-    p.rect_filled(rect, 3.0, ui.visuals().extreme_bg_color);
+    crate::ui::chrome::fill_box(p, rect, 3.0, ui.visuals().extreme_bg_color);
     let col = channel_color(ui, c.channel);
     if let Some(h) = hist {
         let bins = &h[match c.channel {
@@ -710,7 +710,7 @@ fn levels_ui(ui: &mut Ui, l: &mut Levels, hist: Option<&[[u32; 256]; 4]>) {
     // Histogram of the channel being edited.
     let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 96.0), egui::Sense::hover());
     let p = ui.painter();
-    p.rect_filled(rect, 3.0, ui.visuals().extreme_bg_color);
+    crate::ui::chrome::fill_box(p, rect, 3.0, ui.visuals().extreme_bg_color);
     if let Some(h) = hist {
         let bins = &h[match l.channel {
             LevelsChannel::Rgb => 0,
