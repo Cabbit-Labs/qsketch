@@ -399,18 +399,10 @@ impl TabViewer for Viewer<'_> {
                         ..Default::default()
                     },
                 );
-                // Angular: uppercase captions, like a sleeve label.
-                let angular = crate::ui::theme::angular();
-                let title =
-                    if angular { other.static_title().to_uppercase() } else { other.static_title().to_string() };
                 job.append(
-                    &title,
+                    other.static_title(),
                     4.0,
-                    egui::TextFormat {
-                        font_id: egui::FontId::proportional(if angular { 11.0 } else { 12.5 }),
-                        color: p.text,
-                        ..Default::default()
-                    },
+                    egui::TextFormat { font_id: egui::FontId::proportional(12.5), color: p.text, ..Default::default() },
                 );
                 job.into()
             }

@@ -29,9 +29,6 @@ pub fn small_button(ui: &mut Ui, text: impl Into<String>) -> Response {
 
 /// Square icon button with tooltip; `selected` renders it in the accent state.
 pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected: bool) -> Response {
-    if crate::ui::theme::angular() {
-        return angular_icon_button(ui, glyph, tooltip, size, selected, 0.62);
-    }
     let btn = egui::Button::new(icon(glyph, size * 0.62))
         .min_size(Vec2::splat(size))
         .corner_radius(crate::ui::theme::radius(4))
@@ -40,44 +37,6 @@ pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected:
         .frame(true)
         .frame_when_inactive(selected);
     let r = ui.add(btn);
-    if tooltip.is_empty() {
-        r
-    } else {
-        r.on_hover_text(tooltip)
-    }
-}
-
-/// The angular look's icon button: a parallelogram pill, accent-filled when
-/// selected, ink-outlined on hover, flat otherwise.
-fn angular_icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected: bool, scale: f32) -> Response {
-    let (rect, r) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
-    if ui.is_rect_visible(rect) {
-        let v = ui.visuals();
-        let accent = v.selection.stroke.color;
-        let ink = v.widgets.inactive.bg_stroke.color;
-        let painter = ui.painter();
-        let box_rect = rect.shrink(1.0);
-        if selected {
-            crate::ui::chrome::fill_box(painter, box_rect, 0.0, accent);
-        } else if r.hovered() || r.is_pointer_button_down_on() {
-            crate::ui::chrome::fill_box(painter, box_rect, 0.0, v.widgets.hovered.bg_fill);
-            crate::ui::chrome::stroke_box(
-                painter,
-                box_rect,
-                0.0,
-                egui::Stroke::new(1.5, ink),
-                egui::StrokeKind::Inside,
-            );
-        }
-        let color = if selected { v.extreme_bg_color } else { v.text_color() };
-        painter.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            glyph,
-            egui::FontId::new(size * scale, crate::ui::iconset::family()),
-            color,
-        );
-    }
     if tooltip.is_empty() {
         r
     } else {
@@ -95,14 +54,6 @@ pub fn icon_toggle(
     size: f32,
 ) -> Response {
     let glyph = if *value { glyph_on } else { glyph_off };
-    if crate::ui::theme::angular() {
-        let mut r = angular_icon_button(ui, glyph, tooltip, size, *value, 0.7);
-        if r.clicked() {
-            *value = !*value;
-            r.mark_changed();
-        }
-        return r;
-    }
     // On = the accent (selected) frame, not just a brighter glyph: on tinted
     // themes dim and normal text can be nearly the same color, and several
     // toggles use one glyph for both states.
@@ -346,28 +297,17 @@ pub fn param_pct(ui: &mut Ui, label: &str, value: &mut f32) -> bool {
 /// left edge. The edge is deliberately subtle so several chips in a row read as
 /// one bar rather than a run of colored dividers.
 pub fn chip<R>(ui: &mut Ui, color: Color32, tint: Color32, contents: impl FnOnce(&mut Ui) -> R) -> R {
-    let angular = crate::ui::theme::angular();
-    // Angular: the tint is a parallelogram painted under the contents (a
-    // placeholder shape is reserved first so it lands beneath them).
-    let under = angular.then(|| ui.painter().add(egui::Shape::Noop));
-    let frame = egui::Frame::new()
-        .fill(if angular { Color32::TRANSPARENT } else { tint })
-        .corner_radius(crate::ui::theme::radius(4))
-        .inner_margin(egui::Margin {
-            left: if angular { 9 } else { 6 },
-            right: if angular { 8 } else { 5 },
-            top: 1,
-            bottom: 1,
-        });
+    let frame = egui::Frame::new().fill(tint).corner_radius(crate::ui::theme::radius(4)).inner_margin(egui::Margin {
+        left: 6,
+        right: 5,
+        top: 1,
+        bottom: 1,
+    });
     let r = frame.show(ui, |ui| {
         ui.spacing_mut().item_spacing.x = 5.0;
         ui.horizontal(|ui| contents(ui)).inner
     });
     let rect = r.response.rect;
-    if let Some(idx) = under {
-        ui.painter()
-            .set(idx, egui::Shape::convex_polygon(crate::ui::chrome::angular_box(rect), tint, egui::Stroke::NONE));
-    }
     let edge = egui::Rect::from_min_max(
         egui::pos2(rect.left(), rect.top() + 3.0),
         egui::pos2(rect.left() + 1.5, rect.bottom() - 3.0),

@@ -208,18 +208,17 @@ pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32, shape: UiShape) {
     SHAPE.store(u8::from(shape == UiShape::Angular), std::sync::atomic::Ordering::Relaxed);
     let angular = shape == UiShape::Angular;
     let mut visuals = if p.dark { Visuals::dark() } else { Visuals::light() };
-    let ink = p.text.gamma_multiply(0.7);
     let r = if angular { CornerRadius::ZERO } else { CornerRadius::same(4) };
     let big_r = if angular { CornerRadius::ZERO } else { CornerRadius::same(6) };
     visuals.panel_fill = p.panel;
     visuals.window_fill = p.panel;
     visuals.extreme_bg_color = p.panel_alt;
     visuals.faint_bg_color = p.panel_alt;
-    visuals.window_stroke = if angular { Stroke::new(1.5, ink) } else { Stroke::new(1.0, p.border) };
+    visuals.window_stroke = Stroke::new(1.0, p.border);
     visuals.window_corner_radius = big_r;
     visuals.menu_corner_radius = big_r;
     visuals.selection.bg_fill = if p.dark { p.accent_dim.gamma_multiply(0.6) } else { p.accent.gamma_multiply(0.28) };
-    visuals.selection.stroke = Stroke::new(if angular { 1.5 } else { 1.0 }, p.accent);
+    visuals.selection.stroke = Stroke::new(1.0, p.accent);
     visuals.hyperlink_color = p.accent;
     visuals.override_text_color = None;
     visuals.widgets.noninteractive.bg_fill = p.panel;
@@ -233,18 +232,18 @@ pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32, shape: UiShape) {
     visuals.widgets.noninteractive.corner_radius = r;
     visuals.widgets.inactive.bg_fill = p.widget;
     visuals.widgets.inactive.weak_bg_fill = p.widget;
-    // Angular: every control is a flat box with a heavy ink outline.
-    visuals.widgets.inactive.bg_stroke = if angular { Stroke::new(1.5, ink) } else { Stroke::NONE };
+    // Angular: every control is a flat box with a hairline outline.
+    visuals.widgets.inactive.bg_stroke = if angular { Stroke::new(1.0, p.border) } else { Stroke::NONE };
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, p.text);
     visuals.widgets.inactive.corner_radius = r;
     visuals.widgets.hovered.bg_fill = p.widget_hover;
     visuals.widgets.hovered.weak_bg_fill = p.widget_hover;
-    visuals.widgets.hovered.bg_stroke = if angular { Stroke::new(1.5, p.text) } else { Stroke::new(1.0, p.border) };
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, p.border);
     visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, p.text);
     visuals.widgets.hovered.corner_radius = r;
     visuals.widgets.active.bg_fill = p.widget_active;
     visuals.widgets.active.weak_bg_fill = p.widget_active;
-    visuals.widgets.active.bg_stroke = Stroke::new(if angular { 1.5 } else { 1.0 }, p.accent);
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0, p.accent);
     visuals.widgets.active.fg_stroke = Stroke::new(1.0, p.text);
     visuals.widgets.active.corner_radius = r;
     visuals.widgets.open.bg_fill = p.widget_active;
@@ -323,9 +322,6 @@ pub fn dock_style(ctx: &egui::Context, p: &Palette) -> egui_dock::Style {
         s.tab.focused.corner_radius = CornerRadius::ZERO;
         s.tab.tab_body.corner_radius = CornerRadius::ZERO;
         s.tab.tab_body.inner_margin = egui::Margin::same(3);
-        s.tab.tab_body.stroke = Stroke::new(1.5, p.text.gamma_multiply(0.7));
-        s.tab.active.outline_color = p.text.gamma_multiply(0.7);
-        s.tab_bar.hline_color = p.text.gamma_multiply(0.7);
         s.main_surface_border_rounding = CornerRadius::ZERO;
     }
     s

@@ -2,6 +2,12 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.44.2 — 2026-09-26
+
+- The 0.44.1 Angular rework is reverted: Angular is back to 0.44.0's
+  square corners with small chamfers, flat 1 px outlines and tight
+  spacing. The group folder glyph stays centered in its row.
+
 ## 0.44.1 — 2026-09-26
 
 - Angular shape, second pass, after the showscanner look: low boxes (tool

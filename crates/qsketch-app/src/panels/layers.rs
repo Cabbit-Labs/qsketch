@@ -326,8 +326,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             if is_active {
                 // A solid accent bar on the left edge, visible even when the
                 // row's tint is close to the panel color.
-                let bar_w = if crate::ui::theme::angular() { 5.0 } else { 3.0 };
-                let bar = egui::Rect::from_min_size(row_rect.min, egui::vec2(bar_w, row_rect.height()));
+                let bar = egui::Rect::from_min_size(row_rect.min, egui::vec2(3.0, row_rect.height()));
                 ui.painter().rect_filled(bar, 0.0, accent_fill);
             }
             let indent = depth as f32 * INDENT;
