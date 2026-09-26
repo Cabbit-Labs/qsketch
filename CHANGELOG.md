@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.43.4 — 2026-09-26
+
+- Layers panel: the Lock row's three buttons (transparency, layer, clipping
+  mask) did nothing when clicked. The toggle flipped its value but never
+  reported a change, so the layer property was never written. Toggles now
+  also show their on state with an accent frame instead of only a brighter
+  glyph, which was invisible on tinted themes.
+
 ## 0.43.3 — 2026-09-25
 
 - Color panel: the picker square and hue strip respond on the press itself

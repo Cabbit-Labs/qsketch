@@ -54,14 +54,26 @@ pub fn icon_toggle(
     size: f32,
 ) -> Response {
     let glyph = if *value { glyph_on } else { glyph_off };
+    // On = the accent (selected) frame, not just a brighter glyph: on tinted
+    // themes dim and normal text can be nearly the same color, and several
+    // toggles use one glyph for both states.
     let text = icon(glyph, size * 0.7).color(if *value {
-        ui.visuals().text_color()
+        ui.visuals().selection.stroke.color
     } else {
         crate::ui::theme::dim_text(ui.visuals())
     });
-    let r = ui.add(egui::Button::new(text).frame(true).frame_when_inactive(false).min_size(Vec2::splat(size)));
+    let mut r = ui.add(
+        egui::Button::new(text)
+            .selected(*value)
+            .corner_radius(4)
+            .frame(true)
+            .frame_when_inactive(*value)
+            .min_size(Vec2::splat(size)),
+    );
     if r.clicked() {
         *value = !*value;
+        // A Button never reports `changed()` on its own; callers rely on it.
+        r.mark_changed();
     }
     if tooltip.is_empty() {
         r
