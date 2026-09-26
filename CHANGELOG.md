@@ -2,6 +2,17 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.44.1 — 2026-09-26
+
+- Angular shape, second pass, after the showscanner look: low boxes (tool
+  option chips, icon buttons and toggles, swatches, pills) are
+  parallelograms leaning right; taller plates (layer, brush and history
+  rows, the update dialog) get one large chamfer on the top-right corner;
+  controls, windows and menus carry a heavy 1.5 px ink outline; panel tabs
+  are uppercase captions; the active layer's edge bar is thicker.
+- Layers panel: the folder glyph of a group sits centered in its shorter
+  row instead of hanging low.
+
 ## 0.44.0 — 2026-09-26
 
 - **Angular shape option** (Preferences ▸ Interface ▸ Shape): square

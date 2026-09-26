@@ -67,8 +67,7 @@ pub fn row_fill(c: Color32) -> Color32 {
     c.gamma_multiply(0.85)
 }
 
-/// Outline a box to match `fill_box`: rounded, or chamfered in the angular
-/// look (drawn just inside the rect).
+/// The angular look's outline for a box (see `angular_box`).
 pub fn stroke_box(painter: &Painter, rect: Rect, radius: f32, stroke: egui::Stroke, kind: egui::StrokeKind) {
     if stroke.color.a() == 0 || stroke.width <= 0.0 {
         return;
@@ -82,27 +81,26 @@ pub fn stroke_box(painter: &Painter, rect: Rect, radius: f32, stroke: egui::Stro
         egui::StrokeKind::Outside => rect.expand(stroke.width / 2.0),
         egui::StrokeKind::Middle => rect,
     };
-    let c = 3.0_f32.min(rect.width() / 3.0).min(rect.height() / 3.0);
-    if c < 1.0 {
-        painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Middle);
-        return;
-    }
+    painter.add(egui::Shape::closed_line(angular_box(rect), stroke));
+}
+
+/// The angular look's outline for a box, wipeout-sleeve style: low boxes
+/// (pills, chips, tabs, buttons) are parallelograms leaning right; taller
+/// plates are rectangles with one big chamfer on the top-right corner.
+pub fn angular_box(rect: Rect) -> Vec<egui::Pos2> {
     let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
-    let pts = vec![
-        egui::pos2(l + c, t),
-        egui::pos2(r - c, t),
-        egui::pos2(r, t + c),
-        egui::pos2(r, b - c),
-        egui::pos2(r - c, b),
-        egui::pos2(l + c, b),
-        egui::pos2(l, b - c),
-        egui::pos2(l, t + c),
-    ];
-    painter.add(egui::Shape::closed_line(pts, stroke));
+    let (w, h) = (rect.width(), rect.height());
+    if h <= 30.0 {
+        let k = (h * 0.28).clamp(1.5, 6.0).min(w / 4.0);
+        vec![egui::pos2(l + k, t), egui::pos2(r, t), egui::pos2(r - k, b), egui::pos2(l, b)]
+    } else {
+        let c = (h * 0.32).clamp(6.0, 14.0).min(w / 3.0);
+        vec![egui::pos2(l, t), egui::pos2(r - c, t), egui::pos2(r, t + c), egui::pos2(r, b), egui::pos2(l, b)]
+    }
 }
 
 /// Fill a box the way the current shape language draws boxes: rounded by
-/// `radius`, or, in the angular look, square with 3 px chamfered corners.
+/// `radius`, or with the angular look's parallelogram / chamfered plate.
 pub fn fill_box(painter: &Painter, rect: Rect, radius: f32, fill: Color32) {
     if fill.a() == 0 {
         return;
@@ -111,23 +109,11 @@ pub fn fill_box(painter: &Painter, rect: Rect, radius: f32, fill: Color32) {
         painter.rect_filled(rect, radius, fill);
         return;
     }
-    let c = 3.0_f32.min(rect.width() / 3.0).min(rect.height() / 3.0);
-    if c < 1.0 {
+    if rect.width() < 4.0 || rect.height() < 3.0 {
         painter.rect_filled(rect, 0.0, fill);
         return;
     }
-    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
-    let pts = vec![
-        egui::pos2(l + c, t),
-        egui::pos2(r - c, t),
-        egui::pos2(r, t + c),
-        egui::pos2(r, b - c),
-        egui::pos2(r - c, b),
-        egui::pos2(l + c, b),
-        egui::pos2(l, b - c),
-        egui::pos2(l, t + c),
-    ];
-    painter.add(egui::Shape::convex_polygon(pts, fill, egui::Stroke::NONE));
+    painter.add(egui::Shape::convex_polygon(angular_box(rect), fill, egui::Stroke::NONE));
 }
 
 /// Horizontal brush streaks plus fine grain.
