@@ -52,6 +52,11 @@ pub struct QSketchApp {
     /// Keys whose press event reached us (a release without one means egui-winit
     /// swallowed the press as a clipboard chord).
     keys_seen_pressed: std::collections::HashSet<Key>,
+    /// Shift was down at some point during the current Ctrl hold. A paste
+    /// chord that only shows up on the V *release* (image clipboard: no
+    /// `Event::Paste`) must read Shift from the hold, not from the release
+    /// event, where Shift is often already up.
+    shift_during_ctrl: bool,
     auto_update_checked: bool,
 }
 
@@ -133,6 +138,7 @@ impl QSketchApp {
             text_editing: false,
             clipboard_chord_fired: false,
             keys_seen_pressed: Default::default(),
+            shift_during_ctrl: false,
             auto_update_checked: false,
         };
         if files.is_empty() {
@@ -371,6 +377,14 @@ impl QSketchApp {
         }
 
         let events = ctx.input(|i| i.events.clone());
+        // Track Shift across the Ctrl hold (see `shift_during_ctrl`).
+        let (ctrl_now, shift_now) = ctx.input(|i| (i.modifiers.command || i.modifiers.ctrl, i.modifiers.shift));
+        if !ctrl_now {
+            self.shift_during_ctrl = false;
+        } else if shift_now {
+            self.shift_during_ctrl = true;
+        }
+        let shift_held = self.shift_during_ctrl || shift_now;
         if wants_text || dialog_open {
             return;
         }
@@ -406,8 +420,7 @@ impl QSketchApp {
                 }
                 egui::Event::Paste(_) => {
                     self.clipboard_chord_fired = true;
-                    let shift = ctx.input(|i| i.modifiers.shift);
-                    self.perform(if shift { Action::PasteInPlace } else { Action::Paste }, ctx);
+                    self.perform(if shift_held { Action::PasteInPlace } else { Action::Paste }, ctx);
                     continue;
                 }
                 egui::Event::Key { key, pressed: false, modifiers, .. } => {
@@ -418,7 +431,12 @@ impl QSketchApp {
                     if !seen && matches!(key, Key::C | Key::X | Key::V) {
                         let fired = std::mem::take(&mut self.clipboard_chord_fired);
                         if !fired {
-                            let mods = egui::Modifiers { command: true, ctrl: true, ..*modifiers };
+                            let mods = egui::Modifiers {
+                                command: true,
+                                ctrl: true,
+                                shift: modifiers.shift || shift_held,
+                                ..*modifiers
+                            };
                             if let Some(action) = self.state.keymap.lookup(*key, mods) {
                                 if matches!(
                                     action,

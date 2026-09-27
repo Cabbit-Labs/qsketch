@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.44.4 — 2026-09-27
+
+- Ctrl+Shift+V often did a plain paste. With an image on the clipboard the
+  chord is only seen when V is released, and Shift was read from that
+  release, where it is usually already up. Shift is now remembered for the
+  whole Ctrl hold, so the order the keys come up in no longer matters.
+  Edit ▸ Paste in Place was never affected.
+
 ## 0.44.3 — 2026-09-26
 
 - Paste in Place landed at the top-left corner some of the time. The OS
