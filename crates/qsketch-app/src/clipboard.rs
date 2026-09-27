@@ -7,7 +7,9 @@ use qsketch_core::{ClipImage, Layer, Pt};
 use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
 
-fn to_os(clip: &ClipImage) {
+/// Hand the image to the OS clipboard; false when that failed (typically
+/// another application holding the clipboard for a moment).
+fn to_os(clip: &ClipImage) -> bool {
     match arboard::Clipboard::new() {
         Ok(mut cb) => {
             let img = arboard::ImageData {
@@ -15,11 +17,18 @@ fn to_os(clip: &ClipImage) {
                 height: clip.height as usize,
                 bytes: Cow::Borrowed(&clip.rgba),
             };
-            if let Err(e) = cb.set_image(img) {
-                log::warn!("clipboard set_image: {e}");
+            match cb.set_image(img) {
+                Ok(()) => true,
+                Err(e) => {
+                    log::warn!("clipboard set_image: {e}");
+                    false
+                }
             }
         }
-        Err(e) => log::warn!("clipboard unavailable: {e}"),
+        Err(e) => {
+            log::warn!("clipboard unavailable: {e}");
+            false
+        }
     }
 }
 
@@ -55,7 +64,7 @@ pub fn copy(state: &mut AppState, doc_id: DocId, merged: bool) -> bool {
     };
     match clip {
         Some(c) => {
-            to_os(&c);
+            state.clipboard_in_os = to_os(&c);
             state.clipboard = Some(c);
             true
         }
@@ -87,16 +96,32 @@ pub fn cut(state: &mut AppState, doc_id: DocId) {
 /// the clip came from qsketch; otherwise the image is centered in the view
 /// (and shrunk to fit if it is larger than the document).
 pub fn paste(state: &mut AppState, doc_id: DocId, in_place: bool) {
+    // The internal copy carries the origin (and exact alpha); the OS
+    // clipboard only wins when it holds something newer, i.e. a different
+    // picture that was put there after our copy reached it. A picture that
+    // merely lost its alpha on the way through the OS is still ours.
     let os = from_os();
     let clip = match (os, &state.clipboard) {
-        (Some(o), Some(i)) if o.width == i.width && o.height == i.height => i.clone(),
-        (Some(o), _) => o,
+        (Some(o), Some(i)) if !state.clipboard_in_os || i.same_picture(&o) => {
+            log::info!("paste: internal clip ({}×{} at {:?})", i.width, i.height, i.origin);
+            i.clone()
+        }
+        (Some(o), _) => {
+            log::info!("paste: OS clip ({}×{}), no origin", o.width, o.height);
+            o
+        }
         (None, Some(i)) => i.clone(),
         (None, None) => {
             state.toasts.push(Level::Info, "Clipboard has no image.");
             return;
         }
     };
+    if in_place && clip.origin == (0, 0) && state.clipboard.as_ref().is_none_or(|i| !i.same_picture(&clip)) {
+        state.toasts.push(
+            Level::Info,
+            "This image did not come from qsketch, so it has no place to go back to; pasting at the top-left.",
+        );
+    }
     let Some(entry) = state.doc(doc_id) else { return };
     let (dw, dh) = (entry.doc.width(), entry.doc.height());
     let (mut w, mut h) = (clip.width, clip.height);

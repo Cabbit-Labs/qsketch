@@ -21,6 +21,19 @@ impl ClipImage {
         Self { width, height, rgba, origin: (0, 0) }
     }
 
+    /// Whether `other` is this image as it comes back from the OS clipboard:
+    /// same size, and the same color wherever this image is opaque. Alpha and
+    /// the color under transparent pixels are ignored because some platforms
+    /// flatten or premultiply on the way through the clipboard.
+    pub fn same_picture(&self, other: &ClipImage) -> bool {
+        if self.width != other.width || self.height != other.height {
+            return false;
+        }
+        self.rgba.chunks_exact(4).zip(other.rgba.chunks_exact(4)).all(|(a, b)| {
+            a[3] != 255 || (a[0].abs_diff(b[0]) <= 2 && a[1].abs_diff(b[1]) <= 2 && a[2].abs_diff(b[2]) <= 2)
+        })
+    }
+
     /// Copy the selected region (or the whole content bounds) of a layer.
     pub fn from_layer(raster: &Raster, selection: Option<&Mask>) -> Option<Self> {
         let rect = match selection {
@@ -97,6 +110,18 @@ impl ClipImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn same_picture_tolerates_clipboard_alpha_loss() {
+        let a = ClipImage::from_rgba(2, 1, vec![10, 20, 30, 255, 0, 0, 0, 0]);
+        // Same opaque pixel, transparent pixel flattened to white.
+        let b = ClipImage::from_rgba(2, 1, vec![11, 20, 29, 255, 255, 255, 255, 255]);
+        assert!(a.same_picture(&b));
+        let c = ClipImage::from_rgba(2, 1, vec![90, 20, 30, 255, 0, 0, 0, 0]);
+        assert!(!a.same_picture(&c));
+        let d = ClipImage::from_rgba(1, 2, vec![10, 20, 30, 255, 0, 0, 0, 0]);
+        assert!(!a.same_picture(&d));
+    }
 
     #[test]
     fn copy_selection() {

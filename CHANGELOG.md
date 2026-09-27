@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.44.3 — 2026-09-26
+
+- Paste in Place landed at the top-left corner some of the time. The OS
+  clipboard's copy of the image won over qsketch's own whenever the two did
+  not match exactly, and the OS copy carries no origin; on Windows the
+  hand-off to the OS clipboard also fails now and then when another app
+  holds it, leaving an older image there. qsketch's copy now wins unless
+  the OS clipboard holds a genuinely different picture (copied elsewhere
+  since), and an image without an origin says so in a toast.
+
 ## 0.44.2 — 2026-09-26
 
 - The 0.44.1 Angular rework is reverted: Angular is back to 0.44.0's

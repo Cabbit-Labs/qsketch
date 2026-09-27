@@ -215,6 +215,10 @@ pub struct AppState {
     pub presets: Vec<BrushSettings>,
 
     pub clipboard: Option<ClipImage>,
+    /// Whether the last internal copy also reached the OS clipboard. When it
+    /// did not (another app held the clipboard), whatever the OS holds is
+    /// older than ours and must not win on paste.
+    pub clipboard_in_os: bool,
     pub settings: Settings,
     pub keymap: Keymap,
     pub toasts: Toasts,
@@ -302,6 +306,7 @@ impl AppState {
             clone: paint.clone,
             presets: paint.presets,
             clipboard: None,
+            clipboard_in_os: false,
             settings,
             keymap,
             toasts: Toasts::default(),
