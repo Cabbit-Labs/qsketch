@@ -238,6 +238,10 @@ carries `Filled` and an outline `Thickness` in pixels; the preview while
 dragging traces the pixels that will be painted. The Line tool still draws
 with the current brush.
 
+While dragging a line, a gradient, or a Shift+click brush line, `Shift`
+snaps the angle to 45° steps and `Shift+Ctrl` to a finer step, 15° by
+default (Preferences ▸ Canvas ▸ Fine angle snap).
+
 ## Brush
 
 | Command | Default shortcut |

@@ -491,8 +491,9 @@ pub fn handle_stroke(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: Ca
             state.session = Some(ToolSession::Stroke { engine, layer, extra });
             state.session_doc = Some(doc_id);
             if let Some(from) = shift_line {
-                feed_line(state, doc_id, from, inp.doc, inp.pressure);
-                state.last_stroke_end = Some((doc_id, inp.doc));
+                let to = constrain_line(state, from, inp.doc, inp.mods);
+                feed_line(state, doc_id, from, to, inp.pressure);
+                state.last_stroke_end = Some((doc_id, to));
                 finish(state, doc_id, tool);
                 return;
             }
@@ -534,14 +535,23 @@ pub(super) fn feed_line(state: &mut AppState, doc_id: DocId, a: Pt, b: Pt, press
     }
 }
 
-pub fn constrain_line(start: Pt, cur: Pt, snap: bool) -> Pt {
-    if !snap {
+/// Shift snaps the line's angle to 45° steps; Shift+Ctrl to the finer step
+/// from Preferences ▸ Canvas (15° by default).
+pub fn constrain_line(state: &AppState, start: Pt, cur: Pt, mods: egui::Modifiers) -> Pt {
+    if !mods.shift {
         return cur;
     }
+    let step_deg =
+        if mods.ctrl || mods.command { state.settings.canvas.fine_angle_step.clamp(1.0, 90.0) } else { 45.0 };
+    snap_angle(start, cur, step_deg)
+}
+
+/// `cur` rotated about `start` onto the nearest multiple of `step_deg`.
+pub fn snap_angle(start: Pt, cur: Pt, step_deg: f32) -> Pt {
     let dx = cur.x - start.x;
     let dy = cur.y - start.y;
     let ang = dy.atan2(dx);
-    let step = std::f32::consts::FRAC_PI_4;
+    let step = step_deg.to_radians();
     let snapped = (ang / step).round() * step;
     let len = (dx * dx + dy * dy).sqrt();
     Pt::new(start.x + len * snapped.cos(), start.y + len * snapped.sin())
@@ -629,7 +639,7 @@ fn commit_shape(
     let Some((engine, layer, extra)) = begin_engine_with(state, doc_id, ToolKind::Brush) else { return };
     state.session = Some(ToolSession::Stroke { engine, layer, extra });
     state.session_doc = Some(doc_id);
-    let end = constrain_line(start, cur, mods.shift);
+    let end = constrain_line(state, start, cur, mods);
     feed_line(state, doc_id, start, end, 1.0);
     finish(state, doc_id, tool);
 }

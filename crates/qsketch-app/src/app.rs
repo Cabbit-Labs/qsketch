@@ -1314,7 +1314,7 @@ impl QSketchApp {
                 let tool = self.state.effective_tool();
                 let hint = match tool {
                     ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => {
-                        "Shift+click: straight line · [ ]: size · Alt or right-click: pick · middle-drag: pan"
+                        "Shift+click: straight line (+Ctrl: angle snap) · [ ]: size · Alt or right-click: pick · middle-drag: pan"
                     }
                     ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso => {
                         "Shift: add · Alt: subtract · click: deselect"
@@ -1338,7 +1338,7 @@ impl QSketchApp {
                         }
                     }
                     ToolKind::Move => "Shift: constrain · arrows: nudge",
-                    ToolKind::Clone => "Alt+click: set source · [ ]: size · Shift+click: straight line",
+                    ToolKind::Clone => "Alt+click: set source · [ ]: size · Shift+click: straight line (+Ctrl: angle snap)",
                     ToolKind::Smudge => "Opacity = strength · [ ]: size",
                     ToolKind::Zoom => "click: zoom in · Alt+click: zoom out · drag: scrub",
                     ToolKind::Crop => "Enter: apply · Esc: cancel",

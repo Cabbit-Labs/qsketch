@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.45.0 — 2026-09-28
+
+- **Shift+Ctrl angle snap.** While Shift constrains a line to 45° steps,
+  adding Ctrl snaps it to a finer step instead, 15° by default and
+  adjustable in Preferences ▸ Canvas ▸ Fine angle snap (1°–90°). Applies
+  to the Line tool, the Gradient tool and Shift+click straight brush lines.
+
 ## 0.44.4 — 2026-09-27
 
 - Ctrl+Shift+V often did a plain paste. With an image on the clipboard the

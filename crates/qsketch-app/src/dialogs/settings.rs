@@ -698,6 +698,10 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             ui.selectable_value(&mut c.brush_cursor, BrushCursor::Hidden, "Hidden");
         });
         ui.end_row();
+        ui.label("Fine angle snap");
+        ui.add(egui::DragValue::new(&mut c.fine_angle_step).range(1.0..=90.0).speed(0.5).suffix("°"))
+            .on_hover_text("Shift snaps lines to 45°; Shift+Ctrl snaps to this step (line, gradient, Shift+click brush lines).");
+        ui.end_row();
         ui.label("Color picker loupe");
         ui.horizontal(|ui| {
             ui.checkbox(&mut c.pick_loupe, "Show");

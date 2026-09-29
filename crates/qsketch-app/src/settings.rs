@@ -745,6 +745,8 @@ pub struct CanvasSettings {
     pub pick_loupe_size: f32,
     /// How many canvas pixels the loupe spans.
     pub pick_loupe_pixels: u32,
+    /// Shift snaps lines to 45°; Shift+Ctrl snaps to this finer step (degrees).
+    pub fine_angle_step: f32,
 }
 
 impl Default for CanvasSettings {
@@ -786,6 +788,7 @@ impl Default for CanvasSettings {
             pick_loupe: true,
             pick_loupe_size: 86.0,
             pick_loupe_pixels: 13,
+            fine_angle_step: 15.0,
         }
     }
 }

@@ -160,14 +160,17 @@ pub fn handle_gradient(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             }
         }
         CanvasEvent::Drag(inp) => {
-            if let Some(ToolSession::GradientDrag { cur, start }) = &mut state.session {
-                *cur = super::paint::constrain_line(*start, inp.doc, inp.mods.shift);
+            if let Some(ToolSession::GradientDrag { start, .. }) = state.session {
+                let end = super::paint::constrain_line(state, start, inp.doc, inp.mods);
+                if let Some(ToolSession::GradientDrag { cur, .. }) = &mut state.session {
+                    *cur = end;
+                }
             }
         }
         CanvasEvent::Release(inp) => {
             let Some(ToolSession::GradientDrag { start, .. }) = state.session.take() else { return };
             state.session_doc = None;
-            let end = super::paint::constrain_line(start, inp.doc, inp.mods.shift);
+            let end = super::paint::constrain_line(state, start, inp.doc, inp.mods);
             if start.dist(end) < 1.0 {
                 return;
             }

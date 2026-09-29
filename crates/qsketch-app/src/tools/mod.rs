@@ -628,7 +628,7 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
                 let tool = state.effective_tool();
                 match tool {
                     ToolKind::Line => {
-                        let end = paint::constrain_line(*start, *cur, mods.shift);
+                        let end = paint::constrain_line(state, *start, *cur, *mods);
                         painter.line_segment([to_s(*start), to_s(end)], shadow);
                         painter.line_segment([to_s(*start), to_s(end)], stroke);
                     }
