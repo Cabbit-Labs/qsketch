@@ -3,7 +3,7 @@
 mod contour;
 pub mod fill;
 pub mod floating;
-mod paint;
+pub mod paint;
 pub mod select;
 pub mod symmetry;
 pub mod text;
