@@ -2,6 +2,12 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.45.1 — 2026-09-28
+
+- The Shift+click straight-line preview for brushes now snaps with Shift
+  (45°) and Shift+Ctrl (fine step) the way the click does, so it shows
+  where the line will land.
+
 ## 0.45.0 — 2026-09-28
 
 - **Shift+Ctrl angle snap.** While Shift constrains a line to 45° steps,
