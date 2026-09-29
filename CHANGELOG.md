@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.45.2 — 2026-09-28
+
+- Brush Shift+click straight lines are back to any angle, as in Photoshop
+  and Aseprite; only Shift+Ctrl snaps them to the fine step, and the
+  preview follows the same rule. The Line and Gradient tools keep Shift =
+  45° and Shift+Ctrl = fine step.
+
 ## 0.45.1 — 2026-09-28
 
 - The Shift+click straight-line preview for brushes now snaps with Shift

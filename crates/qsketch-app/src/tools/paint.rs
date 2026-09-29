@@ -491,7 +491,7 @@ pub fn handle_stroke(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: Ca
             state.session = Some(ToolSession::Stroke { engine, layer, extra });
             state.session_doc = Some(doc_id);
             if let Some(from) = shift_line {
-                let to = constrain_line(state, from, inp.doc, inp.mods);
+                let to = constrain_brush_line(state, from, inp.doc, inp.mods);
                 feed_line(state, doc_id, from, to, inp.pressure);
                 state.last_stroke_end = Some((doc_id, to));
                 finish(state, doc_id, tool);
@@ -544,6 +544,16 @@ pub fn constrain_line(state: &AppState, start: Pt, cur: Pt, mods: egui::Modifier
     let step_deg =
         if mods.ctrl || mods.command { state.settings.canvas.fine_angle_step.clamp(1.0, 90.0) } else { 45.0 };
     snap_angle(start, cur, step_deg)
+}
+
+/// Brush Shift+click lines: Shift alone draws to the click at any angle
+/// (Photoshop / Aseprite); only Shift+Ctrl snaps, to the fine step.
+pub fn constrain_brush_line(state: &AppState, start: Pt, cur: Pt, mods: egui::Modifiers) -> Pt {
+    if mods.shift && (mods.ctrl || mods.command) {
+        snap_angle(start, cur, state.settings.canvas.fine_angle_step.clamp(1.0, 90.0))
+    } else {
+        cur
+    }
 }
 
 /// `cur` rotated about `start` onto the nearest multiple of `step_deg`.

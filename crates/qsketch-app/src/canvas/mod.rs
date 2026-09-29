@@ -817,10 +817,10 @@ fn draw_shift_line_preview(
     let Some(brush) = state.brush_for_tool(tool) else { return };
     let Some(entry) = state.doc(doc_id) else { return };
     let view = &entry.view;
-    // The preview follows the same Shift / Shift+Ctrl angle snap the click
-    // will apply, so it shows where the line actually lands.
+    // The preview follows the click: any angle with Shift, snapped to the
+    // fine step with Shift+Ctrl.
     let mods = painter.ctx().input(|i| i.modifiers);
-    let to = crate::tools::paint::constrain_line(state, from, view.screen_to_doc(pos), mods);
+    let to = crate::tools::paint::constrain_brush_line(state, from, view.screen_to_doc(pos), mods);
     let pos = view.doc_to_screen(to);
     if brush.size <= PIXEL_PREVIEW_MAX_SIZE {
         if let Some(spans) = brush.line_spans(from, to, 1.0) {
