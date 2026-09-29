@@ -2,6 +2,13 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.45.3 — 2026-09-29
+
+- Options bar: the chip after the tool name shows the brush preset's name
+  ("Hard Round", "Pixel", …) instead of only its tip shape ("Round"),
+  which read like a tool that does not exist. The tip shape is in its
+  tooltip.
+
 ## 0.45.2 — 2026-09-28
 
 - Brush Shift+click straight lines are back to any angle, as in Photoshop

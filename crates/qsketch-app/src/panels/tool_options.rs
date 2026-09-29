@@ -358,11 +358,16 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
     // Tip shape: part of "what am I painting with", so it sits right after the
     // tool name rather than at the far end of the bar.
     let b = state.brush_for_tool_mut(tool).expect("checked above");
-    let tip_label = if b.is_round() { "Round".to_string() } else { b.tip.clone() };
+    // The preset's name ("Hard Round", "Pixel", …); the tip shape alone
+    // ("Round") read like a tool that does not exist.
+    let tip_shape = if b.is_round() { "Round".to_string() } else { b.tip.clone() };
+    let label = if b.name.trim().is_empty() { tip_shape.clone() } else { b.name.clone() };
     chip(ui, col, tint, |ui| {
         if ui
-            .add(egui::Button::new(format!("{} {}", icons::SLIDERS_HORIZONTAL, tip_label)).frame_when_inactive(false))
-            .on_hover_text("Open Brush Settings (F9): tip shape, dynamics, scattering, texture, color")
+            .add(egui::Button::new(format!("{} {}", icons::SLIDERS_HORIZONTAL, label)).frame_when_inactive(false))
+            .on_hover_text(format!(
+                "Brush preset · tip: {tip_shape}\nOpen Brush Settings (F9): tip shape, dynamics, scattering, texture, color"
+            ))
             .clicked()
         {
             open_settings = true;
