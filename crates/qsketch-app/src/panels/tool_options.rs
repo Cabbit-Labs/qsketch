@@ -362,17 +362,49 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
     // ("Round") read like a tool that does not exist.
     let tip_shape = if b.is_round() { "Round".to_string() } else { b.tip.clone() };
     let label = if b.name.trim().is_empty() { tip_shape.clone() } else { b.name.clone() };
+    let current_name = b.name.clone();
+    let mut pick: Option<usize> = None;
     chip(ui, col, tint, |ui| {
-        if ui
-            .add(egui::Button::new(format!("{} {}", icons::SLIDERS_HORIZONTAL, label)).frame_when_inactive(false))
-            .on_hover_text(format!(
-                "Brush preset · tip: {tip_shape}\nOpen Brush Settings (F9): tip shape, dynamics, scattering, texture, color"
-            ))
-            .clicked()
+        // The sliders icon opens the full Brush Settings; the name opens a
+        // quick list of presets.
+        if icon_button(
+            ui,
+            icons::SLIDERS_HORIZONTAL,
+            "Brush Settings (F9): tip shape, dynamics, scattering, texture, color",
+            20.0,
+            false,
+        )
+        .clicked()
         {
             open_settings = true;
         }
+        // A framed button both at rest and on hover, with no stroke: a frame
+        // that only appears on hover grows the button by its stroke width and
+        // makes the bar jitter.
+        let btn = egui::Button::new(&label).stroke(egui::Stroke::NONE);
+        let resp = ui.add(btn).on_hover_text(format!("Brush preset · tip: {tip_shape}\nClick to pick another preset"));
+        let popup_id = ui.id().with("preset_quick_pick");
+        egui::Popup::from_toggle_button_response(&resp)
+            .id(popup_id)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+            .show(|ui| {
+                ui.set_min_width(180.0);
+                egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                    for (i, preset) in state.presets.iter().enumerate() {
+                        let selected = preset.name == current_name;
+                        if ui.selectable_label(selected, &preset.name).clicked() {
+                            pick = Some(i);
+                        }
+                    }
+                });
+            });
     });
+    if let Some(i) = pick {
+        let preset = state.presets[i].clone();
+        if let Some(b) = state.brush_for_tool_mut(tool) {
+            *b = preset;
+        }
+    }
     // Primary knobs.
     chip(ui, col, tint, |ui| {
         let b = state.brush_for_tool_mut(tool).expect("checked above");

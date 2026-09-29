@@ -629,8 +629,28 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
                 match tool {
                     ToolKind::Line => {
                         let end = paint::constrain_line(state, *start, *cur, *mods);
-                        painter.line_segment([to_s(*start), to_s(end)], shadow);
-                        painter.line_segment([to_s(*start), to_s(end)], stroke);
+                        // The line is drawn with the Brush tool's brush, so
+                        // preview that stroke: the exact pixels for a hard
+                        // round tip, otherwise a band of the brush's width in
+                        // the paint color, with a hairline down the middle.
+                        let brush = &state.brush;
+                        let fg = crate::ui::widgets::rgba_to_color32(state.fg);
+                        let fill = fg.gamma_multiply((brush.opacity * brush.flow).clamp(0.0, 1.0));
+                        let mut drawn = false;
+                        if brush.size <= crate::canvas::PIXEL_PREVIEW_MAX_SIZE {
+                            if let Some(spans) = brush.line_spans(*start, end, 1.0) {
+                                drawn = crate::canvas::draw_pixel_preview(painter, view, &spans, Some(fill));
+                            }
+                        }
+                        if !drawn {
+                            let w = (brush.size * view.zoom).max(1.0);
+                            painter.line_segment(
+                                [to_s(*start), to_s(end)],
+                                egui::Stroke::new(w, fill.gamma_multiply(0.85)),
+                            );
+                            painter.line_segment([to_s(*start), to_s(end)], shadow);
+                            painter.line_segment([to_s(*start), to_s(end)], stroke);
+                        }
                     }
                     // Rectangles and ellipses preview the exact pixels they
                     // will paint, hole included.

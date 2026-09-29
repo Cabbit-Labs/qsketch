@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.46.0 — 2026-09-29
+
+- Options bar: clicking the brush preset's name opens a quick list of
+  presets to switch to; the sliders icon next to it opens the full Brush
+  Settings panel. The name no longer jitters on hover (its frame used to
+  appear only when hovered, growing the button by its stroke).
+- Line tool: the drag preview shows the stroke that will be drawn, in the
+  paint color: the exact pixels for a hard round tip, otherwise a band of
+  the brush's width, instead of a 1 px line.
+
 ## 0.45.3 — 2026-09-29
 
 - Options bar: the chip after the tool name shows the brush preset's name

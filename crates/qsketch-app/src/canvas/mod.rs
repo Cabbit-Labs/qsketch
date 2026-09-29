@@ -755,12 +755,12 @@ fn draw_rotate_cursor(painter: &egui::Painter, hover: Option<Pos2>, glyph: &str,
 /// Widest pencil / eraser that still previews pixel by pixel. Past this the
 /// outline is indistinguishable from the round cursor and walking the dab
 /// every frame stops being free.
-const PIXEL_PREVIEW_MAX_SIZE: f32 = 256.0;
+pub(crate) const PIXEL_PREVIEW_MAX_SIZE: f32 = 256.0;
 
 /// Outline the exact pixels a press would mark, along the pixel grid. The
 /// pencil and its eraser work pixel by pixel, so the cursor shows the pixels
 /// themselves rather than a circle that only approximates them.
-fn draw_pixel_preview(
+pub(crate) fn draw_pixel_preview(
     painter: &egui::Painter,
     view: &view::CanvasView,
     spans: &qsketch_core::shape::Spans,
