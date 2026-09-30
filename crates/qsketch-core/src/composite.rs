@@ -115,6 +115,8 @@ impl TileSet {
 
 /// Composited document as premultiplied RGBA8 tiles (dense).
 pub struct Composite {
+    /// Styled copies of the layers that have layer effects.
+    pub styles: crate::style::StyleCache,
     width: u32,
     height: u32,
     tiles_x: u32,
@@ -131,7 +133,7 @@ impl Composite {
         for _ in 0..n {
             tiles.push(zeroed_box());
         }
-        Self { width, height, tiles_x, tiles_y, tiles }
+        Self { styles: Default::default(), width, height, tiles_x, tiles_y, tiles }
     }
 
     pub fn width(&self) -> u32 {
@@ -167,11 +169,12 @@ impl Composite {
         debug_assert_eq!(doc.width, self.width);
         debug_assert_eq!(doc.height, self.height);
         let tiles_x = self.tiles_x;
+        let styles = &self.styles;
         self.tiles.par_iter_mut().enumerate().filter(|(i, _)| dirty.contains_index(*i)).for_each(|(i, out)| {
             let tx = i as u32 % tiles_x;
             let ty = i as u32 / tiles_x;
             let mut buf = [[0f32; 4]; TILE_PX];
-            composite_tile_straight(doc, tx, ty, &mut buf);
+            composite_tile_straight(doc, Some(styles), tx, ty, &mut buf);
             for (p, o) in buf.iter().zip(out.px.chunks_exact_mut(4)) {
                 let a = p[3].clamp(0.0, 1.0);
                 o[0] = (p[0].clamp(0.0, 1.0) * a * 255.0 + 0.5) as u8;
@@ -248,11 +251,20 @@ fn zeroed_box() -> Box<Tile> {
 }
 
 /// Composite one tile of `doc` into `out` as straight-alpha f32 RGBA.
-pub fn composite_tile_straight(doc: &DocState, tx: u32, ty: u32, out: &mut [[f32; 4]; TILE_PX]) {
+///
+/// `fx` holds the styled copies of layers with layer effects; without it
+/// those layers draw as their plain pixels.
+pub fn composite_tile_straight(
+    doc: &DocState,
+    fx: Option<&crate::style::StyleCache>,
+    tx: u32,
+    ty: u32,
+    out: &mut [[f32; 4]; TILE_PX],
+) {
     for p in out.iter_mut() {
         *p = [0.0; 4];
     }
-    composite_range(doc, tx, ty, 0..doc.layers.len(), None, out);
+    composite_range(doc, fx, tx, ty, 0..doc.layers.len(), None, out);
 }
 
 /// Composite the direct children of `parent` found in `range` onto `out`
@@ -261,6 +273,7 @@ pub fn composite_tile_straight(doc: &DocState, tx: u32, ty: u32, out: &mut [[f32
 /// against each other first, as in Photoshop's "Normal" group mode.
 pub fn composite_range(
     doc: &DocState,
+    fx: Option<&crate::style::StyleCache>,
     tx: u32,
     ty: u32,
     range: std::ops::Range<usize>,
@@ -300,10 +313,10 @@ pub fn composite_range(
             // Members blend straight onto what is below the group; a partial
             // opacity fades the members' effect back toward the backdrop.
             if opacity >= 1.0 {
-                composite_range(doc, tx, ty, doc.members(li), Some(layer.props.id), out);
+                composite_range(doc, fx, tx, ty, doc.members(li), Some(layer.props.id), out);
             } else {
                 let mut buf = *out;
-                composite_range(doc, tx, ty, doc.members(li), Some(layer.props.id), &mut buf);
+                composite_range(doc, fx, tx, ty, doc.members(li), Some(layer.props.id), &mut buf);
                 for (o, b) in out.iter_mut().zip(buf.iter()) {
                     for c in 0..4 {
                         o[c] += (b[c] - o[c]) * opacity;
@@ -312,8 +325,11 @@ pub fn composite_range(
             }
             continue;
         }
+        // A styled layer draws its styled copy, which already has the mask
+        // applied (the effects follow the masked shape).
+        let styled = if layer.is_group() { None } else { fx.and_then(|c| c.get(layer.props.id)) };
         // A layer mask scales the alpha per pixel (255 = shown).
-        let mask = layer.active_mask();
+        let mask = if styled.is_some() { None } else { layer.active_mask() };
         let (ox, oy) = (tx as i32 * TILE as i32, ty as i32 * TILE as i32);
         let mask_at = |i: usize| -> f32 {
             match mask {
@@ -323,7 +339,7 @@ pub fn composite_range(
         };
         if layer.is_group() {
             let mut buf = [[0f32; 4]; TILE_PX];
-            composite_range(doc, tx, ty, doc.members(li), Some(layer.props.id), &mut buf);
+            composite_range(doc, fx, tx, ty, doc.members(li), Some(layer.props.id), &mut buf);
             for (i, (o, src)) in out.iter_mut().zip(buf.iter()).enumerate() {
                 if src[3] <= 0.0 {
                     continue;
@@ -337,7 +353,7 @@ pub fn composite_range(
             }
             continue;
         }
-        let Some(tile) = layer.raster.tile(tx, ty) else {
+        let Some(tile) = styled.unwrap_or(&layer.raster).tile(tx, ty) else {
             continue;
         };
         let fast_normal = mode == BlendMode::Normal && opacity >= 1.0 && clip_tile.is_none() && mask.is_none();
@@ -372,6 +388,7 @@ pub fn flatten(doc: &DocState) -> Raster {
 /// Flatten the direct children of `parent` within `range` (a group's
 /// members, say) into one straight-alpha raster.
 pub fn flatten_range(doc: &DocState, range: std::ops::Range<usize>, parent: Option<crate::layer::LayerId>) -> Raster {
+    let fx = crate::style::StyleCache::build(doc);
     let mut out = Raster::new(doc.width, doc.height);
     let mut buf = [[0f32; 4]; TILE_PX];
     for ty in 0..out.tiles_y() {
@@ -379,7 +396,7 @@ pub fn flatten_range(doc: &DocState, range: std::ops::Range<usize>, parent: Opti
             for p in buf.iter_mut() {
                 *p = [0.0; 4];
             }
-            composite_range(doc, tx, ty, range.clone(), parent, &mut buf);
+            composite_range(doc, Some(&fx), tx, ty, range.clone(), parent, &mut buf);
             if buf.iter().all(|p| p[3] <= 0.0) {
                 continue;
             }

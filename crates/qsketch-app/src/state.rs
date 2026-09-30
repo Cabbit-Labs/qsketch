@@ -309,6 +309,8 @@ pub struct AppState {
     pub recorder: crate::timelapse::Recorder,
     /// Background work with progress (exports).
     pub jobs: Vec<BackgroundJob>,
+    /// Layer ▸ Copy Layer Style.
+    pub style_clipboard: Option<qsketch_core::LayerStyle>,
     pub updater: crate::update::Updater,
     /// Crash-recovery snapshots of unsaved documents.
     pub autosave: crate::autosave::Autosave,
@@ -390,6 +392,7 @@ impl AppState {
             reference: Default::default(),
             recorder: Default::default(),
             jobs: Vec::new(),
+            style_clipboard: None,
             updater: Default::default(),
             autosave: Default::default(),
             library: crate::brush_library::BrushLibrary::load(),

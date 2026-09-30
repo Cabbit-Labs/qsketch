@@ -2,6 +2,20 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.52.0 — 2026-09-30
+
+- Layer styles (Layer ▸ Layer Style ▸ Layer Style…, or the Layers panel's
+  context menu): drop shadow, outer glow, stroke (outside, inside or
+  centered), color overlay and inner glow, each with its own switch and
+  settings, previewed live on the canvas. Effects are drawn by the
+  compositor from the layer's (masked) shape and never change its pixels;
+  styled copies are cached and re-rendered only around the tiles a stroke
+  touches, so painting on a styled layer stays quick. An "fx" mark on the
+  layer row opens the dialog. Copy / Paste / Clear Layer Style work on
+  every selected layer. Styles are undoable, saved in the `.qsk`, and
+  included in exports and flattening; Photoshop and Aseprite files leave
+  them out (Save As says so).
+
 ## 0.51.0 — 2026-09-30
 
 - Timelapse (File ▸ Timelapse): Record Timelapse captures a small snapshot

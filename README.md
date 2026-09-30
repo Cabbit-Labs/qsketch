@@ -64,6 +64,10 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   (white reveals, black hides); disable, apply or delete it. Masks round-trip
   through `.qsk` and `.psd`, and follow the layer through moves, flips,
   rotations and resizes.
+- **Layer styles.** Non-destructive drop shadow, outer and inner glow,
+  stroke (outside, inside or centered) and color overlay, with a live
+  preview; effects follow the layer as you paint and never touch its
+  pixels. Copy and paste a style across layers.
 - **20 blend modes** (Normal through Luminosity, matching the W3C compositing
   spec / Photoshop semantics), per-layer opacity, clipping masks, alpha lock,
   layer groups (nested, with their own opacity/blend/visibility), and

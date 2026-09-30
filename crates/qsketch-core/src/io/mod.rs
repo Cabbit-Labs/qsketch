@@ -118,6 +118,9 @@ pub fn compat_warnings(path: &Path, doc: &crate::document::DocState) -> Vec<Stri
         }
         return w;
     }
+    if doc.layers.iter().any(|l| !l.props.style.is_off()) {
+        w.push(format!("{name} can't store qsketch layer styles: the effects are left out of the file."));
+    }
     if ase::is_ase(path) && doc.layers.iter().any(|l| l.mask.is_some()) {
         w.push("Aseprite has no layer masks: each mask is applied to its layer's pixels in the file.".into());
     }

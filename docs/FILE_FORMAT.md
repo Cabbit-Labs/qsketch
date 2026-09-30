@@ -145,6 +145,14 @@ Field notes:
   - `clipped` — clips this layer to the alpha of the nearest non-clipped
     layer below it (a clipping mask). Defaults to `false` if absent, for
     forward compatibility with files written before this field existed.
+  - `style` (0.52+) — layer effects, omitted when none is on:
+    `drop_shadow` (`color`, `opacity`, `angle` in degrees, `distance`,
+    `spread`, `size`), `outer_glow` and `inner_glow` (`color`, `opacity`,
+    `spread`, `size`), `stroke` (`color`, `opacity`, `size`, `position`:
+    `Outside`/`Inside`/`Center`) and `color_overlay` (`color`, `opacity`),
+    each with an `enabled` flag. Effects are drawn at composite time from
+    the (masked) layer pixels, never stored as pixels; `preview.png` shows
+    them.
 - **`selection`** is the filename of the selection PNG (currently always
   `"selection.png"` when present) or absent/`null` when there is no active
   selection.

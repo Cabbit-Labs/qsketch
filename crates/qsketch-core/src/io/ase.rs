@@ -516,6 +516,7 @@ impl AseSprite {
                 parent,
                 expanded: al.flags & LAYER_COLLAPSED == 0,
                 mask_enabled: true,
+                style: Default::default(),
             };
             let raster = match al.kind {
                 LAYER_KIND_GROUP => {

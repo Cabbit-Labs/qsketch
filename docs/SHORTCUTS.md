@@ -95,6 +95,7 @@ reachable from its menu until you assign one.
 | Lock Transparent Pixels | `/` |
 | Lock Layer | — |
 | Layer Properties… | — |
+| Layer Style ▸ Layer Style… / Copy / Paste / Clear Layer Style | — |
 | Flip Layer Horizontal | — |
 | Flip Layer Vertical | — |
 | Clear Layer | — |

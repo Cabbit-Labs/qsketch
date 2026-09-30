@@ -40,6 +40,10 @@ pub struct LayerProps {
     /// which keeps it around without hiding anything.
     #[serde(default = "default_true")]
     pub mask_enabled: bool,
+    /// Layer effects (drop shadow, stroke, glows, color overlay); drawn by
+    /// the compositor, never baked into the pixels.
+    #[serde(default, skip_serializing_if = "crate::style::LayerStyle::is_off")]
+    pub style: crate::style::LayerStyle,
 }
 
 fn default_true() -> bool {
@@ -79,6 +83,7 @@ impl Layer {
                 parent: None,
                 expanded: true,
                 mask_enabled: true,
+                style: Default::default(),
             },
             raster: Raster::new(width, height),
             mask: None,

@@ -199,6 +199,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
                     parent: None,
                     expanded: true,
                     mask_enabled: rec.mask_enabled,
+                    style: Default::default(),
                 };
                 next_id += 1;
                 layers.push(Layer { props, raster, mask: mask.map(std::sync::Arc::new) });

@@ -542,6 +542,32 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     if dim { crate::ui::theme::dim_text(ui.visuals()) } else { ui.visuals().text_color() },
                 );
                 let p = &s.layers[i].props;
+                let mut right = row_rect.right() - 6.0;
+                if p.locked || p.alpha_locked || p.clipped {
+                    right -= 14.0 * (p.locked as u8 + p.alpha_locked as u8 + p.clipped as u8) as f32 + 4.0;
+                }
+                if !p.style.is_off() {
+                    // "fx": the layer has effects; click it to edit them.
+                    let fx_rect = egui::Rect::from_min_max(
+                        egui::pos2(right - 18.0, row_rect.top()),
+                        egui::pos2(right, row_rect.bottom()),
+                    );
+                    let fx = ui.interact(fx_rect, ui.id().with(("fx", layer_id)), Sense::click());
+                    ui.painter().text(
+                        fx_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "fx",
+                        egui::FontId::proportional(11.0),
+                        if fx.hovered() { ui.visuals().text_color() } else { crate::ui::theme::dim_text(ui.visuals()) },
+                    );
+                    if fx
+                        .on_hover_text(format!("Layer style: {}\nClick to edit", p.style.summary().join(", ")))
+                        .clicked()
+                    {
+                        click = Some(Click::Only(i));
+                        pending.push(Action::LayerStyle);
+                    }
+                }
                 if p.locked || p.alpha_locked || p.clipped {
                     let mut glyphs = String::new();
                     if p.clipped {
@@ -637,6 +663,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 ui.separator();
                 if ui.button("Layer Properties…").clicked() {
                     queued = Some(Action::LayerProperties);
+                }
+                if !is_group && ui.button("Layer Style…").clicked() {
+                    queued = Some(Action::LayerStyle);
                 }
                 if let Some(a) = queued {
                     pending.push(a);

@@ -515,7 +515,9 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     // editing underneath would bake that preview into the next undo step and
     // the following parameter change would then filter an already-filtered
     // image. Navigation stays live so the preview can be inspected.
-    if state.dialogs.filter.is_some() && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView) {
+    if (state.dialogs.filter.is_some() || state.dialogs.layer_style.is_some())
+        && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)
+    {
         return;
     }
     // Liquify takes the canvas for its own brush while it is open.

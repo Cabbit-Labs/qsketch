@@ -651,7 +651,10 @@ impl Document {
         if self.dirty.is_empty() {
             return TileSet::for_size(self.working.width, self.working.height);
         }
-        let dirty = std::mem::replace(&mut self.dirty, TileSet::for_size(self.working.width, self.working.height));
+        let mut dirty = std::mem::replace(&mut self.dirty, TileSet::for_size(self.working.width, self.working.height));
+        // Layer effects reach beyond the pixels that changed: refresh the
+        // styled copies first, which adds the tiles their effects touch.
+        self.composite.styles.update(&self.working, &mut dirty);
         self.composite.update(&self.working, &dirty);
         dirty
     }

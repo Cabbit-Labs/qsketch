@@ -1008,6 +1008,21 @@ impl QSketchApp {
                 self.menu_item(ui, Action::DuplicateLayer, has_doc);
                 self.menu_item(ui, Action::DeleteLayer, layers > 1);
                 self.menu_item(ui, Action::LayerProperties, has_doc);
+                let (styled, pixel_layer) = self
+                    .state
+                    .active()
+                    .map(|d| {
+                        let l = d.doc.state().active_layer();
+                        (!l.props.style.is_off(), !l.is_group())
+                    })
+                    .unwrap_or((false, false));
+                ui.menu_button("Layer Style", |ui| {
+                    self.menu_item(ui, Action::LayerStyle, pixel_layer);
+                    self.menu_item(ui, Action::CopyLayerStyle, styled);
+                    let can_paste = pixel_layer && self.state.style_clipboard.is_some();
+                    self.menu_item(ui, Action::PasteLayerStyle, can_paste);
+                    self.menu_item(ui, Action::ClearLayerStyle, styled);
+                });
                 ui.separator();
                 self.menu_item(ui, Action::GroupLayers, has_doc);
                 self.menu_item(ui, Action::UngroupLayers, active_is_group);
@@ -1919,6 +1934,42 @@ impl QSketchApp {
                 }
             }
             Action::LayerProperties => dialogs::open_layer_props(&mut self.state),
+            Action::LayerStyle => dialogs::layer_style::open(&mut self.state),
+            Action::CopyLayerStyle => {
+                if let Some(d) = self.state.active() {
+                    let s = d.doc.state().active_layer().props.style.clone();
+                    self.state.style_clipboard = (!s.is_off()).then_some(s);
+                }
+            }
+            Action::PasteLayerStyle | Action::ClearLayerStyle => {
+                let style = if action == Action::PasteLayerStyle {
+                    self.state.style_clipboard.clone()
+                } else {
+                    Some(qsketch_core::LayerStyle::default())
+                };
+                if let (Some(style), Some(d)) = (style, self.state.active_mut()) {
+                    // Every selected pixel layer takes it.
+                    let ids = d.selected_ids();
+                    let s = d.doc.state_mut();
+                    let mut changed = false;
+                    for id in ids {
+                        if let Some(i) = s.index_of(id) {
+                            if !s.layers[i].is_group() && s.layers[i].props.style != style {
+                                s.layers[i].props.style = style.clone();
+                                changed = true;
+                            }
+                        }
+                    }
+                    if changed {
+                        d.doc.mark_all_dirty();
+                        d.doc.commit(if action == Action::PasteLayerStyle {
+                            "Paste Layer Style"
+                        } else {
+                            "Clear Layer Style"
+                        });
+                    }
+                }
+            }
             Action::FlipLayerHorizontal | Action::FlipLayerVertical => {
                 if let Some(d) = self.state.active_mut() {
                     let targets = d.target_layers();
