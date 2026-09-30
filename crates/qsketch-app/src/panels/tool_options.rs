@@ -302,6 +302,8 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
             let mut filter = f.filter;
             ui.selectable_value(&mut filter, qsketch_core::raster::ResizeFilter::Bilinear, "Smooth");
             ui.selectable_value(&mut filter, qsketch_core::raster::ResizeFilter::Nearest, "Pixel");
+            ui.selectable_value(&mut filter, qsketch_core::raster::ResizeFilter::RotSprite, "RotSprite")
+                .on_hover_text("Pixel-art rotation: smooths staircase edges and keeps the exact colors (no blending)");
             if filter != f.filter {
                 f.filter = filter;
                 f.reset_filter();

@@ -150,7 +150,7 @@ impl Mesh {
 #[inline]
 fn sample(src: &[[f32; 4]], sw: usize, sh: usize, x: f32, y: f32, filter: ResizeFilter) -> [f32; 4] {
     match filter {
-        ResizeFilter::Nearest => {
+        ResizeFilter::Nearest | ResizeFilter::RotSprite => {
             let xi = (x.floor() as i64).clamp(0, sw as i64 - 1) as usize;
             let yi = (y.floor() as i64).clamp(0, sh as i64 - 1) as usize;
             src[yi * sw + xi]
@@ -227,6 +227,9 @@ pub fn warp_rgba(src: &[u8], sw: u32, sh: u32, mesh: &Mesh, filter: ResizeFilter
     let out_rect = mesh.bounds().expand(1).intersect(&clip);
     if out_rect.is_empty() || sw == 0 || sh == 0 {
         return (Vec::new(), IRect::EMPTY);
+    }
+    if filter == ResizeFilter::RotSprite && integer_translation(mesh, sw, sh).is_none() {
+        return rotsprite_rgba(src, sw, sh, mesh, clip);
     }
     // A mesh that only shifts the pixels by whole pixels is a copy. Running it
     // through the resampler instead would soften every pixel (each output
@@ -327,6 +330,80 @@ pub fn warp_rgba(src: &[u8], sw: u32, sh: u32, mesh: &Mesh, filter: ResizeFilter
     (out, out_rect)
 }
 
+/// RotSprite: enlarge the source with Scale2x (up to three passes, 8×, as
+/// far as a sane memory budget allows), then map every output pixel center
+/// back into it and take that one pixel: no blending, no soft edges, and no
+/// color that was not in the source.
+fn rotsprite_rgba(src: &[u8], sw: u32, sh: u32, mesh: &Mesh, clip: IRect) -> (Vec<u8>, IRect) {
+    const BUDGET: u64 = 16 * 1024 * 1024;
+    let mut px: Vec<u32> = src.chunks_exact(4).map(|p| u32::from_le_bytes([p[0], p[1], p[2], p[3]])).collect();
+    let (mut w, mut h) = (sw as usize, sh as usize);
+    for _ in 0..3 {
+        if (w as u64 * 2) * (h as u64 * 2) > BUDGET {
+            break;
+        }
+        px = crate::raster::scale2x(&px, w, h);
+        w *= 2;
+        h *= 2;
+    }
+    let out_rect = mesh.bounds().expand(1).intersect(&clip);
+    struct Cell {
+        inv: Homography,
+        bbox: IRect,
+        su: f32,
+        sv: f32,
+        cw: f32,
+        ch: f32,
+    }
+    let mut cells = Vec::new();
+    for j in 0..mesh.rows {
+        for i in 0..mesh.cols {
+            let q = mesh.cell(i, j);
+            let Some(hm) = Homography::unit_to_quad(q) else { continue };
+            let Some(inv) = hm.inverse() else { continue };
+            let xs = q.iter().map(|p| p.x);
+            let ys = q.iter().map(|p| p.y);
+            let bbox = IRect::from_f32_bounds(
+                xs.clone().fold(f32::MAX, f32::min),
+                ys.clone().fold(f32::MAX, f32::min),
+                xs.fold(f32::MIN, f32::max),
+                ys.fold(f32::MIN, f32::max),
+            )
+            .expand(1)
+            .intersect(&out_rect);
+            if bbox.is_empty() {
+                continue;
+            }
+            let cw = w as f32 / mesh.cols as f32;
+            let ch = h as f32 / mesh.rows as f32;
+            cells.push(Cell { inv, bbox, su: i as f32 * cw, sv: j as f32 * ch, cw, ch });
+        }
+    }
+    let ow = out_rect.w as usize;
+    let mut out = vec![0u8; ow * out_rect.h as usize * 4];
+    out.par_chunks_mut(ow * 4).enumerate().for_each(|(row, line)| {
+        let y = out_rect.y + row as i32;
+        for (col, dst) in line.chunks_exact_mut(4).enumerate() {
+            let x = out_rect.x + col as i32;
+            let p = Pt::new(x as f32 + 0.5, y as f32 + 0.5);
+            for c in &cells {
+                if !c.bbox.contains(x, y) {
+                    continue;
+                }
+                let uv = c.inv.apply(p);
+                if !(0.0..=1.0).contains(&uv.x) || !(0.0..=1.0).contains(&uv.y) {
+                    continue;
+                }
+                let sx = ((c.su + uv.x * c.cw).floor() as i64).clamp(0, w as i64 - 1) as usize;
+                let sy = ((c.sv + uv.y * c.ch).floor() as i64).clamp(0, h as i64 - 1) as usize;
+                dst.copy_from_slice(&px[sy * w + sx].to_le_bytes());
+                break;
+            }
+        }
+    });
+    (out, out_rect)
+}
+
 /// Render a raster through `mesh`; returns the result and its origin.
 pub fn warp_raster(src: &Raster, mesh: &Mesh, filter: ResizeFilter, clip: IRect) -> (Raster, IRect) {
     let (buf, r) = warp_rgba(&src.to_rgba(), src.width(), src.height(), mesh, filter, clip);
@@ -364,6 +441,48 @@ pub fn warp_mask(src: &Mask, mesh: &Mesh, canvas_w: u32, canvas_h: u32) -> Mask 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rotsprite_keeps_the_palette_and_hard_edges() {
+        // A two-color 8×8 sprite rotated 30°: every output pixel is one of
+        // the source colors, fully opaque or fully clear.
+        let red = [200u8, 30, 30, 255];
+        let blue = [20u8, 40, 220, 255];
+        let mut src = Vec::new();
+        for y in 0..8 {
+            for x in 0..8 {
+                src.extend_from_slice(if (x + y) % 3 == 0 { &red } else { &blue });
+            }
+        }
+        let c = Pt::new(12.0, 12.0);
+        let (s, co) = (30f32.to_radians().sin(), 30f32.to_radians().cos());
+        let rot = |x: f32, y: f32| Pt::new(c.x + x * co - y * s, c.y + x * s + y * co);
+        let quad = [rot(-4.0, -4.0), rot(4.0, -4.0), rot(4.0, 4.0), rot(-4.0, 4.0)];
+        let (out, r) =
+            warp_rgba(&src, 8, 8, &Mesh::from_quad(quad, 1, 1), ResizeFilter::RotSprite, IRect::new(0, 0, 32, 32));
+        assert!(!r.is_empty());
+        let mut opaque = 0;
+        for p in out.chunks_exact(4) {
+            match p[3] {
+                0 => {}
+                255 => {
+                    opaque += 1;
+                    assert!(p == red || p == blue, "new color {p:?}");
+                }
+                a => panic!("partial alpha {a}"),
+            }
+        }
+        assert!(opaque > 40);
+    }
+
+    #[test]
+    fn scale2x_rounds_a_diagonal() {
+        // 2×2 checker of A/B: Scale2x fills the corners along the diagonal.
+        let (a, b) = (1u32, 2u32);
+        let out = crate::raster::scale2x(&[a, b, b, a], 2, 2);
+        assert_eq!(out.len(), 16);
+        assert!(out.iter().all(|&v| v == a || v == b));
+    }
     use crate::Rgba8;
 
     #[test]

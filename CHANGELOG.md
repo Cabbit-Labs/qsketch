@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.55.0 — 2026-09-30
+
+- RotSprite in Free Transform (the options bar's Smooth / Pixel /
+  RotSprite choice): rotating or scaling pixel art enlarges it 8× with
+  Scale2x first, which turns staircase edges into clean slopes, then picks
+  whole pixels back out, so the result has hard edges and only the colors
+  it started with. Very large selections fall back to fewer Scale2x passes
+  to stay within memory.
+
 ## 0.54.0 — 2026-09-30
 
 - Pixel aspect ratio (Image ▸ Pixel Aspect Ratio): square, double-wide

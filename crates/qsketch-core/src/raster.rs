@@ -446,7 +446,7 @@ impl Raster {
             for x in 0..new_w as usize {
                 let o = (y * new_w as usize + x) * 4;
                 match filter {
-                    ResizeFilter::Nearest => {
+                    ResizeFilter::Nearest | ResizeFilter::RotSprite => {
                         let fx = ((x as f32 + 0.5) * sx) as usize;
                         let fy = ((y as f32 + 0.5) * sy) as usize;
                         let i = (fy.min(sh - 1) * sw + fx.min(sw - 1)) * 4;
@@ -499,6 +499,43 @@ impl Raster {
 pub enum ResizeFilter {
     Nearest,
     Bilinear,
+    /// Pixel-art rotation (RotSprite): the source is enlarged 8× with
+    /// Scale2x, which rounds diagonal staircases into clean slopes, then
+    /// sampled nearest-neighbor with hard edges. For plain resizing it is
+    /// the same as `Nearest`.
+    RotSprite,
+}
+
+/// One Scale2x (EPX) pass: each pixel becomes a 2×2 block whose corners
+/// take a neighbor's color where two neighbors agree along that corner,
+/// which smooths diagonal edges without inventing new colors. `px` holds
+/// straight RGBA packed as `u32`; edges repeat the border pixels.
+pub fn scale2x(px: &[u32], w: usize, h: usize) -> Vec<u32> {
+    let mut out = vec![0u32; w * h * 4];
+    let at = |x: isize, y: isize| px[(y.clamp(0, h as isize - 1) as usize) * w + x.clamp(0, w as isize - 1) as usize];
+    let ow = w * 2;
+    for y in 0..h as isize {
+        for x in 0..w as isize {
+            let e = at(x, y);
+            let (b, d, f, hh) = (at(x, y - 1), at(x - 1, y), at(x + 1, y), at(x, y + 1));
+            let (e0, e1, e2, e3) = if b != hh && d != f {
+                (
+                    if d == b { d } else { e },
+                    if b == f { f } else { e },
+                    if d == hh { d } else { e },
+                    if hh == f { f } else { e },
+                )
+            } else {
+                (e, e, e, e)
+            };
+            let (ox, oy) = (x as usize * 2, y as usize * 2);
+            out[oy * ow + ox] = e0;
+            out[oy * ow + ox + 1] = e1;
+            out[(oy + 1) * ow + ox] = e2;
+            out[(oy + 1) * ow + ox + 1] = e3;
+        }
+    }
+    out
 }
 
 #[cfg(test)]
