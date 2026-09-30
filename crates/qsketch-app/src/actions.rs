@@ -299,6 +299,7 @@ actions! {
     ShowBrushSettings => (Window, "Brush Settings", ["F9"]),
     ShowInfo => (Window, "Info", ["F8"]),
     ShowPalette => (Window, "Palette", []),
+    ShowReference => (Window, "Reference", []),
     ResetLayout => (Window, "Reset Workspace", []),
     NextDocument => (Window, "Next Document", ["Ctrl+Tab"]),
     PrevDocument => (Window, "Previous Document", ["Ctrl+Shift+Tab"]),

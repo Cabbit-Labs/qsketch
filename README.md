@@ -84,6 +84,8 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   vertically or radially (up to 64 copies) around a movable center with
   on-canvas guides, and steady shaky lines with a rope ("lazy brush") or
   moving-average stabilizer per brush.
+- **Reference panel.** Keep a picture beside the canvas: pan, zoom, flip
+  it, view it in grayscale to judge values, and click it to pick colors.
 - **Rulers and guides.** Rulers in document pixels along the canvas; drag
   a guide off either ruler, move it with the Move tool, snap shapes,
   marquees, crops and moves to it. Guides live in the `.qsk`.

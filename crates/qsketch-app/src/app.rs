@@ -1195,6 +1195,7 @@ impl QSketchApp {
                     (Action::ShowBrushes, PanelKind::Brushes),
                     (Action::ShowBrushSettings, PanelKind::BrushSettings),
                     (Action::ShowInfo, PanelKind::Info),
+                    (Action::ShowReference, PanelKind::Reference),
                 ] {
                     let open = self.workspace.is_panel_open(&k);
                     let btn = egui::Button::new(format!("{} {}", if open { icons::CHECK } else { " " }, a.label()))
@@ -2017,6 +2018,7 @@ impl QSketchApp {
             Action::ShowBrushes => self.state.show_panel_requests.push(PanelKind::Brushes),
             Action::ShowBrushSettings => self.state.show_panel_requests.push(PanelKind::BrushSettings),
             Action::ShowInfo => self.state.show_panel_requests.push(PanelKind::Info),
+            Action::ShowReference => self.state.show_panel_requests.push(PanelKind::Reference),
             Action::ResetLayout => self.state.layout_reset_requested = true,
             Action::About => self.state.dialogs.about = true,
             Action::CheckForUpdates => match self.state.settings.update.effective_manifest_url() {

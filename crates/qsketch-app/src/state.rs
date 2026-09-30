@@ -294,6 +294,8 @@ pub struct AppState {
     /// GPU render state, for releasing document textures.
     pub render_state: Option<egui_wgpu::RenderState>,
     pub thumbs: crate::panels::thumbs::ThumbCache,
+    /// The Reference panel's picture and view.
+    pub reference: crate::panels::reference::Reference,
     pub updater: crate::update::Updater,
     /// Crash-recovery snapshots of unsaved documents.
     pub autosave: crate::autosave::Autosave,
@@ -372,6 +374,7 @@ impl AppState {
             tablet_samples: Vec::new(),
             render_state: None,
             thumbs: Default::default(),
+            reference: Default::default(),
             updater: Default::default(),
             autosave: Default::default(),
             library: crate::brush_library::BrushLibrary::load(),

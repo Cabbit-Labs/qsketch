@@ -1139,6 +1139,8 @@ pub struct Settings {
     pub shortcuts: HashMap<String, Vec<String>>,
     /// Serialized egui_dock layout.
     pub layout: Option<String>,
+    /// Picture shown in the Reference panel, reopened next session.
+    pub reference_image: Option<PathBuf>,
     /// Last windowed geometry as logical points: outer x, y and inner
     /// width, height. Given to the window before it is shown so it opens at
     /// its final size and place without a visible resize.
