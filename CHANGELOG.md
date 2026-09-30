@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.50.0 — 2026-09-30
+
+- Reference panel (Window ▸ Reference): open a picture to draw from and keep
+  it beside the canvas. Drag to pan, wheel to zoom about the pointer, Fit /
+  100%, flip it horizontally, view it in grayscale to judge values, and
+  click it to pick a color (Alt+click sets the background color). The last
+  picture is reopened next session.
+
 ## 0.49.0 — 2026-09-30
 
 - Rulers (View ▸ Rulers & Guides ▸ Rulers, Ctrl+Shift+R) along the top and
