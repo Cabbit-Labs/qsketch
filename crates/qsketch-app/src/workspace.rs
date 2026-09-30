@@ -93,6 +93,15 @@ pub struct Workspace {
     pub dock: DockState<PanelKind>,
 }
 
+/// How [`Workspace::arrange_documents`] lays the documents out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Arrange {
+    Tabs,
+    SideBySide,
+    Stacked,
+    Grid,
+}
+
 impl Workspace {
     pub fn default_layout() -> DockState<PanelKind> {
         let mut dock = DockState::new(vec![PanelKind::Home]);
@@ -114,10 +123,20 @@ impl Workspace {
     }
 
     pub fn from_json(json: &str) -> Option<Self> {
-        let mut dock: DockState<PanelKind> = serde_json::from_str(json).ok()?;
+        // A leaf that was never shown (created and closed within one session)
+        // carries a non-finite rect, which serde_json wrote as `null`; the
+        // rects are recomputed on the first frame, so any number will do.
+        let json = json.replace(":null", ":0.0");
+        let mut dock: DockState<PanelKind> = serde_json::from_str(&json).ok()?;
         // Documents never survive a restart.
-        dock.retain_tabs(|t| !matches!(t, PanelKind::Document(_)));
-        prune_empty_surfaces(&mut dock);
+        strip_documents(&mut dock);
+        // A layout saved by an older version can be structurally broken
+        // (egui_dock's `retain_tabs` rebalanced in hash order and could
+        // orphan a subtree); such a tree panics when split, so start over.
+        if !dock.iter_surfaces().all(|s| s.node_tree().is_none_or(tree_is_consistent)) {
+            log::warn!("saved workspace layout is inconsistent; using the default layout");
+            return None;
+        }
         if !dock.iter_all_tabs().any(|(_, t)| *t == PanelKind::Home) {
             dock.push_to_first_leaf(PanelKind::Home);
         }
@@ -126,9 +145,9 @@ impl Workspace {
 
     pub fn to_json(&self) -> Option<String> {
         let mut dock = self.dock.clone();
-        dock.retain_tabs(|t| !matches!(t, PanelKind::Document(_)));
-        prune_empty_surfaces(&mut dock);
-        serde_json::to_string(&dock).ok()
+        strip_documents(&mut dock);
+        // See `from_json` for the `null`s.
+        serde_json::to_string(&dock).ok().map(|j| j.replace(":null", ":0.0"))
     }
 
     pub fn reset(&mut self, docs: &[DocId]) {
@@ -174,7 +193,99 @@ impl Workspace {
 
     pub fn focus_document(&mut self, id: DocId) {
         if let Some(path) = self.find(&PanelKind::Document(id)) {
+            self.dock.set_focused_node_and_surface(path.node_path());
             let _ = self.dock.set_active_tab(path);
+        }
+    }
+
+    /// Lay every open document out at once: all in one tab strip, side by
+    /// side, stacked, or in a grid (rows of two). The documents are pulled
+    /// out of wherever they sit (other leaves, floating windows) into the
+    /// leaf that held the first document (or Home), which is then split
+    /// evenly. `active` ends up as the focused document.
+    pub fn arrange_documents(&mut self, docs: &[DocId], active: Option<DocId>, mode: Arrange) {
+        if docs.is_empty() {
+            return;
+        }
+        // Gather the tabs (they are all the same kind, so nothing is lost).
+        for &d in docs {
+            if let Some(path) = self.find(&PanelKind::Document(d)) {
+                self.dock.remove_tab(path);
+            }
+        }
+        prune_empty_surfaces(&mut self.dock);
+        // The leaf that will hold the first document: Home's leaf on the
+        // main surface (documents always open next to Home), or the first
+        // leaf there is.
+        let anchor = self
+            .dock
+            .main_surface()
+            .iter()
+            .enumerate()
+            .find(|(_, n)| n.tabs().is_some_and(|t| t.contains(&PanelKind::Home)))
+            .or_else(|| self.dock.main_surface().iter().enumerate().find(|(_, n)| n.is_leaf()))
+            .map(|(i, _)| NodeIndex(i));
+        let Some(anchor) = anchor else {
+            for &d in docs {
+                self.dock.push_to_first_leaf(PanelKind::Document(d));
+            }
+            return;
+        };
+        let tree = self.dock.main_surface_mut();
+        tree[anchor].append_tab(PanelKind::Document(docs[0]));
+        let rest = &docs[1..];
+        match mode {
+            Arrange::Tabs => {
+                for &d in rest {
+                    tree[anchor].append_tab(PanelKind::Document(d));
+                }
+            }
+            Arrange::SideBySide | Arrange::Stacked => {
+                // `fraction` is the share the old (left / top) leaf keeps; the
+                // leaf being split spans `remaining + 1` shares, so keeping one
+                // leaves the rest even.
+                let mut last = anchor;
+                for (i, &d) in rest.iter().enumerate() {
+                    let remaining = (rest.len() - i) as f32;
+                    let fraction = 1.0 / (remaining + 1.0);
+                    let [_, new] = if mode == Arrange::SideBySide {
+                        tree.split_right(last, fraction, vec![PanelKind::Document(d)])
+                    } else {
+                        tree.split_below(last, fraction, vec![PanelKind::Document(d)])
+                    };
+                    last = new;
+                }
+            }
+            Arrange::Grid => {
+                // Rows of two: split rows below (a split moves the old leaf
+                // to a new index, which the return value reports), then each
+                // row in half.
+                let rows = docs.len().div_ceil(2);
+                let mut row_leaves = Vec::with_capacity(rows);
+                let mut cur = anchor;
+                for r in 1..rows {
+                    let remaining = (rows - r) as f32;
+                    let [old, new] =
+                        tree.split_below(cur, 1.0 / (remaining + 1.0), vec![PanelKind::Document(docs[r * 2])]);
+                    row_leaves.push(old);
+                    cur = new;
+                }
+                row_leaves.push(cur);
+                for (r, &leaf) in row_leaves.iter().enumerate() {
+                    if let Some(&d) = docs.get(r * 2 + 1) {
+                        tree.split_right(leaf, 0.5, vec![PanelKind::Document(d)]);
+                    }
+                }
+            }
+        }
+        // Make each document the active tab of its leaf, then focus `active`.
+        for &d in docs {
+            if let Some(path) = self.find(&PanelKind::Document(d)) {
+                let _ = self.dock.set_active_tab(path);
+            }
+        }
+        if let Some(id) = active.filter(|id| docs.contains(id)).or(docs.first().copied()) {
+            self.focus_document(id);
         }
     }
 
@@ -548,6 +659,100 @@ fn prune_empty_surfaces(dock: &mut DockState<PanelKind>) {
         let live = dock.get_surface(idx).is_some_and(|s| !matches!(s, egui_dock::Surface::Empty));
         if live && !populated.contains(&idx) {
             let _ = dock.remove_surface(idx);
+        }
+    }
+}
+
+/// Take every document tab out of the layout (documents never survive a
+/// restart) one tab at a time, through `remove_tab`, which moves subtrees
+/// correctly when a leaf goes; `retain_tabs` rebalances emptied leaves in
+/// hash order and can leave a parent with empty children and an orphaned
+/// subtree behind. Floating windows left without tabs are dropped too.
+fn strip_documents(dock: &mut DockState<PanelKind>) {
+    loop {
+        let next = dock.iter_all_tabs().find(|(_, t)| matches!(t, PanelKind::Document(_))).map(|(p, _)| p);
+        match next {
+            Some(path) => {
+                dock.remove_tab(path);
+            }
+            None => break,
+        }
+    }
+    prune_empty_surfaces(dock);
+}
+
+/// Every non-empty node other than the root has a parent that is a split,
+/// and every split has two non-empty children.
+fn tree_is_consistent(tree: &egui_dock::Tree<PanelKind>) -> bool {
+    let nodes: Vec<&egui_dock::Node<PanelKind>> = tree.iter().collect();
+    for (i, node) in nodes.iter().enumerate() {
+        let idx = NodeIndex(i);
+        if node.is_empty() {
+            continue;
+        }
+        if let Some(parent) = idx.parent() {
+            if !nodes.get(parent.0).is_some_and(|p| p.is_parent()) {
+                return false;
+            }
+        }
+        if node.is_parent() {
+            let ok = |c: NodeIndex| nodes.get(c.0).is_some_and(|n| !n.is_empty());
+            if !ok(idx.left()) || !ok(idx.right()) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn docs(ws: &Workspace) -> Vec<DocId> {
+        ws.dock
+            .iter_all_tabs()
+            .filter_map(|(_, t)| if let PanelKind::Document(d) = t { Some(*d) } else { None })
+            .collect()
+    }
+
+    #[test]
+    fn arrangements_keep_every_document_and_a_consistent_tree() {
+        for mode in [Arrange::Tabs, Arrange::SideBySide, Arrange::Stacked, Arrange::Grid] {
+            for n in 1..=5u64 {
+                let mut ws = Workspace::new();
+                let ids: Vec<DocId> = (1..=n).collect();
+                for &d in &ids {
+                    ws.add_document(d);
+                }
+                ws.arrange_documents(&ids, Some(n), mode);
+                let mut got = docs(&ws);
+                got.sort_unstable();
+                assert_eq!(got, ids, "{mode:?} with {n} documents");
+                assert!(tree_is_consistent(ws.dock.main_surface()), "{mode:?} with {n} documents");
+                // Arranging again from that state must work too.
+                ws.arrange_documents(&ids, Some(1), Arrange::Grid);
+                assert!(tree_is_consistent(ws.dock.main_surface()), "re-arrange {mode:?} with {n}");
+            }
+        }
+    }
+
+    #[test]
+    fn stripping_documents_leaves_a_layout_that_reloads() {
+        let mut ws = Workspace::new();
+        let ids: Vec<DocId> = (1..=4).collect();
+        for &d in &ids {
+            ws.add_document(d);
+        }
+        ws.arrange_documents(&ids, Some(1), Arrange::Grid);
+        let json = ws.to_json().unwrap();
+        let reloaded = Workspace::from_json(&json).expect("layout reloads");
+        assert!(docs(&reloaded).is_empty());
+        assert!(tree_is_consistent(reloaded.dock.main_surface()));
+        assert!(reloaded.dock.iter_all_tabs().any(|(_, t)| *t == PanelKind::Home));
+        // Every panel of the default layout is still there.
+        for k in [PanelKind::Tools, PanelKind::Layers, PanelKind::Color, PanelKind::Navigator] {
+            assert!(reloaded.dock.find_tab(&k).is_some(), "{k:?} survived");
         }
     }
 }

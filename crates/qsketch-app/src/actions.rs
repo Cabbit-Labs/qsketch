@@ -97,6 +97,7 @@ actions! {
     ExportScaled4 => (File, "Export at 4×…", []),
     ExportScaled8 => (File, "Export at 8×…", []),
     ExportTileset => (File, "Export Tileset…", []),
+    QuickExport => (File, "Quick Export", ["Ctrl+Alt+E"]),
     ShareCanvas => (File, "Share via Leyline…", []),
     StopSharing => (File, "Stop Sharing", []),
     CloseDocument => (File, "Close", ["Ctrl+W"]),
@@ -193,6 +194,10 @@ actions! {
     TiledY => (View, "Tiled: Down", []),
     TiledBoth => (View, "Tiled: Both", []),
     ToggleFullscreen => (View, "Fullscreen", ["F11"]),
+    ArrangeSideBySide => (View, "Arrange: Side by Side", []),
+    ArrangeStacked => (View, "Arrange: Stacked", []),
+    ArrangeGrid => (View, "Arrange: Grid", []),
+    ArrangeTabs => (View, "Arrange: All in Tabs", []),
     TogglePanels => (View, "Hide/Show Panels", ["Tab"]),
     // Filter (the menu groups these into submenus; see app.rs)
     LastFilter => (Filter, "Last Filter", ["Ctrl+F"]),
@@ -290,6 +295,8 @@ actions! {
     ShowInfo => (Window, "Info", ["F8"]),
     ShowPalette => (Window, "Palette", []),
     ResetLayout => (Window, "Reset Workspace", []),
+    NextDocument => (Window, "Next Document", ["Ctrl+Tab"]),
+    PrevDocument => (Window, "Previous Document", ["Ctrl+Shift+Tab"]),
     // Help
     KeyboardShortcuts => (Help, "Keyboard Shortcuts…", ["Ctrl+Alt+Shift+K"]),
     CheckForUpdates => (Help, "Check for Updates…", []),

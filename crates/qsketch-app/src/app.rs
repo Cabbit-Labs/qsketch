@@ -885,6 +885,7 @@ impl QSketchApp {
                 self.menu_item(ui, Action::Save, has_doc);
                 self.menu_item(ui, Action::SaveAs, has_doc);
                 self.menu_item(ui, Action::ExportImage, has_doc);
+                self.menu_item(ui, Action::QuickExport, has_doc);
                 ui.menu_button("Export Scaled", |ui| {
                     ui.label(egui::RichText::new("Nearest-neighbor, for pixel art").weak().small());
                     for a in
@@ -1177,6 +1178,16 @@ impl QSketchApp {
                 ui.separator();
                 self.menu_item(ui, Action::ResetLayout, true);
                 ui.separator();
+                let several = self.state.docs.len() > 1;
+                ui.menu_button("Arrange", |ui| {
+                    self.menu_item(ui, Action::ArrangeSideBySide, several);
+                    self.menu_item(ui, Action::ArrangeStacked, several);
+                    self.menu_item(ui, Action::ArrangeGrid, several);
+                    self.menu_item(ui, Action::ArrangeTabs, several);
+                });
+                self.menu_item(ui, Action::NextDocument, several);
+                self.menu_item(ui, Action::PrevDocument, several);
+                ui.separator();
                 let docs: Vec<(DocId, String)> =
                     self.state.docs.iter().map(|d| (d.id, d.doc.display_title())).collect();
                 for (id, title) in docs {
@@ -1443,6 +1454,28 @@ impl QSketchApp {
                 if let Some(id) = active {
                     crate::files::export(&mut self.state, id);
                 }
+            }
+            Action::QuickExport => {
+                if let Some(id) = active {
+                    crate::files::quick_export(&mut self.state, id);
+                }
+            }
+            Action::NextDocument | Action::PrevDocument => {
+                let step = if action == Action::NextDocument { 1 } else { -1 };
+                if let Some(id) = self.state.document_from_active(step) {
+                    self.state.active_doc = Some(id);
+                    self.workspace.focus_document(id);
+                }
+            }
+            Action::ArrangeSideBySide | Action::ArrangeStacked | Action::ArrangeGrid | Action::ArrangeTabs => {
+                let mode = match action {
+                    Action::ArrangeSideBySide => crate::workspace::Arrange::SideBySide,
+                    Action::ArrangeStacked => crate::workspace::Arrange::Stacked,
+                    Action::ArrangeGrid => crate::workspace::Arrange::Grid,
+                    _ => crate::workspace::Arrange::Tabs,
+                };
+                let docs: Vec<DocId> = self.state.docs.iter().map(|d| d.id).collect();
+                self.workspace.arrange_documents(&docs, active, mode);
             }
             Action::ExportScaled2 | Action::ExportScaled3 | Action::ExportScaled4 | Action::ExportScaled8 => {
                 let k = match action {

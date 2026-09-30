@@ -54,6 +54,8 @@ pub struct DocEntry {
     /// Size of the file on disk as of the last open / save, for the status
     /// bar. `None` for a document that was never saved.
     pub file_size: Option<u64>,
+    /// Where Export Image last wrote this document, for Quick Export.
+    pub last_export: Option<std::path::PathBuf>,
 }
 
 impl DocEntry {
@@ -75,6 +77,7 @@ impl DocEntry {
             flash_seen_active: None,
             layer_flash: None,
             file_size: None,
+            last_export: None,
         }
     }
 
@@ -450,6 +453,17 @@ impl AppState {
         self.docs.push(entry);
         self.active_doc = Some(id);
         id
+    }
+
+    /// The document `steps` places after the active one in tab order
+    /// (negative steps go back), wrapping around.
+    pub fn document_from_active(&self, steps: isize) -> Option<DocId> {
+        if self.docs.is_empty() {
+            return None;
+        }
+        let n = self.docs.len() as isize;
+        let at = self.active_doc.and_then(|id| self.docs.iter().position(|d| d.id == id)).unwrap_or(0) as isize;
+        Some(self.docs[((at + steps).rem_euclid(n)) as usize].id)
     }
 
     pub fn remove_document(&mut self, id: DocId) {

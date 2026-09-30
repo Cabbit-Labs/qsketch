@@ -25,6 +25,7 @@ reachable from its menu until you assign one.
 | Export Tileset… | — |
 | Share via Leyline… | — |
 | Stop Sharing | — |
+| Quick Export (re-export to the last export path, no dialog) | `Ctrl+Alt+E` |
 | Close | `Ctrl+W` |
 | Quit | `Ctrl+Q` |
 
@@ -151,6 +152,9 @@ selection tool applies it and starts a new selection there.
 | Tiled: Off / Across / Down / Both | — |
 | Fullscreen | `F11` |
 | Hide/Show Panels | `Tab` |
+| Arrange: Side by Side / Stacked / Grid / All in Tabs (every open document at once) | — |
+| Next Document | `Ctrl+Tab` |
+| Previous Document | `Ctrl+Shift+Tab` |
 
 ## Filter
 

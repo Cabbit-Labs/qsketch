@@ -2,6 +2,23 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.48.0 — 2026-09-30
+
+- Ctrl+Tab / Ctrl+Shift+Tab cycle through the open documents (Window ▸ Next
+  / Previous Document).
+- Window ▸ Arrange lays every open document out at once: Side by Side,
+  Stacked, Grid (rows of two) or back to All in Tabs. Documents are pulled
+  in from floating windows and other leaves.
+- File ▸ Quick Export (Ctrl+Alt+E) writes the flattened image to wherever
+  Export Image last wrote this document, with no dialog; the first time it
+  asks and remembers the answer.
+- Workspace layouts survive arranging: documents are now taken out of the
+  saved layout one tab at a time (egui_dock's bulk removal could orphan a
+  subtree, which then crashed the next split), a saved layout that is
+  structurally broken falls back to the default instead of crashing, and a
+  leaf that was never shown no longer poisons the layout file with `null`
+  coordinates that made the whole layout fail to load.
+
 ## 0.47.0 — 2026-09-29
 
 - Drawing on a document in another dock leaf (two images side by side) now

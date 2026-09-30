@@ -180,8 +180,25 @@ pub fn export(state: &mut AppState, doc_id: DocId) -> bool {
     if path.extension().is_none() {
         path.set_extension("png");
     }
-    match io::image_io::export(&path, entry.doc.state()) {
+    write_export(state, doc_id, &path)
+}
+
+/// Export again to wherever Export Image last wrote this document, with no
+/// dialog; the first time (or after the file went away) it asks like Export
+/// Image does and remembers the answer.
+pub fn quick_export(state: &mut AppState, doc_id: DocId) -> bool {
+    let last = state.doc(doc_id).and_then(|d| d.last_export.clone());
+    match last {
+        Some(path) if path.parent().is_none_or(|d| d.exists()) => write_export(state, doc_id, &path),
+        _ => export(state, doc_id),
+    }
+}
+
+fn write_export(state: &mut AppState, doc_id: DocId, path: &Path) -> bool {
+    let Some(entry) = state.doc_mut(doc_id) else { return false };
+    match io::image_io::export(path, entry.doc.state()) {
         Ok(()) => {
+            entry.last_export = Some(path.to_path_buf());
             state.toasts.push(Level::Success, format!("Exported {}", path.display()));
             true
         }
