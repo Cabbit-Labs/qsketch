@@ -1,0 +1,29 @@
+[package]
+name = "qsketch-thumb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Windows Explorer thumbnail provider for .qsk documents (in-process COM shell extension)"
+
+# Only meaningful on Windows: the crate body is `#![cfg(windows)]`, so the
+# workspace builds an empty library elsewhere. Built for real by
+# scripts/build-windows.sh with `--profile thumb`.
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem",
+] }
+windows-core = "0.62"
+windows-registry = "0.6"
+zip = { workspace = true }
+png = "0.18"

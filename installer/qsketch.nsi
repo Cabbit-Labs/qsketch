@@ -24,6 +24,13 @@ Unicode true
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
 !define STAGE_DIR "..\dist\windows"
 !define ICON_FILE "..\assets\icon\icon.ico"
+; Explorer thumbnail provider (crates/qsketch-thumb). THUMB_CLSID must match
+; the CLSID in that crate; SHELLEX_THUMB is the shell's IThumbnailProvider
+; handler category.
+!define THUMB_DLL "qsketch_thumb.dll"
+!define THUMB_CLSID "{9B1F2A6E-5C3D-4E7A-8F41-2D6C0B7E3A55}"
+!define SHELLEX_THUMB "{E357FCCD-A995-4576-B01F-234630154E96}"
+!define APPROVED_KEY "Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved"
 
 Name "${APP_NAME}"
 OutFile "..\dist\qsketch-${VERSION}-setup.exe"
@@ -93,6 +100,15 @@ Section "qsketch (required)" SecMain
   File /nonfatal "${STAGE_DIR}\LICENSE-APACHE"
   File /nonfatal "${STAGE_DIR}\README.md"
 
+  ; The thumbnail DLL may be loaded by Explorer's surrogate process during an
+  ; upgrade; a loaded DLL can be renamed but not overwritten, so move the old
+  ; copy aside first and let it go at the next reboot.
+  IfFileExists "$INSTDIR\${THUMB_DLL}" 0 +3
+    Delete "$INSTDIR\${THUMB_DLL}.old"
+    Rename "$INSTDIR\${THUMB_DLL}" "$INSTDIR\${THUMB_DLL}.old"
+  Delete /REBOOTOK "$INSTDIR\${THUMB_DLL}.old"
+  File /nonfatal "${STAGE_DIR}\${THUMB_DLL}"
+
   ; Start Menu shortcuts
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
   CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
@@ -104,6 +120,18 @@ Section "qsketch (required)" SecMain
   WriteRegStr HKLM "Software\Classes\qsketch.Document" "" "qsketch Document"
   WriteRegStr HKLM "Software\Classes\qsketch.Document\DefaultIcon" "" "$INSTDIR\${APP_EXE},0"
   WriteRegStr HKLM "Software\Classes\qsketch.Document\shell\open\command" "" '"$INSTDIR\${APP_EXE}" "%1"'
+
+  ; Explorer thumbnails for .qsk: the provider DLL draws the preview stored
+  ; inside the file. Registered on the extension and on the ProgID, so the
+  ; thumbnails survive another program claiming .qsk.
+  ${If} ${FileExists} "$INSTDIR\${THUMB_DLL}"
+    WriteRegStr HKLM "Software\Classes\CLSID\${THUMB_CLSID}" "" "qsketch Thumbnail Provider"
+    WriteRegStr HKLM "Software\Classes\CLSID\${THUMB_CLSID}\InprocServer32" "" "$INSTDIR\${THUMB_DLL}"
+    WriteRegStr HKLM "Software\Classes\CLSID\${THUMB_CLSID}\InprocServer32" "ThreadingModel" "Apartment"
+    WriteRegStr HKLM "Software\Classes\.qsk\ShellEx\${SHELLEX_THUMB}" "" "${THUMB_CLSID}"
+    WriteRegStr HKLM "Software\Classes\qsketch.Document\ShellEx\${SHELLEX_THUMB}" "" "${THUMB_CLSID}"
+    WriteRegStr HKLM "${APPROVED_KEY}" "${THUMB_CLSID}" "qsketch Thumbnail Provider"
+  ${EndIf}
 
   ; Add/Remove Programs entry
   WriteRegStr HKLM "${UNINST_KEY}" "DisplayName" "${APP_NAME}"
@@ -142,6 +170,8 @@ Section "Uninstall"
   Delete "$INSTDIR\LICENSE-MIT"
   Delete "$INSTDIR\LICENSE-APACHE"
   Delete "$INSTDIR\README.md"
+  Delete /REBOOTOK "$INSTDIR\${THUMB_DLL}"
+  Delete /REBOOTOK "$INSTDIR\${THUMB_DLL}.old"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
 
@@ -152,6 +182,8 @@ Section "Uninstall"
 
   DeleteRegKey HKLM "Software\Classes\.qsk"
   DeleteRegKey HKLM "Software\Classes\qsketch.Document"
+  DeleteRegKey HKLM "Software\Classes\CLSID\${THUMB_CLSID}"
+  DeleteRegValue HKLM "${APPROVED_KEY}" "${THUMB_CLSID}"
   DeleteRegKey HKLM "${UNINST_KEY}"
 
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'

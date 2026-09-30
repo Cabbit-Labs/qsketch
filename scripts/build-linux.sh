@@ -55,6 +55,27 @@ Categories=Graphics;2DGraphics;RasterGraphics;
 MimeType=application/x-qsketch;
 EOF
 
+# The .qsk MIME type, so file managers know the format, and a freedesktop
+# thumbnailer that draws the preview stored in the file (qsketch --thumbnail).
+mkdir -p "$STAGE_DIR/share/mime/packages" "$STAGE_DIR/share/thumbnailers"
+cat >"$STAGE_DIR/share/mime/packages/${BIN_NAME}.xml" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-qsketch">
+    <comment>qsketch document</comment>
+    <glob pattern="*.qsk"/>
+    <sub-class-of type="application/zip"/>
+    <icon name="${BIN_NAME}"/>
+  </mime-type>
+</mime-info>
+EOF
+cat >"$STAGE_DIR/share/thumbnailers/${BIN_NAME}.thumbnailer" <<EOF
+[Thumbnailer Entry]
+TryExec=${BIN_NAME}
+Exec=${BIN_NAME} --thumbnail %i %o %s
+MimeType=application/x-qsketch;
+EOF
+
 for size in 16 32 48 64 128 256 512 1024; do
   src="assets/icon/icon-${size}.png"
   if [ -f "$src" ]; then
@@ -76,6 +97,12 @@ cp "$DIR/bin/qsketch" "$PREFIX/bin/qsketch"
 chmod +x "$PREFIX/bin/qsketch"
 cp -r "$DIR/share/applications" "$PREFIX/share/"
 cp -r "$DIR/share/icons" "$PREFIX/share/"
+cp -r "$DIR/share/mime" "$PREFIX/share/"
+cp -r "$DIR/share/thumbnailers" "$PREFIX/share/"
+# Register the .qsk type and the thumbnailer with the desktop (file
+# managers pick both up from here; the thumbnailer needs qsketch on PATH).
+command -v update-mime-database >/dev/null 2>&1 && update-mime-database "$PREFIX/share/mime" || true
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$PREFIX/share/applications" || true
 echo "Installed qsketch to $PREFIX/bin/qsketch"
 echo "Make sure $PREFIX/bin is on your PATH."
 EOF

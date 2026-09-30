@@ -1,6 +1,7 @@
 # Architecture
 
-qsketch is split into two crates with a hard boundary between them:
+qsketch is split into two crates with a hard boundary between them (plus
+one small Windows-only shell extension):
 
 - **`crates/qsketch-core`** — the headless document model: the tiled raster
   store, blend modes and compositor, the brush/stroke engine, selection
@@ -10,7 +11,16 @@ qsketch is split into two crates with a hard boundary between them:
 - **`crates/qsketch-app`** — the `egui`/`eframe`/`wgpu` desktop application:
   window/app lifecycle, the dockable workspace, panels, tools, tablet input
   and the canvas renderer. It depends on `qsketch-core` for everything
-  document-related.
+  document-related. `qsketch --thumbnail in.qsk out.png size` is a
+  headless entry point in the same binary (`thumbnail.rs`) that Linux file
+  managers run through the freedesktop thumbnailer the tarball installs.
+- **`crates/qsketch-thumb`** — the Windows Explorer thumbnail provider, an
+  in-process COM server (`IInitializeWithStream` + `IThumbnailProvider`)
+  built as `qsketch_thumb.dll` with the `thumb` profile. It reads only the
+  ZIP central directory and `preview.png` of a `.qsk` and hands the shell a
+  premultiplied DIB. It depends on neither crate (a `.qsk` is a plain ZIP)
+  and must import system DLLs only, since Explorer's surrogate process does
+  not search the install directory; `scripts/build-windows.sh` checks that.
 
 ```mermaid
 graph TD
@@ -254,7 +264,14 @@ from `PanelKind::Document(DocId)`, one tab per open document. The
 `TabViewer` impl (`workspace.rs::Viewer`) dispatches each tab's `ui()` to the
 matching module under `panels/` (or `canvas::show()` for documents), routes
 document-tab closes through `AppState::close_doc_requests` so unsaved-changes
-prompts can intercept them, and never lets the Home tab close. The layout —
+prompts can intercept them, and never lets the Home tab close. The active
+document (`AppState::active_doc`, what Layers, History and the menus act
+on) follows the dock's focused leaf, except that a canvas that is pressed
+or drawn on wins: it posts `AppState::focus_doc_request`, and the workspace
+moves the dock focus to that document's leaf after the frame. egui_dock only
+focuses a leaf on a click, never on a drag, so without this a stroke that
+started on an unfocused document would edit it while the panels kept
+showing another one. The layout —
 including floating panel windows — is serialized to JSON
 (`Workspace::to_json`, stripping document tabs, which never survive a
 restart) and stored in `Settings::layout`.

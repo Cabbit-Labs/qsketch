@@ -41,10 +41,11 @@ pub fn open_path(state: &mut AppState, path: &Path) -> Option<DocId> {
         state.active_doc = Some(id);
         return Some(id);
     }
-    match io::open_with_warnings(path) {
-        Ok((doc_state, warnings)) => {
+    match io::open_full(path) {
+        Ok((doc_state, stats, warnings)) => {
             let title = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Untitled".into());
-            let doc = Document::from_state(doc_state, title, Some(path.to_path_buf()), "Open");
+            let mut doc = Document::from_state(doc_state, title, Some(path.to_path_buf()), "Open");
+            doc.stats = stats;
             let id = state.add_document(doc);
             state.settings.push_recent(path.to_path_buf());
             for w in warnings {
@@ -136,11 +137,16 @@ pub fn write_document(state: &mut AppState, doc_id: DocId, path: &Path) -> bool 
         crate::backups::take(path, state.settings.general.backup_versions as usize);
     }
     let Some(entry) = state.doc_mut(doc_id) else { return false };
-    match io::save_any(path, entry.doc.state()) {
+    // The count includes this save, so the file records it.
+    let mut stats = entry.doc.stats.clone();
+    stats.saves += 1;
+    match io::save_any_with_stats(path, entry.doc.state(), Some(&stats)) {
         Ok(()) => {
+            entry.doc.stats = stats;
             entry.doc.path = Some(path.to_path_buf());
             entry.doc.title = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             entry.doc.mark_saved();
+            entry.refresh_file_size();
             entry.format_ack = Some(path.to_path_buf());
             state.autosave.forget(doc_id);
             state.settings.push_recent(path.to_path_buf());

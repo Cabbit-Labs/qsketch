@@ -561,58 +561,131 @@ fn tip_page(
     }
 }
 
-/// Interactive angle/roundness dial: drag to set the angle, scroll to change roundness.
+/// Interactive tip dial. Drag the arrow (or the ring itself) to set the
+/// angle; drag either dot on the ellipse's short axis to set the roundness;
+/// the wheel steps the roundness too. The handle the pointer is over lights
+/// up, and a press grabs that handle for the whole drag, so a dot can be
+/// picked up exactly and pulled without the angle jumping. Shift snaps the
+/// angle to 15° and the roundness to 5 %.
 fn angle_widget(ui: &mut Ui, b: &mut BrushSettings) {
-    let size = 84.0;
+    #[derive(Clone, Copy, PartialEq)]
+    enum Grab {
+        Angle,
+        Roundness,
+    }
+    let size = 96.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click_and_drag());
     let c = rect.center();
-    let r = size * 0.42;
-    let v = ui.visuals();
-    crate::ui::chrome::fill_box(ui.painter(), rect, 4.0, v.extreme_bg_color);
-    ui.painter().circle_stroke(c, r, egui::Stroke::new(1.0, crate::ui::theme::dim_text(v)));
+    let r = size * 0.4;
+    let grab_id = resp.id.with("grab");
+    // Screen y points down; the angle is counter-clockwise-positive like Photoshop's.
+    let axes = |angle: f32| {
+        let (s, co) = (-angle.to_radians()).sin_cos();
+        (egui::vec2(co, s), egui::vec2(-s, co))
+    };
+    let (_, minor) = axes(b.angle);
+    let dots = [c + minor * r * b.roundness, c - minor * r * b.roundness];
+    let near = |p: egui::Pos2, q: egui::Pos2| (p - q).length() <= 9.0;
+    let classify = |p: egui::Pos2| {
+        if dots.iter().any(|d| near(p, *d)) {
+            Some(Grab::Roundness)
+        } else if rect.contains(p) {
+            Some(Grab::Angle)
+        } else {
+            None
+        }
+    };
+    let mut grab: Option<Grab> = ui.data(|d| d.get_temp(grab_id)).flatten();
+    if resp.drag_started() || resp.clicked() {
+        // Classify at the press, not where the pointer has drifted to by now.
+        let origin = ui.input(|i| i.pointer.press_origin()).or_else(|| resp.interact_pointer_pos());
+        grab = origin.and_then(classify);
+    }
     if resp.dragged() || resp.clicked() {
-        if let Some(p) = resp.interact_pointer_pos() {
+        if let (Some(g), Some(p)) = (grab, resp.interact_pointer_pos()) {
             let d = p - c;
-            if d.length() > 2.0 {
-                // Screen y points down; keep Photoshop's counter-clockwise-positive angle.
-                b.angle = (-d.y).atan2(d.x).to_degrees().rem_euclid(360.0).round();
-                if ui.input(|i| i.modifiers.shift) {
-                    b.angle = (b.angle / 15.0).round() * 15.0;
+            let shift = ui.input(|i| i.modifiers.shift);
+            match g {
+                Grab::Angle => {
+                    if d.length() > 2.0 {
+                        let mut a = (-d.y).atan2(d.x).to_degrees().rem_euclid(360.0);
+                        if shift {
+                            a = ((a / 15.0).round() * 15.0).rem_euclid(360.0);
+                        }
+                        b.angle = a.round();
+                    }
+                }
+                Grab::Roundness => {
+                    // How far the pointer sits from the centre along the short axis.
+                    let mut v = (d.dot(minor).abs() / r).clamp(0.01, 1.0);
+                    if shift {
+                        v = ((v * 20.0).round() / 20.0).clamp(0.05, 1.0);
+                    }
+                    b.roundness = (v * 100.0).round() / 100.0;
                 }
             }
         }
     }
+    if resp.drag_stopped() || !(resp.dragged() || resp.is_pointer_button_down_on()) {
+        grab = None;
+    }
+    ui.data_mut(|d| d.insert_temp(grab_id, grab));
     let scroll = ui.input(|i| i.smooth_scroll_delta.y);
     if resp.hovered() && scroll != 0.0 {
         b.roundness = (b.roundness + scroll.signum() * 0.05).clamp(0.01, 1.0);
     }
-    // The tip ellipse.
-    let ang = -b.angle.to_radians();
-    let (s, co) = ang.sin_cos();
-    let n = 40;
+    // What the pointer would grab (or is grabbing), for the highlight and cursor.
+    let hot = grab.or_else(|| resp.hover_pos().and_then(classify));
+    if resp.hovered() || grab.is_some() {
+        ui.ctx().set_cursor_icon(if grab.is_some() {
+            egui::CursorIcon::Grabbing
+        } else if hot == Some(Grab::Roundness) {
+            egui::CursorIcon::Grab
+        } else {
+            egui::CursorIcon::Crosshair
+        });
+    }
+
+    // --- paint ---------------------------------------------------------
+    let v = ui.visuals();
+    let accent = v.selection.stroke.color;
+    let dim = crate::ui::theme::dim_text(v);
+    let text = v.text_color();
+    let painter = ui.painter();
+    crate::ui::chrome::fill_box(painter, rect, 4.0, v.extreme_bg_color);
+    crate::ui::chrome::stroke_box(painter, rect, 4.0, v.widgets.noninteractive.bg_stroke, egui::StrokeKind::Inside);
+    painter.circle_stroke(c, r, egui::Stroke::new(1.0, dim));
+    // The tip ellipse, recomputed from the values a drag may just have set.
+    let (major, minor) = axes(b.angle);
+    let n = 48;
     let pts: Vec<egui::Pos2> = (0..=n)
         .map(|i| {
             let t = i as f32 / n as f32 * std::f32::consts::TAU;
-            let (x, y) = (r * t.cos(), r * b.roundness * t.sin());
-            egui::pos2(c.x + x * co - y * s, c.y + x * s + y * co)
+            c + major * (r * t.cos()) + minor * (r * b.roundness * t.sin())
         })
         .collect();
-    ui.painter().add(egui::Shape::line(pts, egui::Stroke::new(1.5, v.text_color())));
-    // Axis + direction arrow.
-    let ax = egui::vec2(co, s) * r;
-    ui.painter().line_segment([c - ax, c + ax], egui::Stroke::new(1.0, crate::ui::theme::dim_text(v)));
+    painter.add(egui::Shape::line(pts, egui::Stroke::new(1.5, text)));
+    // Long axis + direction arrow (accent while the angle is the live handle).
+    let arrow_color = if hot == Some(Grab::Angle) { accent } else { text };
+    let ax = major * r;
+    painter.line_segment([c - ax, c + ax], egui::Stroke::new(1.0, dim));
     let tip = c + ax;
-    let side = egui::vec2(-s, co) * 4.0;
-    let back = egui::vec2(co, s) * 7.0;
-    ui.painter().add(egui::Shape::convex_polygon(
+    let side = minor * 4.5;
+    let back = major * 8.0;
+    painter.add(egui::Shape::convex_polygon(
         vec![tip + back * 0.6, tip - back + side, tip - back - side],
-        v.text_color(),
+        arrow_color,
         egui::Stroke::NONE,
     ));
-    let ay = egui::vec2(-s, co) * r * b.roundness;
-    ui.painter().circle_filled(c + ay, 2.5, v.text_color());
-    ui.painter().circle_filled(c - ay, 2.5, v.text_color());
-    resp.on_hover_text("Drag to set the angle (Shift snaps to 15°). Scroll to change roundness.");
+    // Roundness handles on the short axis (accent while live).
+    let (dot_color, dot_r) = if hot == Some(Grab::Roundness) { (accent, 4.0) } else { (text, 3.0) };
+    for d in [c + minor * r * b.roundness, c - minor * r * b.roundness] {
+        painter.circle_filled(d, dot_r, dot_color);
+        painter.circle_stroke(d, dot_r, egui::Stroke::new(1.0, v.extreme_bg_color));
+    }
+    resp.on_hover_text(
+        "Drag the arrow to set the angle, the dots to set the roundness.\nShift snaps (15° / 5 %). Wheel: roundness.",
+    );
 }
 
 fn shape_dynamics_page(ui: &mut Ui, b: &mut BrushSettings) {

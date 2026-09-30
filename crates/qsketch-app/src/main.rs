@@ -18,6 +18,7 @@ mod startup_cloak;
 mod startup_trace;
 mod state;
 mod tablet;
+mod thumbnail;
 mod tools;
 mod ui;
 mod update;
@@ -80,7 +81,20 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
-    let files: Vec<std::path::PathBuf> = std::env::args_os().skip(1).map(std::path::PathBuf::from).collect();
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    // `qsketch --thumbnail <in.qsk> <out.png> <size>`: the freedesktop
+    // thumbnailer entry point file managers run to draw a .qsk's icon.
+    if args.first().is_some_and(|a| a == "--thumbnail") {
+        let code = match thumbnail::run(&args[1..]) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("qsketch --thumbnail: {e:#}");
+                1
+            }
+        };
+        std::process::exit(code);
+    }
+    let files: Vec<std::path::PathBuf> = args.into_iter().map(std::path::PathBuf::from).collect();
     // Hand the files to an already-running qsketch (they open as new tabs)
     // instead of starting a second window.
     let (wake_tx, wake_rx) = std::sync::mpsc::channel::<egui::Context>();

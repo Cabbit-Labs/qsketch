@@ -117,6 +117,7 @@ impl Workspace {
         let mut dock: DockState<PanelKind> = serde_json::from_str(json).ok()?;
         // Documents never survive a restart.
         dock.retain_tabs(|t| !matches!(t, PanelKind::Document(_)));
+        prune_empty_surfaces(&mut dock);
         if !dock.iter_all_tabs().any(|(_, t)| *t == PanelKind::Home) {
             dock.push_to_first_leaf(PanelKind::Home);
         }
@@ -126,6 +127,7 @@ impl Workspace {
     pub fn to_json(&self) -> Option<String> {
         let mut dock = self.dock.clone();
         dock.retain_tabs(|t| !matches!(t, PanelKind::Document(_)));
+        prune_empty_surfaces(&mut dock);
         serde_json::to_string(&dock).ok()
     }
 
@@ -166,6 +168,7 @@ impl Workspace {
     pub fn remove_document(&mut self, id: DocId) {
         if let Some(path) = self.find(&PanelKind::Document(id)) {
             self.dock.remove_tab(path);
+            prune_empty_surfaces(&mut self.dock);
         }
     }
 
@@ -264,7 +267,19 @@ impl Workspace {
             .draggable_tabs(true)
             .show_tab_name_on_hover(false)
             .show_inside(ui, &mut viewer);
-        if let Some((_, PanelKind::Document(id))) = self.dock.find_active_focused() {
+        // A canvas that was pressed or drawn on wins over the dock's own
+        // notion of focus (which only follows clicks on tabs and plain
+        // clicks in a leaf, never a drag): move the focus to that
+        // document's leaf so the panels and the tab highlight agree.
+        if let Some(id) = state.focus_doc_request.take() {
+            if state.doc(id).is_some() {
+                if let Some(path) = self.find(&PanelKind::Document(id)) {
+                    self.dock.set_focused_node_and_surface(path.node_path());
+                    let _ = self.dock.set_active_tab(path);
+                }
+                state.active_doc = Some(id);
+            }
+        } else if let Some((_, PanelKind::Document(id))) = self.dock.find_active_focused() {
             let id = *id;
             if state.doc(id).is_some() {
                 state.active_doc = Some(id);
@@ -451,6 +466,10 @@ impl TabViewer for Viewer<'_> {
         if let PanelKind::Document(id) = tab {
             if response.clicked() || response.middle_clicked() {
                 self.state.active_doc = Some(*id);
+                // Also move the dock's focus there: clicking the tab that is
+                // already active in an unfocused leaf otherwise leaves the
+                // focus (and the panels) on another document.
+                self.state.focus_doc_request = Some(*id);
             }
             if response.middle_clicked() {
                 self.state.close_doc_requests.push(*id);
@@ -513,6 +532,22 @@ impl TabViewer for Viewer<'_> {
                 self.state.close_doc_requests.extend(others);
                 ui.close();
             }
+        }
+    }
+}
+
+/// Drop floating windows that hold no tabs any more. egui_dock's
+/// `retain_tabs` only removes a window surface whose tree has no nodes;
+/// one whose single leaf lost its tabs (a document tab floated on its own,
+/// which never survives a restart) keeps the empty node, and drawing that
+/// window panics inside egui_dock at the next launch.
+fn prune_empty_surfaces(dock: &mut DockState<PanelKind>) {
+    let populated: std::collections::HashSet<SurfaceIndex> = dock.iter_all_tabs().map(|(p, _)| p.surface).collect();
+    for i in (1..dock.surfaces_count()).rev() {
+        let idx = SurfaceIndex(i);
+        let live = dock.get_surface(idx).is_some_and(|s| !matches!(s, egui_dock::Surface::Empty));
+        if live && !populated.contains(&idx) {
+            let _ = dock.remove_surface(idx);
         }
     }
 }

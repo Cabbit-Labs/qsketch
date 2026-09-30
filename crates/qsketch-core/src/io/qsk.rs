@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::document::DocState;
+use crate::document::{DocState, DocStats};
 use crate::layer::{Layer, LayerProps};
 use crate::mask::Mask;
 use crate::palette::Palette;
@@ -36,6 +36,10 @@ struct Manifest {
     palette: Option<Palette>,
     #[serde(default)]
     palette_lock: bool,
+    /// Lifetime statistics (0.47+): creation time, work time, edit and save
+    /// counts. Optional; older files simply have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stats: Option<DocStats>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -63,6 +67,11 @@ fn read_gray(zip: &mut ZipArchive<BufReader<File>>, name: &str, w: u32, h: u32) 
 }
 
 pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
+    save_with_stats(path, doc, None)
+}
+
+/// Save with the document's lifetime statistics in the manifest.
+pub fn save_with_stats(path: &Path, doc: &DocState, stats: Option<&DocStats>) -> anyhow::Result<()> {
     let tmp = path.with_extension("qsk.tmp");
     {
         let file = File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
@@ -109,6 +118,7 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
             selection,
             palette: (!doc.palette.is_empty()).then(|| doc.palette.clone()),
             palette_lock: doc.palette_lock,
+            stats: stats.cloned(),
         };
         zip.start_file("manifest.json", deflated)?;
         zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
@@ -124,6 +134,12 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
 }
 
 pub fn load(path: &Path) -> anyhow::Result<DocState> {
+    Ok(load_with_stats(path)?.0)
+}
+
+/// Load a document and the statistics stored with it (default when the
+/// file predates them).
+pub fn load_with_stats(path: &Path) -> anyhow::Result<(DocState, DocStats)> {
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut zip = ZipArchive::new(BufReader::new(file))?;
     let manifest: Manifest = {
@@ -165,7 +181,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         palette_lock: manifest.palette_lock,
     };
     doc.repair_groups();
-    Ok(doc)
+    Ok((doc, manifest.stats.unwrap_or_default()))
 }
 
 /// Read just the preview PNG bytes of a `.qsk` (for recent-file thumbnails).

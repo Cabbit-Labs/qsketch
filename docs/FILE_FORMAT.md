@@ -70,7 +70,8 @@ mydrawing.qsk  (a ZIP file)
   ],
   "selection": "selection.png", // omitted (or null) if there is no selection
   "palette": { "name": "PICO-8", "colors": [{ "r": 0, "g": 0, "b": 0, "a": 255 }] }, // omitted when empty
-  "palette_lock": false // indexed-color mode: edits snap to the palette
+  "palette_lock": false, // indexed-color mode: edits snap to the palette
+  "stats": { "created": 1759180800, "work_secs": 5423.5, "edits": 812, "saves": 9 } // 0.47+, optional
 }
 ```
 
@@ -101,6 +102,18 @@ Field notes:
 - **`palette`** / **`palette_lock`** (0.39+) are the document palette and
   whether edits are snapped to it; both are optional and default to none /
   off, so older files load unchanged.
+- **`preview.png`** (the flattened picture at the archive's root, not a
+  manifest field) is what file managers show as the document's icon:
+  Windows Explorer through the `qsketch-thumb` shell extension the installer
+  registers, Linux file managers through the `qsketch --thumbnail` entry in
+  `share/thumbnailers/qsketch.thumbnailer`. Keep writing it when extending
+  the format.
+- **`stats`** (0.47+) are lifetime statistics the app keeps outside the undo
+  history: `created` (Unix seconds, UTC, when the document was started or
+  first imported), `work_secs` (active editing time; the clock stops after
+  30 s without input), `edits` (committed history steps over the document's
+  life) and `saves` (including the save that wrote the file). Shown in the
+  Info panel. Optional; a file without them starts fresh when opened.
 - **`layers`** is an array of per-layer properties (`LayerProps`, flattened
   into each entry) plus that layer's PNG path (`file`). Layer order in this
   array is bottom-to-top and must match the physical stacking order; there's

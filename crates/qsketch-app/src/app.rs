@@ -631,6 +631,29 @@ impl QSketchApp {
         resize_settled(ctx);
     }
 
+    /// Advance the active document's work time while the user is
+    /// interacting with qsketch (input within the last `IDLE_AFTER`); a
+    /// pause, a minimized window or a stalled frame does not count.
+    fn tick_work_time(&mut self, ctx: &Context) {
+        const IDLE_AFTER: Duration = Duration::from_secs(30);
+        let now = Instant::now();
+        let busy = self.state.session.is_some()
+            || self.state.floating.as_ref().is_some_and(|f| f.drag.is_some())
+            || ctx.input(|i| !i.raw.events.is_empty() || i.pointer.any_down() || i.pointer.is_moving());
+        if busy {
+            self.state.last_activity = Some(now);
+        }
+        let prev = self.state.work_clock.replace(now);
+        let (Some(prev), Some(last)) = (prev, self.state.last_activity) else { return };
+        if now.duration_since(last) > IDLE_AFTER {
+            return;
+        }
+        let dt = now.duration_since(prev).as_secs_f64().min(1.0);
+        if let Some(d) = self.state.active_mut() {
+            d.doc.stats.work_secs += dt;
+        }
+    }
+
     fn handle_dropped_files(&mut self, ctx: &Context) {
         let dropped: Vec<std::path::PathBuf> =
             ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
@@ -811,6 +834,11 @@ impl QSketchApp {
         // highlight (and click) reaches the top edge of the window.
         ui.spacing_mut().interact_size.y = 24.0;
         egui::MenuBar::new().ui(ui, |ui| {
+            // Titles butt against each other with their padding inside the
+            // button, so there is no dead gap along the bar: the pointer is
+            // always over one menu or the next.
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.spacing_mut().button_padding.x = 8.0;
             top_menu(ui, "File", |ui| {
                 self.menu_item(ui, Action::NewDocument, true);
                 self.menu_item(ui, Action::OpenDocument, true);
@@ -1276,6 +1304,17 @@ impl QSketchApp {
                 ui.label(RichText::new(icons::COMPASS).weak().small());
                 ui.label(RichText::new(format!("{:.0}%", d.view.zoom * 100.0)).monospace().small());
                 ui.label(RichText::new(format!("{} × {}", d.doc.width(), d.doc.height())).weak().small());
+                // File size as of the last save; "~" once the document has
+                // changed since, as the next save will differ.
+                if let Some(bytes) = d.file_size {
+                    let approx = d.doc.is_modified();
+                    let text = format!("{}{}", if approx { "~" } else { "" }, crate::ui::widgets::fmt_bytes(bytes));
+                    ui.label(RichText::new(text).weak().small()).on_hover_text(if approx {
+                        "File size at the last save (the document has unsaved changes)"
+                    } else {
+                        "File size on disk"
+                    });
+                }
                 if let Some(pos) = self.state.hover_doc_pos {
                     ui.label(
                         RichText::new(format!("{}, {}", pos.x.floor() as i32, pos.y.floor() as i32))
@@ -2088,6 +2127,7 @@ impl eframe::App for QSketchApp {
         }
         self.handle_dropped_files(&ctx);
         self.handle_keyboard(&ctx);
+        self.tick_work_time(&ctx);
         self.enforce_fullscreen(&ctx);
         self.state.autosave.tick(&self.state.docs, &self.state.settings.general, self.state.session.is_some(), &ctx);
         if self.state.updater.ctx.is_none() {

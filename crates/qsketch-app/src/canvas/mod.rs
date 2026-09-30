@@ -42,6 +42,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         // Painting takes keyboard focus away from text fields so single-key shortcuts work.
         ui.memory_mut(|m| m.stop_text_input());
         state.active_doc = Some(doc_id);
+        state.focus_doc_request = Some(doc_id);
     }
 
     // --- wheel / pinch ----------------------------------------------------
@@ -323,6 +324,15 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         }
     }
     tools::floating::refresh(state);
+    // Whatever is being drawn on is the active document, however the press
+    // reached it (tablet packets, a drag that started before the tab had
+    // focus): the panels must show the layers and history being changed.
+    let editing_here = (state.session.is_some() && state.session_doc == Some(doc_id))
+        || state.floating.as_ref().is_some_and(|f| f.doc == doc_id && f.drag.is_some());
+    if editing_here && state.active_doc != Some(doc_id) {
+        state.active_doc = Some(doc_id);
+        state.focus_doc_request = Some(doc_id);
+    }
     if tools::text::dragging(state, doc_id) && !ui.input(|i| i.pointer.any_down()) {
         tools::text::handle(
             state,

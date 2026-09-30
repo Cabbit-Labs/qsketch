@@ -230,15 +230,21 @@ pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32, shape: UiShape) {
     // palette's dim color, which is held to a contrast floor.
     visuals.weak_text_color = Some(p.text_dim);
     visuals.widgets.noninteractive.corner_radius = r;
+    // Every control is a box with a hairline outline in every state, and the
+    // outline keeps its width from rest to hover to press: egui sizes a
+    // framed widget by its stroke, so a control whose idle state had no
+    // stroke grew a pixel under the pointer and nudged its neighbours.
+    // Hover lightens the fill and the outline, a press outlines in the
+    // accent, and nothing swells (`expansion`, egui's default hover
+    // inflation, is off everywhere).
     visuals.widgets.inactive.bg_fill = p.widget;
     visuals.widgets.inactive.weak_bg_fill = p.widget;
-    // Angular: every control is a flat box with a hairline outline.
-    visuals.widgets.inactive.bg_stroke = if angular { Stroke::new(1.0, p.border) } else { Stroke::NONE };
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, p.border);
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, p.text);
     visuals.widgets.inactive.corner_radius = r;
     visuals.widgets.hovered.bg_fill = p.widget_hover;
     visuals.widgets.hovered.weak_bg_fill = p.widget_hover;
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, p.border);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, p.text_dim);
     visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, p.text);
     visuals.widgets.hovered.corner_radius = r;
     visuals.widgets.active.bg_fill = p.widget_active;
@@ -248,7 +254,18 @@ pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32, shape: UiShape) {
     visuals.widgets.active.corner_radius = r;
     visuals.widgets.open.bg_fill = p.widget_active;
     visuals.widgets.open.weak_bg_fill = p.widget_active;
+    visuals.widgets.open.bg_stroke = Stroke::new(1.0, p.accent_dim);
+    visuals.widgets.open.fg_stroke = Stroke::new(1.0, p.text);
     visuals.widgets.open.corner_radius = r;
+    for w in [
+        &mut visuals.widgets.noninteractive,
+        &mut visuals.widgets.inactive,
+        &mut visuals.widgets.hovered,
+        &mut visuals.widgets.active,
+        &mut visuals.widgets.open,
+    ] {
+        w.expansion = 0.0;
+    }
     visuals.slider_trailing_fill = true;
     if angular {
         visuals.window_shadow = egui::epaint::Shadow::NONE;

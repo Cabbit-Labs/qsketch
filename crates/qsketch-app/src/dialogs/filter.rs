@@ -368,14 +368,20 @@ pub fn show(ctx: &Context, state: &mut AppState) {
     }
     let (mut ok, mut cancel, mut open) = (false, false, true);
     let screen = ctx.content_rect();
-    egui::Window::new(if d.index_mode { "Index Colors" } else { d.filter.name() })
+    let palette = state.settings.ui.palette();
+    let title = if d.index_mode { "Index Colors".to_string() } else { d.filter.name().to_string() };
+    egui::Window::new(&title)
         .id(egui::Id::new("filter_dialog"))
         .open(&mut open)
+        .title_bar(false)
         .collapsible(false)
         .auto_sized()
         .default_pos(egui::pos2(screen.right() - 372.0, screen.top() + 80.0))
         .show(ctx, |ui| {
             ui.set_width(320.0);
+            if crate::ui::chrome::window_header(ui, &palette, &title) {
+                cancel = true;
+            }
             ui.label(RichText::new(d.filter.describe()).weak().small());
             ui.add_space(6.0);
             match &mut d.filter {

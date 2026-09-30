@@ -115,15 +115,18 @@ fn take_in(base: &Path, path: &Path, keep: usize) {
 /// Open a backup as a new, unsaved document (the original stays untouched).
 pub fn restore(state: &mut AppState, original: &Path, b: &Backup) -> Option<DocId> {
     let loaded = if b.file.extension().and_then(|s| s.to_str()) == Some(io::psd::EXTENSION) {
-        io::psd::load(&b.file)
+        io::psd::load(&b.file).map(|ds| (ds, None))
     } else {
-        io::qsk::load(&b.file)
+        io::qsk::load_with_stats(&b.file).map(|(ds, st)| (ds, Some(st)))
     };
     match loaded {
-        Ok(ds) => {
+        Ok((ds, stats)) => {
             let stem = original.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             let title = format!("{stem} (backup {})", b.age());
             let mut doc = Document::from_state(ds, title, None, "Restored");
+            if let Some(st) = stats.filter(|s| s.created.is_some()) {
+                doc.stats = st;
+            }
             doc.mark_unsaved();
             let id = state.add_document(doc);
             state.toasts.push(Level::Info, "Restored as a new document. Save As to keep it.");

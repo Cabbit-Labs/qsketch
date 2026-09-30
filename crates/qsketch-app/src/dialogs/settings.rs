@@ -44,16 +44,20 @@ pub fn show(ctx: &Context, state: &mut AppState) {
         return;
     }
     let mut open = true;
+    let mut close_clicked = false;
+    let palette = state.settings.ui.palette();
     let mut dlg = state.dialogs.settings.take().unwrap();
     egui::Window::new("Preferences")
         .id(egui::Id::new("preferences_window"))
         .open(&mut open)
+        .title_bar(false)
         .collapsible(false)
         .resizable(true)
         .default_size([780.0, 560.0])
         .default_pos(ctx.content_rect().center() - egui::vec2(390.0, 280.0))
         .show(ctx, |ui| {
             ui.set_min_size(egui::vec2(740.0, 500.0));
+            close_clicked = crate::ui::chrome::window_header(ui, &palette, "Preferences");
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.set_width(130.0);
@@ -99,7 +103,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                 });
             });
         });
-    if open {
+    if open && !close_clicked {
         state.dialogs.settings = Some(dlg);
     } else {
         state.settings.sanitize();
@@ -231,6 +235,74 @@ fn general(ui: &mut Ui, state: &mut AppState) {
         "Update checks are off until a manifest URL is entered above."
     };
     ui.label(RichText::new(format!("Current version {}. {note}", crate::update::CURRENT_VERSION)).weak().small());
+    #[cfg(windows)]
+    explorer_thumbnails(ui, state);
+}
+
+/// Windows: register / unregister the Explorer thumbnail provider for the
+/// current user, for copies that did not go through the installer (the
+/// portable ZIP registers nothing). The DLL sits next to the executable and
+/// registers itself under HKCU, so no administrator rights are needed.
+#[cfg(windows)]
+fn explorer_thumbnails(ui: &mut Ui, state: &mut AppState) {
+    let dll = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("qsketch_thumb.dll")));
+    let Some(dll) = dll.filter(|p| p.exists()) else { return };
+    ui.add_space(10.0);
+    ui.heading("Explorer");
+    ui.horizontal(|ui| {
+        ui.label("Show .qsk previews as file thumbnails");
+        if ui.button("Register").on_hover_text("Registers the thumbnail provider for your account").clicked() {
+            call_dll_entry(&dll, "DllRegisterServer", state);
+        }
+        if ui.button("Unregister").clicked() {
+            call_dll_entry(&dll, "DllUnregisterServer", state);
+        }
+    });
+    ui.label(
+        RichText::new("The installer registers this for everyone; use these after unpacking the portable ZIP.")
+            .weak()
+            .small(),
+    );
+}
+
+/// Load the thumbnail DLL and run one of its `regsvr32`-style entry points.
+#[cfg(windows)]
+fn call_dll_entry(dll: &std::path::Path, entry: &str, state: &mut AppState) {
+    use crate::ui::toasts::Level;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::FreeLibrary;
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    let wide: Vec<u16> = dll.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let name = format!("{entry}\0");
+    let result = unsafe {
+        let module = LoadLibraryW(wide.as_ptr());
+        if module.is_null() {
+            Err("the DLL could not be loaded".to_string())
+        } else {
+            let r = match GetProcAddress(module, name.as_ptr()) {
+                Some(f) => {
+                    let f: extern "system" fn() -> i32 = std::mem::transmute(f);
+                    let hr = f();
+                    if hr >= 0 {
+                        Ok(())
+                    } else {
+                        Err(format!("{entry} failed (0x{hr:08X})"))
+                    }
+                }
+                None => Err(format!("{entry} not found in the DLL")),
+            };
+            FreeLibrary(module);
+            r
+        }
+    };
+    match result {
+        Ok(()) if entry == "DllRegisterServer" => state.toasts.push(
+            Level::Success,
+            "Explorer thumbnails registered. Explorer picks them up after a moment (or a sign-out).",
+        ),
+        Ok(()) => state.toasts.push(Level::Success, "Explorer thumbnails unregistered."),
+        Err(e) => state.toasts.push(Level::Error, format!("Explorer thumbnails: {e}")),
+    }
 }
 
 fn interface(ui: &mut Ui, state: &mut AppState) {

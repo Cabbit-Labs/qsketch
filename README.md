@@ -1,11 +1,11 @@
 # qsketch
 
-A fast, professional sketching and raster painting desktop app. qsketch gives
-you a Photoshop/Aseprite-familiar workflow — layers, blend modes, a
-non-destructive undo history, dockable panels — built from scratch in Rust on
-top of `egui` and `wgpu` so strokes stay responsive even on large canvases,
-with full stylus pressure support via Windows Ink and a fully remappable
-keyboard.
+A fast, professional sketching, painting and pixel-art desktop app. qsketch
+gives you a Photoshop/Aseprite-familiar workflow — layers and masks, blend
+modes, a non-destructive undo history, a document palette, dockable panels —
+built from scratch in Rust on top of `egui` and `wgpu` so strokes stay
+responsive even on large canvases, with full stylus pressure support (Windows
+Ink, WinTab, Wayland) and a fully remappable keyboard.
 
 ![qsketch](docs/screenshot-main.png)
 
@@ -19,9 +19,14 @@ keyboard.
   never exceed the opacity ceiling, pressure-to-size and pressure-to-opacity
   curves, and thirteen built-in presets (Hard Round, Soft Round, Pencil, Ink
   Pen, Airbrush, Marker, Pixel, Chalk, Charcoal, Spatter, Scatter Leaves,
-  Flat Marker, Dry Bristle). Import brush tips from PNGs or from GIMP
-  (`.gbr`, `.gih`) and Photoshop (`.abr`, sampled brushes) files, or drop
-  your own texture PNGs into the config folder's `textures/` directory.
+  Flat Marker, Dry Bristle) that switch from a quick list on the options
+  bar. Tip angle and roundness are set on a dial with grabbable handles;
+  import brush tips from PNGs or from GIMP (`.gbr`, `.gih`) and Photoshop
+  (`.abr`, sampled brushes) files, or drop your own texture PNGs into the
+  config folder's `textures/` directory. Shift+click draws a straight line
+  from the last stroke at any angle; Shift+Ctrl snaps it to a step you
+  choose (15° by default), and the Line and shape tools preview the exact
+  stroke they will lay down.
 - **Palettes and indexed color.** A per-document palette panel with ramps,
   sorting, presets (PICO-8, DawnBringer, Endesga…), median-cut generation
   from the image and `.gpl`/`.hex`/`.pal`/`.act`/`.aco`/Aseprite files.
@@ -33,6 +38,9 @@ keyboard.
   deduplicated tileset export (sheet + map) round out the pixel-art kit.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
+- **Free Transform.** Move, scale, rotate, deform (corner pull) and warp
+  (mesh) a floating selection or layer with on-canvas handles before it is
+  committed.
 - **Retouching brushes.** Smudge drags colors along under the stroke; the
   Clone Stamp copies from an Alt+clicked source point (aligned or not, from
   one layer or all), both through the full brush engine.
@@ -76,18 +84,30 @@ keyboard.
   vertically or radially (up to 64 copies) around a movable center with
   on-canvas guides, and steady shaky lines with a rope ("lazy brush") or
   moving-average stabilizer per brush.
-- **Crash recovery.** Unsaved documents are autosaved to the settings folder
-  on a timer and offered for recovery on the next launch if qsketch didn't
-  exit cleanly.
+- **Crash recovery and backups.** Unsaved documents are autosaved to the
+  settings folder on a timer and offered for recovery on the next launch if
+  qsketch didn't exit cleanly; saving keeps a few previous versions of the
+  file that File ▸ Restore Previous Version can bring back.
 - **GPU-accelerated canvas.** A `wgpu` compositor re-uploads only the dirty
   64x64 tiles of the premultiplied composite each frame, drawn over a
   checkerboard with an optional pixel grid at high zoom.
-- **Stylus pressure out of the box**, via native pen/touch events or the
-  optional `octotablet` backend (Windows Ink RealTimeStylus / Wayland
-  tablet-v2) for tilt and eraser-tip detection.
+- **Stylus pressure out of the box**, via native pen/touch events, the
+  WinTab driver API on Windows (works with "Use Windows Ink" off; barrel
+  buttons and the eraser tip are honored), or the optional `octotablet`
+  backend (Windows Ink RealTimeStylus / Wayland tablet-v2) for tilt and
+  eraser-tip detection.
 - **A dockable, modern UI** (`egui_dock`): drag, split, float and re-arrange
-  the Tools, Layers, History, Color, Swatches, Navigator, Brushes and Info
-  panels however you like; the layout is remembered between sessions.
+  the Tools, Layers, History, Color, Swatches, Palette, Navigator, Brushes,
+  Brush Settings and Info panels however you like; the layout is remembered
+  between sessions. Two open documents can sit side by side, and the
+  panels always follow the one you are drawing on. Four monochrome themes
+  (Ink, Graphite, Light, Sepia) plus a custom palette, a rounded or angular
+  shape language, an optional chrome texture, and a short startup
+  animation you can switch off.
+- **Document statistics.** Every `.qsk` remembers when it was started, how
+  long you have worked on it (the clock pauses when you do), how many edits
+  and saves it has seen; the Info panel shows them and the status bar shows
+  the file's size on disk.
 - **Every command is remappable.** All menu commands and tool shortcuts live
   in one keymap you can rebind from Edit ▸ Preferences ▸ Keyboard Shortcuts;
   see [`docs/SHORTCUTS.md`](docs/SHORTCUTS.md) for the defaults.
@@ -101,9 +121,13 @@ keyboard.
 Download the latest installer (`qsketch-<version>-setup.exe`) or portable ZIP
 (`qsketch-<version>-windows-portable.zip`) from the
 [Releases](https://github.com/Cabbit-Labs/qsketch/releases) page. The
-installer adds a Start Menu entry, an optional desktop shortcut, and a `.qsk`
-file association; the portable ZIP just needs unzipping and can be run from
-anywhere (settings still go to the per-user config directory below).
+installer adds a Start Menu entry, an optional desktop shortcut, a `.qsk`
+file association and Explorer thumbnails for `.qsk` files (a small shell
+extension, `qsketch_thumb.dll`, draws the preview stored in each file); the
+portable ZIP just needs unzipping and can be run from anywhere (settings
+still go to the per-user config directory below). Portable users get the
+thumbnails with the Register button under Preferences ▸ General ▸ Explorer,
+or `regsvr32 qsketch_thumb.dll`; neither needs administrator rights.
 
 ### Linux
 
@@ -117,6 +141,11 @@ tar xzf qsketch-*-linux-x86_64.tar.gz
 cd qsketch-*-linux-x86_64
 ./install.sh          # installs into ~/.local by default
 ```
+
+The install also registers the `application/x-qsketch` MIME type and a
+thumbnailer, so GNOME Files, Thunar, Nemo and friends show each `.qsk`'s
+picture as its icon (`qsketch --thumbnail in.qsk out.png 256` is what they
+run; it needs `qsketch` on your `PATH`).
 
 ### Updates
 
@@ -175,13 +204,12 @@ panel's edge to split, or use the Window menu to reopen a closed one. Your
 layout, brush presets, swatches and keyboard shortcuts are all remembered
 between sessions.
 
-**Tablet setup:** if pressure isn't registering on Windows, open your Wacom
-(or other tablet) driver settings and make sure **"Use Windows Ink"** is
-enabled — qsketch reads pressure through the standard pointer/touch input
-path by default. For finer-grained pressure, tilt and eraser-tip detection,
-enable the dedicated tablet backend in **Edit ▸ Preferences ▸ Tablet ▸ Use
-octotablet backend** (off by default; falls back automatically if the
-platform doesn't support it).
+**Tablet setup:** on Windows qsketch reads the pen through the WinTab driver
+API when the driver provides it (so "Use Windows Ink" can stay off) and
+falls back to the standard pointer/touch input path otherwise; if pressure
+isn't registering, check **Edit ▸ Preferences ▸ Tablet & Pen**, where you
+can also turn on the `octotablet` backend for tilt and eraser-tip detection
+on Windows Ink and Wayland.
 
 ## Where settings live
 

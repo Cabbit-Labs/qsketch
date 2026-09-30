@@ -20,20 +20,39 @@ pub const DOCUMENT_EXTENSIONS: &[&str] = &[NATIVE_EXTENSION, "ase", "aseprite", 
 
 /// Save a layered document in the format implied by the extension.
 pub fn save_document(path: &Path, doc: &crate::document::DocState) -> anyhow::Result<()> {
+    save_document_with_stats(path, doc, None)
+}
+
+/// [`save_document`], writing the lifetime statistics too where the format
+/// has room for them (only `.qsk` does).
+pub fn save_document_with_stats(
+    path: &Path,
+    doc: &crate::document::DocState,
+    stats: Option<&crate::document::DocStats>,
+) -> anyhow::Result<()> {
     if psd::is_psd(path) {
         psd::save(path, doc)
     } else if ase::is_ase(path) {
         ase::save(path, doc)
     } else {
-        qsk::save(path, doc)
+        qsk::save_with_stats(path, doc, stats)
     }
 }
 
 /// Save in whatever format the extension names: a layered document format,
 /// or a flat image (the document is flattened into the file).
 pub fn save_any(path: &Path, doc: &crate::document::DocState) -> anyhow::Result<()> {
+    save_any_with_stats(path, doc, None)
+}
+
+/// [`save_any`] with the document's statistics (kept only by `.qsk`).
+pub fn save_any_with_stats(
+    path: &Path,
+    doc: &crate::document::DocState,
+    stats: Option<&crate::document::DocStats>,
+) -> anyhow::Result<()> {
     if is_document(path) {
-        save_document(path, doc)
+        save_document_with_stats(path, doc, stats)
     } else if is_export_image(path) {
         image_io::export(path, doc)
     } else {
@@ -137,15 +156,26 @@ pub fn open(path: &Path) -> anyhow::Result<crate::document::DocState> {
 /// Open any supported file, with notes about what the import could not
 /// carry over (dropped animation frames, unsupported layer kinds).
 pub fn open_with_warnings(path: &Path) -> anyhow::Result<(crate::document::DocState, Vec<String>)> {
+    let (doc, _, warnings) = open_full(path)?;
+    Ok((doc, warnings))
+}
+
+/// [`open_with_warnings`] plus the statistics stored in the file: the ones
+/// a `.qsk` carries, or fresh ones (started now) for any other format.
+pub fn open_full(path: &Path) -> anyhow::Result<(crate::document::DocState, crate::document::DocStats, Vec<String>)> {
+    let fresh = crate::document::DocStats::started_now;
     if is_native(path) {
-        Ok((qsk::load(path)?, Vec::new()))
+        let (doc, stats) = qsk::load_with_stats(path)?;
+        let stats = if stats.created.is_none() { fresh() } else { stats };
+        Ok((doc, stats, Vec::new()))
     } else if psd::is_psd(path) {
-        Ok((psd::load(path)?, Vec::new()))
+        Ok((psd::load(path)?, fresh(), Vec::new()))
     } else if ase::is_ase(path) {
-        ase::load_with_warnings(path)
+        let (doc, warnings) = ase::load_with_warnings(path)?;
+        Ok((doc, fresh(), warnings))
     } else {
         let raster = image_io::import(path)?;
         let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Background").to_string();
-        Ok((crate::document::DocState::from_raster(name, raster), Vec::new()))
+        Ok((crate::document::DocState::from_raster(name, raster), fresh(), Vec::new()))
     }
 }

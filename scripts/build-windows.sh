@@ -35,6 +35,8 @@ done
 
 # --- Build ----------------------------------------------------------------
 cargo build --release --target "$TARGET" -p qsketch
+# Explorer thumbnail provider (its own profile: panic=abort, see Cargo.toml).
+cargo build --profile thumb --target "$TARGET" -p qsketch-thumb
 
 BUILT_EXE="target/${TARGET}/release/${EXE_NAME}"
 if [ ! -f "$BUILT_EXE" ]; then
@@ -47,6 +49,18 @@ DIST_DIR="dist/windows"
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 cp "$BUILT_EXE" "$DIST_DIR/$EXE_NAME"
+THUMB_DLL="target/${TARGET}/thumb/qsketch_thumb.dll"
+if [ -f "$THUMB_DLL" ]; then
+  cp "$THUMB_DLL" "$DIST_DIR/qsketch_thumb.dll"
+  # It is loaded by Explorer's surrogate process, which cannot find runtime
+  # DLLs next to it: it must import system DLLs only.
+  if x86_64-w64-mingw32-objdump -p "$THUMB_DLL" | grep -qi "DLL Name: lib"; then
+    echo "error: qsketch_thumb.dll imports a MinGW runtime DLL; it must be self-contained" >&2
+    exit 1
+  fi
+else
+  echo "warning: $THUMB_DLL not built; the installer will skip Explorer thumbnails" >&2
+fi
 cp LICENSE-MIT LICENSE-APACHE "$DIST_DIR/"
 if [ -f README.md ]; then
   cp README.md "$DIST_DIR/"

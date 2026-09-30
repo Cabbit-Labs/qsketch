@@ -13,6 +13,21 @@ pub fn color32_to_rgba(c: Color32) -> Rgba8 {
     Rgba8::new(r, g, b, a)
 }
 
+/// A byte count as `12 KB` / `1.4 MB` (binary units, short).
+pub fn fmt_bytes(bytes: u64) -> String {
+    const K: f64 = 1024.0;
+    let b = bytes as f64;
+    if b < K {
+        format!("{bytes} B")
+    } else if b < K * K {
+        format!("{:.0} KB", b / K)
+    } else if b < K * K * K {
+        format!("{:.1} MB", b / K / K)
+    } else {
+        format!("{:.2} GB", b / K / K / K)
+    }
+}
+
 /// An icon glyph as rich text in the icon font.
 pub fn icon(glyph: &str, size: f32) -> RichText {
     RichText::new(glyph).family(super::iconset::family()).size(size)
@@ -28,15 +43,12 @@ pub fn small_button(ui: &mut Ui, text: impl Into<String>) -> Response {
 }
 
 /// Square icon button with tooltip; `selected` renders it in the accent state.
+///
+/// Drawn by hand at exactly `size` × `size`: flat at rest, a filled and
+/// outlined box under the pointer, the accent frame when selected. The box
+/// never changes size between states, so a row of these holds still.
 pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected: bool) -> Response {
-    let btn = egui::Button::new(icon(glyph, size * 0.62))
-        .min_size(Vec2::splat(size))
-        .corner_radius(crate::ui::theme::radius(4))
-        .selected(selected)
-        // Flat at rest, but light up on hover so it reads as clickable.
-        .frame(true)
-        .frame_when_inactive(selected);
-    let r = ui.add(btn);
+    let r = icon_box(ui, glyph, size, size * 0.62, selected, None);
     if tooltip.is_empty() {
         r
     } else {
@@ -44,7 +56,50 @@ pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected:
     }
 }
 
-/// Small icon toggle (e.g. eye / lock) drawn without a frame.
+/// The shared painter behind [`icon_button`] and [`icon_toggle`]: a fixed
+/// square that senses clicks, with a state-dependent fill / outline and a
+/// centred glyph (`glyph_color` overrides the state's text color).
+fn icon_box(
+    ui: &mut Ui,
+    glyph: &str,
+    size: f32,
+    glyph_size: f32,
+    selected: bool,
+    glyph_color: Option<Color32>,
+) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), selected, glyph));
+    if ui.is_rect_visible(rect) {
+        let v = ui.visuals();
+        let live = ui.is_enabled();
+        let down = live && resp.is_pointer_button_down_on();
+        let hovered = live && resp.hovered();
+        let (fill, stroke, text) = if selected {
+            let fill = if hovered { v.widgets.hovered.bg_fill } else { v.selection.bg_fill };
+            (fill, egui::Stroke::new(1.0, v.selection.stroke.color), v.selection.stroke.color)
+        } else if down {
+            (v.widgets.active.bg_fill, v.widgets.active.bg_stroke, v.widgets.active.fg_stroke.color)
+        } else if hovered {
+            (v.widgets.hovered.bg_fill, v.widgets.hovered.bg_stroke, v.widgets.hovered.fg_stroke.color)
+        } else {
+            (Color32::TRANSPARENT, egui::Stroke::NONE, v.widgets.inactive.fg_stroke.color)
+        };
+        let p = ui.painter();
+        crate::ui::chrome::fill_box(p, rect, 4.0, fill);
+        crate::ui::chrome::stroke_box(p, rect, 4.0, stroke, egui::StrokeKind::Inside);
+        p.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            glyph,
+            egui::FontId::new(glyph_size, super::iconset::family()),
+            glyph_color.unwrap_or(text),
+        );
+    }
+    resp
+}
+
+/// Small icon toggle (e.g. eye / lock): the accent frame when on, a dim
+/// glyph when off. Reports `changed()` when clicked.
 pub fn icon_toggle(
     ui: &mut Ui,
     glyph_on: &str,
@@ -57,22 +112,11 @@ pub fn icon_toggle(
     // On = the accent (selected) frame, not just a brighter glyph: on tinted
     // themes dim and normal text can be nearly the same color, and several
     // toggles use one glyph for both states.
-    let text = icon(glyph, size * 0.7).color(if *value {
-        ui.visuals().selection.stroke.color
-    } else {
-        crate::ui::theme::dim_text(ui.visuals())
-    });
-    let mut r = ui.add(
-        egui::Button::new(text)
-            .selected(*value)
-            .corner_radius(crate::ui::theme::radius(4))
-            .frame(true)
-            .frame_when_inactive(*value)
-            .min_size(Vec2::splat(size)),
-    );
+    let off_color = crate::ui::theme::dim_text(ui.visuals());
+    let mut r = icon_box(ui, glyph, size, size * 0.7, *value, (!*value).then_some(off_color));
     if r.clicked() {
         *value = !*value;
-        // A Button never reports `changed()` on its own; callers rely on it.
+        // Callers rely on `changed()`, which a plain click does not set.
         r.mark_changed();
     }
     if tooltip.is_empty() {

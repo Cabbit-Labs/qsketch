@@ -329,11 +329,74 @@ pub fn dirty_between(a: &DocState, b: &DocState) -> TileSet {
 
 /// A live document: the editable working state, its history, composite cache
 /// and on-disk identity.
+/// Lightweight lifetime statistics carried inside a `.qsk` (not undoable,
+/// not part of `DocState`): when the document was started, how long it has
+/// been worked on, how many edits were committed and how many times it was
+/// saved. The app advances `work_secs` while the document is active and the
+/// user is interacting; idle time does not count.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct DocStats {
+    /// Unix seconds (UTC) when the document was created or first imported.
+    pub created: Option<u64>,
+    /// Active editing time, in seconds.
+    pub work_secs: f64,
+    /// Number of committed edits (history steps) over the document's life.
+    pub edits: u64,
+    /// Number of times the document was saved.
+    pub saves: u32,
+}
+
+impl DocStats {
+    /// Stats for a document that starts now.
+    pub fn started_now() -> Self {
+        Self { created: Some(unix_now()), ..Default::default() }
+    }
+
+    /// `work_secs` as `h:mm:ss`.
+    pub fn work_time_text(&self) -> String {
+        let t = self.work_secs.max(0.0).round() as u64;
+        format!("{}:{:02}:{:02}", t / 3600, (t / 60) % 60, t % 60)
+    }
+
+    /// `created` as a `YYYY-MM-DD HH:MM` UTC string.
+    pub fn created_text(&self) -> Option<String> {
+        self.created.map(|t| {
+            let (y, m, d, hh, mm) = civil_from_unix(t);
+            format!("{y:04}-{m:02}-{d:02} {hh:02}:{mm:02} UTC")
+        })
+    }
+}
+
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Unix seconds → (year, month, day, hour, minute) in UTC.
+pub fn civil_from_unix(secs: u64) -> (i64, u32, u32, u32, u32) {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // Howard Hinnant's days → civil algorithm.
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d, (rem / 3600) as u32, ((rem / 60) % 60) as u32)
+}
+
 pub struct Document {
     pub history: History,
     working: DocState,
     pub path: Option<PathBuf>,
     pub title: String,
+    /// Lifetime statistics (see [`DocStats`]); saved in `.qsk`.
+    pub stats: DocStats,
     /// `History` id of the state on disk; `None` when never saved.
     saved_at: Option<u64>,
     /// Photoshop's snapshot row: the document as it was opened (or last
@@ -362,6 +425,7 @@ impl Document {
             working: state,
             path,
             title: title.into(),
+            stats: DocStats::started_now(),
             saved_at: Some(0),
             composite: Composite::new(w, h),
             dirty,
@@ -434,6 +498,7 @@ impl Document {
     pub fn commit(&mut self, label: impl Into<String>) {
         self.enforce_palette();
         self.history.push(label, self.working.clone());
+        self.stats.edits += 1;
     }
 
     /// Snap the tiles that differ from the current history state to the

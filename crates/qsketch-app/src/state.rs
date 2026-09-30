@@ -51,6 +51,9 @@ pub struct DocEntry {
     /// Selected run of palette slots in the Palette panel (anchor, end),
     /// which the shading ink uses as its ramp.
     pub palette_sel: Option<(usize, usize)>,
+    /// Size of the file on disk as of the last open / save, for the status
+    /// bar. `None` for a document that was never saved.
+    pub file_size: Option<u64>,
 }
 
 impl DocEntry {
@@ -71,7 +74,13 @@ impl DocEntry {
             palette_sel: None,
             flash_seen_active: None,
             layer_flash: None,
+            file_size: None,
         }
+    }
+
+    /// Re-read the on-disk size of the document's file (after open / save).
+    pub fn refresh_file_size(&mut self) {
+        self.file_size = self.doc.path.as_deref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len());
     }
 
     /// Ids of the selected layers (always including the active one).
@@ -179,6 +188,12 @@ pub struct PickPreview {
 pub struct AppState {
     pub docs: Vec<DocEntry>,
     pub active_doc: Option<DocId>,
+    /// A canvas that was pressed or is being drawn on asks the workspace to
+    /// focus its tab, so Layers / History follow the document being edited
+    /// even when the press happened in a different dock leaf (a drag never
+    /// counts as a click for egui_dock, which would otherwise leave the
+    /// focus, and with it every panel, on the previous document).
+    pub focus_doc_request: Option<DocId>,
     pub next_doc_id: DocId,
 
     pub tool: ToolKind,
@@ -245,6 +260,11 @@ pub struct AppState {
     pub status_msg: Option<(String, std::time::Instant)>,
     pub hover_screen_pos: Option<Pos2>,
     pub hover_color: Option<Rgba8>,
+    /// Work-time clock: the previous tick, and the last moment the user was
+    /// interacting. The active document's `stats.work_secs` advances while
+    /// the two are close (see `QSketchApp::tick_work_time`).
+    pub work_clock: Option<std::time::Instant>,
+    pub last_activity: Option<std::time::Instant>,
     /// A color pick in progress: drives the zoomed loupe over the canvas.
     pub pick_preview: Option<PickPreview>,
     /// Seconds the pointer has been held in the auto-scroll band (velocity build-up).
@@ -281,6 +301,7 @@ impl AppState {
         Self {
             docs: Vec::new(),
             active_doc: None,
+            focus_doc_request: None,
             next_doc_id: 1,
             tool: ToolKind::Brush,
             temp_tool: None,
@@ -326,6 +347,8 @@ impl AppState {
             hover_doc_pos: None,
             hover_screen_pos: None,
             hover_color: None,
+            work_clock: None,
+            last_activity: None,
             pick_preview: None,
             edge_scroll_hold: 0.0,
             eye_drag: None,
@@ -422,7 +445,9 @@ impl AppState {
         let id = self.next_doc_id;
         self.next_doc_id += 1;
         doc.history.set_limit(self.settings.general.undo_limit);
-        self.docs.push(DocEntry::new(id, doc));
+        let mut entry = DocEntry::new(id, doc);
+        entry.refresh_file_size();
+        self.docs.push(entry);
         self.active_doc = Some(id);
         id
     }

@@ -51,6 +51,37 @@ fn speckle(n: f32, fill: Color32) -> Color32 {
     Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a)
 }
 
+/// Title row for a dialog window shown without egui's own title bar: the
+/// title at the left and a close button at the right that fills red under
+/// the pointer, like the main window's, instead of egui's hairline X that
+/// gives no hover feedback. Returns true when the close button is clicked.
+/// The window stays draggable by this row (it holds no other widget).
+pub fn window_header(ui: &mut Ui, p: &Palette, title: &str) -> bool {
+    let h = 22.0;
+    let mut close = false;
+    ui.horizontal(|ui| {
+        ui.set_min_height(h);
+        ui.label(egui::RichText::new(title).strong().size(14.0));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let (rect, r) = ui.allocate_exact_size(egui::vec2(30.0, h), egui::Sense::click());
+            let hot = r.hovered() || r.is_pointer_button_down_on();
+            if hot {
+                fill_box(ui.painter(), rect, 3.0, p.danger);
+            }
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                super::icons::X,
+                egui::FontId::new(13.0, super::iconset::family()),
+                if hot { Color32::WHITE } else { p.text_dim },
+            );
+            close = r.on_hover_text("Close").clicked();
+        });
+    });
+    ui.add_space(4.0);
+    close
+}
+
 /// Zebra-stripe fill for list rows: a translucent tint rather than an opaque
 /// color, so the chrome texture underneath stays visible.
 pub fn zebra(ui: &Ui) -> Color32 {

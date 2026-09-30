@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/qsketch-core", "crates/qsketch-app"]
+members = ["crates/qsketch-core", "crates/qsketch-app", "crates/qsketch-thumb"]
 
 [workspace.package]
 version = "0.46.0"
@@ -54,6 +54,14 @@ codegen-units = 4
 debug = 0
 strip = "symbols"
 panic = "unwind"
+
+# The Explorer thumbnail DLL (crates/qsketch-thumb): built by
+# scripts/build-windows.sh with `--profile thumb`. It is loaded into the
+# shell's surrogate process, where a panic must never unwind through COM
+# frames, so it aborts instead.
+[profile.thumb]
+inherits = "release"
+panic = "abort"
 
 [profile.dev]
 opt-level = 1

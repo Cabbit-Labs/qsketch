@@ -2,6 +2,48 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.47.0 — 2026-09-29
+
+- Drawing on a document in another dock leaf (two images side by side) now
+  makes it the active document: Layers, History and the menus follow the
+  image being edited, so a rectangle drawn on the other image can be undone
+  right away. egui_dock only moved its focus on a click, never on a drag,
+  and the workspace re-applied that stale focus every frame.
+- Status bar shows the file's size on disk after the dimensions ("~" once
+  the document has unsaved changes); the Info panel has a Size row too.
+- `.qsk` files carry lightweight statistics: when the document was started,
+  total work time (the clock pauses after 30 s without input), edits and
+  saves. Shown in the Info panel; autosaves and backups keep them.
+- Dialog windows (Preferences, filters, Liquify) draw their own title row:
+  the close button fills red under the pointer, like the main window's,
+  instead of egui's hairline X that gave no hover feedback.
+- Menu titles butt against each other, so there is no dead gap between
+  File, Edit, View… that highlights nothing and swallows a click.
+- UI polish pass: controls keep a hairline outline in every state and no
+  longer swell a pixel on hover (egui's default hover expansion is off, and
+  the outline width is the same at rest, hovered and pressed, so nothing
+  shifts under the pointer); icon buttons and toggles are drawn at a fixed
+  size with a proper hover box and accent frame when on; the hover outline
+  lightens so it reads as a state change rather than a blur.
+- Brush Settings tip dial: the arrow sets the angle, the two dots on the
+  short axis set the roundness, and each handle can be grabbed precisely
+  (it lights up under the pointer and stays grabbed for the whole drag);
+  Shift snaps to 15° / 5 %.
+- File managers show a `.qsk`'s picture as its icon. Windows: a thumbnail
+  provider shell extension (`qsketch_thumb.dll`, new `qsketch-thumb` crate)
+  reads the preview stored in the file; the installer registers it, and
+  Preferences ▸ General ▸ Explorer (or `regsvr32`) registers it for portable
+  copies without administrator rights. Linux: the tarball installs a MIME
+  type and a freedesktop thumbnailer that runs `qsketch --thumbnail`.
+- Fixed a crash at launch after a document tab had been floated into its
+  own window: the empty window survived in the saved layout (documents never
+  do) and egui_dock panicked drawing it. Such windows are now dropped when
+  the layout is saved, loaded, or the last document in one is closed.
+- Clicking a document tab that is already the active tab of an unfocused
+  leaf now focuses that leaf too, so the panels switch to it.
+- Info panel scrolls when its rows outgrow the panel.
+- README: new preview image and an updated feature tour.
+
 ## 0.46.0 — 2026-09-29
 
 - Options bar: clicking the brush preset's name opens a quick list of

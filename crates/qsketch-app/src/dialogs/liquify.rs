@@ -228,14 +228,19 @@ pub fn show(ctx: &Context, state: &mut AppState) {
     let p = state.settings.ui.palette();
     let (mut ok, mut cancel, mut reset, mut open) = (false, false, false, true);
     let screen = ctx.content_rect();
+    let palette = state.settings.ui.palette();
     egui::Window::new("Liquify")
         .id(egui::Id::new("liquify_dialog"))
         .open(&mut open)
+        .title_bar(false)
         .collapsible(false)
         .auto_sized()
         .default_pos(egui::pos2(screen.right() - 372.0, screen.top() + 80.0))
         .show(ctx, |ui| {
             ui.set_width(320.0);
+            if crate::ui::chrome::window_header(ui, &palette, "Liquify") {
+                cancel = true;
+            }
             ui.label(
                 RichText::new("Drag on the canvas to warp the picture. Nothing is written until OK.").weak().small(),
             );
