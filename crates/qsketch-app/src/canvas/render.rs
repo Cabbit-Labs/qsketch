@@ -29,7 +29,9 @@ pub struct Uniforms {
     pub outside: [f32; 4],
     /// Tiled preview: 0 off, 1 wrap x, 2 wrap y, 3 both.
     pub tiled: f32,
-    pub _pad: [f32; 3],
+    /// Pixel aspect ratio (width / height).
+    pub aspect: f32,
+    pub _pad: [f32; 2],
 }
 
 /// A 64×64 premultiplied RGBA8 tile to upload.

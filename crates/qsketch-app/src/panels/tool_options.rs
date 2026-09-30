@@ -451,6 +451,9 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                     }
                 }
             }
+            if matches!(tool, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser) {
+                dither_combo(ui, b);
+            }
             if tool.is_paint() || tool.is_selection_brush() {
                 stabilizer_options(ui, b);
             }
@@ -705,4 +708,34 @@ fn selection_ops(ui: &mut Ui, state: &mut AppState) {
             state.tool_opts.selection_op = op;
         }
     }
+}
+
+/// Label for a dither pattern in the brush controls.
+pub fn dither_label(d: qsketch_core::filter::DitherPattern) -> &'static str {
+    use qsketch_core::filter::DitherPattern as D;
+    match d {
+        D::None => "Off",
+        D::Bayer2 => "2×2",
+        D::Bayer4 => "4×4",
+        D::Bayer8 => "8×8",
+        D::Noise => "Noise",
+    }
+}
+
+/// Dither ink: the brush lays whole pixels in an ordered pattern instead of
+/// blending, so softness and opacity turn into dither density.
+pub fn dither_combo(ui: &mut egui::Ui, b: &mut qsketch_core::BrushSettings) {
+    use qsketch_core::filter::DitherPattern as D;
+    egui::ComboBox::from_id_salt("dither_ink")
+        .selected_text(format!("Dither {}", dither_label(b.dither)))
+        .width(92.0)
+        .show_ui(ui, |ui| {
+            for d in [D::None, D::Bayer2, D::Bayer4, D::Bayer8, D::Noise] {
+                ui.selectable_value(&mut b.dither, d, dither_label(d));
+            }
+        })
+        .response
+        .on_hover_text(
+            "Dither ink: whole pixels in an ordered pattern instead of blending. A soft edge or a lower opacity paints a sparser pattern (50% = checkerboard).",
+        );
 }

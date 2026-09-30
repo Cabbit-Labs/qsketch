@@ -32,6 +32,21 @@ pub struct DocState {
     /// Indexed-color workflow: every edit is snapped to `palette` on commit
     /// and the color panel only hands out palette colors.
     pub palette_lock: bool,
+    /// Pixel aspect ratio, width : height (1:1 square, 2:1 wide, 1:2 tall).
+    /// Only changes how the canvas shows the pixels (and Export Scaled).
+    pub pixel_aspect: [u8; 2],
+}
+
+impl DocState {
+    /// Horizontal stretch of a pixel relative to its height.
+    pub fn aspect(&self) -> f32 {
+        let [w, h] = self.pixel_aspect;
+        if w == 0 || h == 0 {
+            1.0
+        } else {
+            w as f32 / h as f32
+        }
+    }
 }
 
 impl DocState {
@@ -59,6 +74,7 @@ impl DocState {
             next_layer_id: 2,
             palette: Palette::default(),
             palette_lock: false,
+            pixel_aspect: [1, 1],
         }
     }
 
@@ -73,6 +89,7 @@ impl DocState {
             next_layer_id: 2,
             palette: Palette::default(),
             palette_lock: false,
+            pixel_aspect: [1, 1],
         }
     }
 

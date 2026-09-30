@@ -383,8 +383,9 @@ pub enum OffsetEdge {
     Repeat,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DitherPattern {
+    #[default]
     None,
     Bayer2,
     Bayer4,

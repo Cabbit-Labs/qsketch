@@ -2,6 +2,19 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.54.0 — 2026-09-30
+
+- Pixel aspect ratio (Image ▸ Pixel Aspect Ratio): square, double-wide
+  (2:1) or double-tall (1:2) pixels, for art made for screens with
+  non-square pixels. The canvas, brush cursor, rulers and grids follow it;
+  Export Scaled writes the pixels at that shape; it is undoable, saved in
+  the `.qsk`, and read from and written to Aseprite files.
+- Dither ink (options bar for the Brush, Pencil and Eraser, and Brush
+  Settings ▸ Transfer): 2×2, 4×4 or 8×8 ordered dither, or noise. Every
+  pixel is painted fully or not at all, with a canvas-aligned pattern
+  deciding which, so a soft edge becomes a dither gradient and 50% opacity
+  a clean checkerboard.
+
 ## 0.53.0 — 2026-09-30
 
 - Adjustment layers (Layer ▸ New Adjustment Layer): Brightness/Contrast,

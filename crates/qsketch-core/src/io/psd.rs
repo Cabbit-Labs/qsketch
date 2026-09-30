@@ -226,6 +226,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         next_layer_id: next_id,
         palette: Default::default(),
         palette_lock: false,
+        pixel_aspect: [1, 1],
     })
 }
 

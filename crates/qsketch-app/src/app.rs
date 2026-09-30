@@ -964,6 +964,22 @@ impl QSketchApp {
                 self.menu_item(ui, Action::ImageSize, has_doc);
                 self.menu_item(ui, Action::CanvasSize, has_doc);
                 self.menu_item(ui, Action::CropToSelection, has_sel);
+                let aspect = self.state.active().map(|d| d.doc.state().pixel_aspect).unwrap_or([1, 1]);
+                ui.menu_button("Pixel Aspect Ratio", |ui| {
+                    ui.label(egui::RichText::new("How wide each pixel shows (for pixel art made for old screens)").weak().small());
+                    for (a, v, label) in [
+                        (Action::PixelAspectSquare, [1u8, 1u8], "Square (1:1)"),
+                        (Action::PixelAspectWide, [2, 1], "Double-wide (2:1)"),
+                        (Action::PixelAspectTall, [1, 2], "Double-tall (1:2)"),
+                    ] {
+                        let btn = egui::Button::new(format!("{} {label}", if aspect == v { icons::CHECK } else { " " }))
+                            .shortcut_text(self.state.keymap.primary_text(a));
+                        if ui.add_enabled(has_doc, btn).clicked() {
+                            self.state.pending.push(a);
+                            ui.close();
+                        }
+                    }
+                });
                 ui.separator();
                 ui.menu_button("Rotate / Flip", |ui| {
                     self.menu_item(ui, Action::Rotate90CW, has_doc);
@@ -1756,6 +1772,23 @@ impl QSketchApp {
             Action::ReplaceColor => dialogs::filter::open_replace_color(&mut self.state),
             Action::SnapToPalette => dialogs::filter::open_snap_to_palette(&mut self.state, false),
             Action::IndexColors => dialogs::filter::open_snap_to_palette(&mut self.state, true),
+            Action::PixelAspectSquare | Action::PixelAspectWide | Action::PixelAspectTall => {
+                let v = match action {
+                    Action::PixelAspectWide => [2u8, 1u8],
+                    Action::PixelAspectTall => [1, 2],
+                    _ => [1, 1],
+                };
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    if d.doc.state().pixel_aspect != v {
+                        d.doc.state_mut().pixel_aspect = v;
+                        d.doc.commit("Pixel Aspect Ratio");
+                        let (w, h) = (d.doc.width(), d.doc.height());
+                        d.view.aspect = d.doc.state().aspect();
+                        d.view.fit(w, h);
+                    }
+                }
+            }
             Action::TogglePaletteLock => {
                 if let Some(e) = self.state.active_mut() {
                     let on = !e.doc.state().palette_lock;

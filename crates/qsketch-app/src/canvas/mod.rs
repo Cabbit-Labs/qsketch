@@ -30,6 +30,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     {
         let Some(entry) = state.doc_mut(doc_id) else { return };
         entry.view.viewport = rect;
+        entry.view.aspect = entry.doc.state().aspect();
         if !entry.view.initialized {
             let (w, h) = (entry.doc.width(), entry.doc.height());
             entry.view.fit(w, h);
@@ -483,7 +484,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         checker_b: c(checker_b),
         outside: c(outside),
         tiled,
-        _pad: [0.0; 3],
+        aspect: view.aspect,
+        _pad: [0.0; 2],
     };
     let callback =
         CanvasCallback { doc_id, width: dw, height: dh, tiles, uniforms, linear: view.zoom < 1.0 && smooth_out, full };
@@ -901,6 +903,25 @@ fn draw_brush_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, h
                 }
             }
         }
+    }
+    if outline && r >= 3.0 && (entry.view.aspect - 1.0).abs() > 1e-3 {
+        // Non-square pixels: trace the tip in document space and map it
+        // through the view, which stretches it like the canvas.
+        let at = entry.view.screen_to_doc(pos);
+        let rd = brush.size / 2.0;
+        let ang = -brush.angle.to_radians();
+        let (s, c) = ang.sin_cos();
+        let n = 48;
+        let pts: Vec<Pos2> = (0..=n)
+            .map(|i| {
+                let t = i as f32 / n as f32 * std::f32::consts::TAU;
+                let (x, y) = (rd * t.cos(), rd * brush.roundness * t.sin());
+                entry.view.doc_to_screen(qsketch_core::Pt::new(at.x + x * c - y * s, at.y + x * s + y * c))
+            })
+            .collect();
+        painter.add(egui::Shape::line(pts.clone(), Stroke::new(2.0, Color32::from_black_alpha(140))));
+        painter.add(egui::Shape::line(pts, Stroke::new(1.0, Color32::from_white_alpha(220))));
+        outline = false;
     }
     if outline && r >= 3.0 {
         let elliptical = brush.roundness < 0.999;

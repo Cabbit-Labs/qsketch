@@ -834,6 +834,9 @@ fn transfer_page(ui: &mut Ui, b: &mut BrushSettings) {
     ui.label(
         egui::RichText::new("Flow is paint per dab; opacity caps how dark one stroke can build up.").weak().small(),
     );
+    ui.add_space(6.0);
+    heading(ui, "Dither Ink");
+    crate::panels::tool_options::dither_combo(ui, b);
 }
 
 fn color_dynamics_page(ui: &mut Ui, b: &mut BrushSettings) {

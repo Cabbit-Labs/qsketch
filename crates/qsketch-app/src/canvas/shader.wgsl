@@ -18,9 +18,9 @@ struct Uniforms {
     checker_b: vec4<f32>,
     outside: vec4<f32>,
     tiled: f32,
-    // Three scalars, not a vec3: a vec3 would be aligned to 16 and grow the
-    // struct past the 128-byte buffer.
-    _pad0: f32,
+    // Pixel aspect ratio (width / height) of the document's pixels.
+    aspect: f32,
+    // Two scalars, not a vec2 after a vec: keep the struct at 128 bytes.
     _pad1: f32,
     _pad2: f32,
 };
@@ -58,7 +58,7 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     if (u.flip > 0.5) {
         d.x = -d.x;
     }
-    let raw = u.center + d / u.zoom;
+    let raw = u.center + vec2<f32>(d.x / (u.zoom * u.aspect), d.y / u.zoom);
     // Tiled preview wraps the document around itself (the copies are drawn
     // a little darker so the real one stays obvious).
     var doc = raw;
@@ -96,8 +96,8 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
 
     if (u.grid > 0.5) {
         let f = fract(doc);
-        let px = 1.0 / u.zoom;
-        if (f.x < px || f.y < px) {
+        let px = vec2<f32>(1.0 / (u.zoom * u.aspect), 1.0 / u.zoom);
+        if (f.x < px.x || f.y < px.y) {
             rgb = mix(rgb, vec3<f32>(0.5, 0.5, 0.5), 0.55);
         }
     }

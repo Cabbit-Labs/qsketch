@@ -20,6 +20,9 @@ pub struct CanvasView {
     /// Radians, clockwise on screen.
     pub rotation: f32,
     pub flip_h: bool,
+    /// Pixel aspect ratio (width / height): document x is stretched by this
+    /// on screen. Follows the document's setting (see `canvas::show`).
+    pub aspect: f32,
     /// Screen rect of the canvas widget (points).
     pub viewport: Rect,
     pub initialized: bool,
@@ -35,6 +38,7 @@ impl Default for CanvasView {
             center: Pt::new(0.0, 0.0),
             rotation: 0.0,
             flip_h: false,
+            aspect: 1.0,
             viewport: Rect::ZERO,
             initialized: false,
             pan_velocity: Vec2::ZERO,
@@ -44,7 +48,7 @@ impl Default for CanvasView {
 
 impl CanvasView {
     pub fn doc_to_screen(&self, p: Pt) -> Pos2 {
-        let mut d = Vec2::new((p.x - self.center.x) * self.zoom, (p.y - self.center.y) * self.zoom);
+        let mut d = Vec2::new((p.x - self.center.x) * self.zoom * self.aspect, (p.y - self.center.y) * self.zoom);
         if self.flip_h {
             d.x = -d.x;
         }
@@ -60,7 +64,7 @@ impl CanvasView {
         if self.flip_h {
             r.x = -r.x;
         }
-        Pt::new(self.center.x + r.x / self.zoom, self.center.y + r.y / self.zoom)
+        Pt::new(self.center.x + r.x / (self.zoom * self.aspect), self.center.y + r.y / self.zoom)
     }
 
     /// Convert a screen-space delta to a document-space delta.
@@ -70,7 +74,7 @@ impl CanvasView {
         if self.flip_h {
             r.x = -r.x;
         }
-        Pt::new(r.x / self.zoom, r.y / self.zoom)
+        Pt::new(r.x / (self.zoom * self.aspect), r.y / self.zoom)
     }
 
     /// Fit the whole document in the viewport with a small margin.
@@ -82,7 +86,7 @@ impl CanvasView {
         self.rotation = 0.0;
         self.flip_h = false;
         let margin = 24.0;
-        let zx = (vp.width() - margin * 2.0) / doc_w as f32;
+        let zx = (vp.width() - margin * 2.0) / (doc_w as f32 * self.aspect.max(0.01));
         let zy = (vp.height() - margin * 2.0) / doc_h as f32;
         self.zoom = zx.min(zy).clamp(MIN_ZOOM, MAX_ZOOM);
         self.center = Pt::new(doc_w as f32 / 2.0, doc_h as f32 / 2.0);

@@ -43,6 +43,9 @@ struct Manifest {
     /// Ruler guides (0.49+). Optional.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     guides: Vec<Guide>,
+    /// Pixel aspect ratio (0.54+), width : height; absent = square.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pixel_aspect: Option<[u8; 2]>,
     /// Timelapse (0.51+): frames live in `timelapse/NNNNNN.png`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     timelapse: Option<TimelapseInfo>,
@@ -136,6 +139,7 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
             selection,
             palette: (!doc.palette.is_empty()).then(|| doc.palette.clone()),
             palette_lock: doc.palette_lock,
+            pixel_aspect: (doc.pixel_aspect != [1, 1]).then_some(doc.pixel_aspect),
             stats: meta.stats.cloned(),
             guides: meta.guides.to_vec(),
             timelapse: meta.timelapse.filter(|t| t.recording || !t.frames.is_empty()).map(|t| TimelapseInfo {
@@ -209,6 +213,7 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
         next_layer_id,
         palette: manifest.palette.unwrap_or_default(),
         palette_lock: manifest.palette_lock,
+        pixel_aspect: manifest.pixel_aspect.unwrap_or([1, 1]),
     };
     doc.repair_groups();
     let mut timelapse = crate::timelapse::Timelapse::default();
@@ -240,6 +245,18 @@ pub fn read_preview(path: &Path) -> anyhow::Result<Raster> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pixel_aspect_round_trips() {
+        let mut doc = DocState::new(8, 8, None);
+        doc.pixel_aspect = [2, 1];
+        let dir = std::env::temp_dir().join(format!("qsk-aspect-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.qsk");
+        save(&path, &doc).unwrap();
+        assert_eq!(load(&path).unwrap().pixel_aspect, [2, 1]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn layer_mask_round_trips() {

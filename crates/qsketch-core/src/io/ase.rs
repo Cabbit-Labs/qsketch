@@ -60,6 +60,7 @@ pub struct AseSprite {
     pub layers: Vec<AseLayer>,
     pub frames: Vec<AseFrame>,
     pub tags: Vec<AseTag>,
+    pixel_aspect: [u8; 2],
 }
 
 #[derive(Clone, Debug)]
@@ -172,8 +173,8 @@ pub fn parse(bytes: &[u8]) -> anyhow::Result<AseSprite> {
     let transparent_index = c.u8()?;
     c.take(3)?;
     let _num_colors = c.u16()?;
-    c.u8()?; // pixel width
-    c.u8()?; // pixel height
+    let pixel_w = c.u8()?;
+    let pixel_h = c.u8()?;
     c.take(2 + 2 + 2 + 2)?; // grid x, y, w, h
     c.take(84)?;
     if !matches!(depth, 8 | 16 | 32) {
@@ -193,6 +194,8 @@ pub fn parse(bytes: &[u8]) -> anyhow::Result<AseSprite> {
         layers: Vec::new(),
         frames: Vec::with_capacity(frame_count),
         tags: Vec::new(),
+        // 0 in either byte means "square" (older files).
+        pixel_aspect: if pixel_w == 0 || pixel_h == 0 { [1, 1] } else { [pixel_w, pixel_h] },
     };
 
     for _ in 0..frame_count {
@@ -576,6 +579,7 @@ impl AseSprite {
                 Default::default()
             },
             palette_lock: self.depth == 8,
+            pixel_aspect: self.pixel_aspect,
         };
         doc.repair_groups();
         Ok((doc, warnings))
@@ -760,8 +764,9 @@ pub fn encode(doc: &DocState) -> anyhow::Result<Vec<u8>> {
     o.u8(0); // transparent index
     o.zeros(3);
     o.u16(palette.len() as u16);
-    o.u8(1); // pixel width
-    o.u8(1); // pixel height
+    let [pw, ph] = if doc.pixel_aspect.contains(&0) { [1, 1] } else { doc.pixel_aspect };
+    o.u8(pw); // pixel width
+    o.u8(ph); // pixel height
     o.i16(0); // grid x
     o.i16(0); // grid y
     o.u16(16); // grid w
@@ -883,6 +888,19 @@ pub fn encode(doc: &DocState) -> anyhow::Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pixel_aspect_round_trips() {
+        let mut doc = DocState::new(8, 8, None);
+        doc.pixel_aspect = [1, 2];
+        let dir = std::env::temp_dir().join(format!("ase-aspect-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.aseprite");
+        save(&path, &doc).unwrap();
+        let (back, _) = load_with_warnings(&path).unwrap();
+        assert_eq!(back.pixel_aspect, [1, 2]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn doc_with_layers() -> DocState {
         let mut doc = DocState::new(16, 12, None);

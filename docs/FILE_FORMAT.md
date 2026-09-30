@@ -73,7 +73,8 @@ mydrawing.qsk  (a ZIP file)
   "palette_lock": false, // indexed-color mode: edits snap to the palette
   "stats": { "created": 1759180800, "work_secs": 5423.5, "edits": 812, "saves": 9 }, // 0.47+, optional
   "guides": [{ "vertical": true, "pos": 512.0 }, { "vertical": false, "pos": 300.0 }], // 0.49+, omitted when empty
-  "timelapse": { "frames": 412, "recording": true, "every": 1 } // 0.51+, omitted when there is none
+  "timelapse": { "frames": 412, "recording": true, "every": 1 }, // 0.51+, omitted when there is none
+  "pixel_aspect": [2, 1] // 0.54+, pixel width : height; omitted when square
 }
 ```
 
@@ -116,6 +117,11 @@ Field notes:
   30 s without input), `edits` (committed history steps over the document's
   life) and `saves` (including the save that wrote the file). Shown in the
   Info panel. Optional; a file without them starts fresh when opened.
+- **`pixel_aspect`** (0.54+) is the pixel aspect ratio (width : height,
+  e.g. `[2, 1]` for double-wide pixels). It only changes how the canvas
+  shows the pixels and what Export Scaled writes; layer PNGs stay 1:1.
+  Aseprite files carry the same ratio in their header, and qsketch reads
+  and writes it there too.
 - **`timelapse`** (0.51+) describes the recorded timelapse: `frames` PNGs
   stored as `timelapse/000000.png`, `timelapse/000001.png`… (oldest first,
   each a downscaled snapshot of the composite taken after an edit),

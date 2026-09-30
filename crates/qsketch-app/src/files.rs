@@ -216,7 +216,9 @@ pub fn export_scaled(state: &mut AppState, doc_id: DocId, k: u32) -> bool {
     let Some(entry) = state.doc(doc_id) else { return false };
     let base = entry.doc.title.trim_end_matches('*').to_string();
     let stem = Path::new(&base).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or(base);
-    let (w, h) = (entry.doc.width(), entry.doc.height());
+    // Non-square pixels come out the way the canvas shows them.
+    let [ax, ay] = entry.doc.state().pixel_aspect.map(|v| v.max(1) as u32);
+    let (w, h) = (entry.doc.width() * ax, entry.doc.height() * ay);
     if w.saturating_mul(k) > 16_384 || h.saturating_mul(k) > 16_384 {
         state.toasts.push(Level::Error, format!("{k}× would exceed 16384 px on a side."));
         return false;

@@ -137,6 +137,9 @@ actions! {
     ReplaceColor => (Image, "Replace Color…", []),
     SnapToPalette => (Image, "Snap to Palette…", []),
     IndexColors => (Image, "Index Colors…", []),
+    PixelAspectSquare => (Image, "Pixel Aspect: Square (1:1)", []),
+    PixelAspectWide => (Image, "Pixel Aspect: Double-wide (2:1)", []),
+    PixelAspectTall => (Image, "Pixel Aspect: Double-tall (1:2)", []),
     TogglePaletteLock => (Image, "Lock to Palette", []),
     HueSaturation => (Image, "Hue/Saturation…", ["Ctrl+H", "Ctrl+U"]),
     // Layer

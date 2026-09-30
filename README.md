@@ -35,7 +35,10 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   steps pixels along a palette ramp, and the Pencil's pixel-perfect mode
   keeps hand-drawn 1 px lines free of doubled corners. Snap to grid, a
   tiled preview for seamless tiles, crisp integer-scaled export and a
-  deduplicated tileset export (sheet + map) round out the pixel-art kit.
+  deduplicated tileset export (sheet + map) round out the pixel-art kit,
+  along with non-square pixel aspect ratios (2:1 and 1:2, kept in `.ase`
+  files too) and dither ink that turns soft edges and partial opacity into
+  ordered dither patterns.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
 - **Free Transform.** Move, scale, rotate, deform (corner pull) and warp

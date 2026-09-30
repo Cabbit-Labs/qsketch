@@ -68,7 +68,9 @@ pub fn dither(src: &Src, levels: u32, pattern: DitherPattern) -> Img {
 }
 
 /// Threshold for an ordered/noise dither at `(x, y)`, `0..1`.
-fn dither_threshold(x: i32, y: i32, pattern: DitherPattern) -> f32 {
+/// Threshold in `0..1` of the ordered-dither pattern at a canvas pixel (0.5
+/// everywhere for `None`).
+pub fn dither_threshold(x: i32, y: i32, pattern: DitherPattern) -> f32 {
     match pattern {
         DitherPattern::None => 0.5,
         DitherPattern::Bayer2 => (BAYER2[(y & 1) as usize][(x & 1) as usize] as f32 + 0.5) / 4.0,

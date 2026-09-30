@@ -158,6 +158,10 @@ pub struct BrushSettings {
     /// pixels a hand-drawn 1 px line leaves at every turn are dropped, so
     /// the line is a clean 8-connected chain, as in Aseprite.
     pub pixel_perfect: bool,
+    /// Ordered-dither ink: each pixel is painted fully or not at all, with a
+    /// fixed canvas-aligned pattern deciding which, so softness and opacity
+    /// become dither density (pixel-art shading) instead of blending.
+    pub dither: crate::filter::DitherPattern,
 }
 
 impl Default for BrushSettings {
@@ -210,6 +214,7 @@ impl Default for BrushSettings {
             bri_jitter: 0.0,
             noise: false,
             pixel_perfect: false,
+            dither: crate::filter::DitherPattern::None,
         }
     }
 }
@@ -1179,6 +1184,7 @@ impl StrokeEngine {
     /// Recompute `rect` pixels of `raster` from the original + coverage.
     fn apply(&self, raster: &mut Raster, rect: IRect) {
         let opacity = self.settings.opacity;
+        let dither = self.settings.dither;
         let base_color = self.color.to_f32();
         for (tx, ty) in raster.tiles_in_rect(rect) {
             let idx = raster.tile_index(tx, ty);
@@ -1202,6 +1208,14 @@ impl StrokeEngine {
                         if eff <= 0.0 {
                             continue;
                         }
+                    }
+                    if dither != crate::filter::DitherPattern::None && self.mode != PaintMode::Smudge {
+                        // All or nothing: the pattern decides which pixels a
+                        // partial amount reaches.
+                        if eff < crate::filter::fx::dither_threshold(x, y, dither) {
+                            continue;
+                        }
+                        eff = 1.0;
                     }
                     let color = match colors {
                         Some(cm) => {
@@ -1545,6 +1559,32 @@ mod tests {
 
     /// The clone stamp paints what sits at the source offset, transparency
     /// included; smudge drags a color into empty space.
+    #[test]
+    fn dither_ink_paints_whole_pixels_in_the_pattern() {
+        let l = Layer::new(1, "l", 32, 32);
+        let mut s = BrushSettings::preset("Pixel");
+        s.size = 12.0;
+        s.opacity = 0.5;
+        s.dither = crate::filter::DitherPattern::Bayer2;
+        let mut r = l.raster.clone();
+        let mut e = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
+        e.extend(&mut r, StrokeSample { pos: Pt::new(16.0, 16.0), pressure: 1.0 });
+        e.finish(&mut r);
+        // Inside the dab: half the pixels, fully opaque, in a checkerboard.
+        let mut painted = 0;
+        for y in 12..20 {
+            for x in 12..20 {
+                let a = r.get_pixel(x, y).a;
+                assert!(a == 0 || a == 255, "({x},{y}) is partial: {a}");
+                if a == 255 {
+                    painted += 1;
+                    assert_eq!(r.get_pixel(x + 1, y).a, 0, "neighbors alternate at ({x},{y})");
+                }
+            }
+        }
+        assert_eq!(painted, 32);
+    }
+
     #[test]
     fn pixel_perfect_drops_l_corners_and_shading_steps_once() {
         let l = Layer::new(1, "l", 16, 16);
