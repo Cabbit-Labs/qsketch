@@ -158,6 +158,7 @@ selection tool applies it and starts a new selection there.
 | Rulers (drag off a ruler to add a guide; drag a guide back to remove it) | `Ctrl+Shift+R` |
 | Guides (show / hide the document's guides) | `Ctrl+;` |
 | Snap to Guides | `Ctrl+Alt+;` |
+| Show Slices (outside the Slice tool) | — |
 | Image ▸ Pixel Aspect Ratio ▸ Square / Double-wide / Double-tall | — |
 | Lock Guides / Clear Guides | — |
 | Hide/Show Panels | `Tab` |
@@ -202,6 +203,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Magic Wand | `W` |
 | Selection Brush | — |
 | Crop | — |
+| Slice (drag to add, drag to move, corners to resize, double-click for properties, Delete removes) | `Shift+C` |
 | Eyedropper | `I` |
 | Brush | `B` |
 | Pencil | `N` |

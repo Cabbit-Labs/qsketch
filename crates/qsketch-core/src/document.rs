@@ -35,6 +35,9 @@ pub struct DocState {
     /// Pixel aspect ratio, width : height (1:1 square, 2:1 wide, 1:2 tall).
     /// Only changes how the canvas shows the pixels (and Export Scaled).
     pub pixel_aspect: [u8; 2],
+    /// Named rectangles (UI parts, sprite sub-images) with optional 9-slice
+    /// centers and pivots; see `crate::slice`.
+    pub slices: Vec<crate::slice::Slice>,
 }
 
 impl DocState {
@@ -75,6 +78,7 @@ impl DocState {
             palette: Palette::default(),
             palette_lock: false,
             pixel_aspect: [1, 1],
+            slices: Vec::new(),
         }
     }
 
@@ -90,6 +94,7 @@ impl DocState {
             palette: Palette::default(),
             palette_lock: false,
             pixel_aspect: [1, 1],
+            slices: Vec::new(),
         }
     }
 

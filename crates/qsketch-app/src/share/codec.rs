@@ -203,6 +203,7 @@ pub fn decode_snapshot(bytes: &[u8]) -> Result<(DocState, String)> {
             palette: Default::default(),
             palette_lock: false,
             pixel_aspect: [1, 1],
+            slices: Vec::new(),
         },
         h.title,
     ))

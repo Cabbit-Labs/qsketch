@@ -895,6 +895,8 @@ impl QSketchApp {
                     }
                 });
                 self.menu_item(ui, Action::ExportTileset, has_doc);
+                let has_slices = self.state.active().is_some_and(|d| !d.doc.state().slices.is_empty());
+                self.menu_item(ui, Action::ExportSlices, has_slices);
                 let (recording, frames, bytes) = self
                     .state
                     .active()
@@ -1200,6 +1202,7 @@ impl QSketchApp {
                         (Action::ToggleGuides, c.show_guides, true),
                         (Action::ToggleSnapToGuides, c.snap_to_guides, true),
                         (Action::ToggleLockGuides, c.lock_guides, true),
+                        (Action::ToggleShowSlices, c.show_slices, true),
                     ] {
                         let btn = egui::Button::new(format!("{} {}", if on { icons::CHECK } else { " " }, a.label()))
                             .shortcut_text(self.state.keymap.primary_text(a));
@@ -1640,6 +1643,15 @@ impl QSketchApp {
                     crate::files::export_tileset(&mut self.state, id);
                 }
             }
+            Action::ExportSlices => {
+                if let Some(id) = active {
+                    crate::files::export_slices(&mut self.state, id);
+                }
+            }
+            Action::ToggleShowSlices => {
+                let c = &mut self.state.settings.canvas;
+                c.show_slices = !c.show_slices;
+            }
             Action::ToggleSnapToGrid => {
                 self.state.settings.canvas.snap_to_grid = !self.state.settings.canvas.snap_to_grid
             }
@@ -1708,6 +1720,13 @@ impl QSketchApp {
                 if let Some(id) = active {
                     crate::clipboard::paste(&mut self.state, id, true);
                 }
+            }
+            // With the Slice tool, Delete removes the selected slice.
+            Action::Clear
+                if self.state.effective_tool() == ToolKind::Slice
+                    && self.state.active().is_some_and(|d| d.slice_sel.is_some()) =>
+            {
+                crate::tools::slice::delete_selected(&mut self.state);
             }
             Action::Clear => self.clear_selected(),
             Action::ClearLayer => {

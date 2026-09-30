@@ -97,6 +97,7 @@ actions! {
     ExportScaled4 => (File, "Export at 4×…", []),
     ExportScaled8 => (File, "Export at 8×…", []),
     ExportTileset => (File, "Export Tileset…", []),
+    ExportSlices => (File, "Export Slices…", []),
     QuickExport => (File, "Quick Export", ["Ctrl+Alt+E"]),
     ToggleTimelapse => (File, "Record Timelapse", []),
     ExportTimelapseGif => (File, "Export Timelapse as GIF…", []),
@@ -206,6 +207,7 @@ actions! {
     TogglePixelGrid => (View, "Pixel Grid", ["Ctrl+'"]),
     ToggleGrid => (View, "Grid", ["Ctrl+Shift+G"]),
     ToggleSnapToGrid => (View, "Snap to Grid", ["Ctrl+Shift+;"]),
+    ToggleShowSlices => (View, "Show Slices", []),
     ToggleRulers => (View, "Rulers", ["Ctrl+Shift+R"]),
     ToggleGuides => (View, "Guides", ["Ctrl+;"]),
     ToggleSnapToGuides => (View, "Snap to Guides", ["Ctrl+Alt+;"]),
@@ -292,6 +294,7 @@ actions! {
     ToolText => (Tools, "Text", ["T"]),
     ToolZoom => (Tools, "Zoom", ["Z"]),
     ToolHand => (Tools, "Hand", ["H"]),
+    ToolSlice => (Tools, "Slice", ["Shift+C"]),
     ToolRotateView => (Tools, "Rotate View", ["Shift+R"]),
     // Brush
     BrushSizeUp => (Brush, "Increase Brush Size", ["]"]),
@@ -353,6 +356,7 @@ impl Action {
             Action::ToolText => ToolKind::Text,
             Action::ToolZoom => ToolKind::Zoom,
             Action::ToolHand => ToolKind::Hand,
+            Action::ToolSlice => ToolKind::Slice,
             Action::ToolRotateView => ToolKind::RotateView,
             _ => return None,
         })
@@ -383,6 +387,7 @@ impl Action {
             ToolKind::Text => Action::ToolText,
             ToolKind::Zoom => Action::ToolZoom,
             ToolKind::Hand => Action::ToolHand,
+            ToolKind::Slice => Action::ToolSlice,
             ToolKind::RotateView => Action::ToolRotateView,
         }
     }

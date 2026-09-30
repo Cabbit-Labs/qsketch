@@ -5,6 +5,7 @@ pub mod fill;
 pub mod floating;
 pub mod paint;
 pub mod select;
+pub mod slice;
 pub mod symmetry;
 pub mod text;
 mod transform;
@@ -55,10 +56,12 @@ pub enum ToolKind {
     Smudge,
     /// Paints pixels copied from a source point (Alt+click sets it).
     Clone,
+    /// Named rectangles (9-slice UI parts, sprite sub-images).
+    Slice,
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 24] = [
+    pub const ALL: [ToolKind; 25] = [
         ToolKind::Move,
         ToolKind::RectSelect,
         ToolKind::EllipseSelect,
@@ -67,6 +70,7 @@ impl ToolKind {
         ToolKind::MagicWand,
         ToolKind::SelectBrush,
         ToolKind::Crop,
+        ToolKind::Slice,
         ToolKind::Eyedropper,
         ToolKind::Brush,
         ToolKind::Pencil,
@@ -95,6 +99,7 @@ impl ToolKind {
             ToolKind::MagicWand => "Magic Wand",
             ToolKind::SelectBrush => "Selection Brush",
             ToolKind::Crop => "Crop",
+            ToolKind::Slice => "Slice",
             ToolKind::Eyedropper => "Eyedropper",
             ToolKind::Brush => "Brush",
             ToolKind::Pencil => "Pencil",
@@ -130,6 +135,7 @@ impl ToolKind {
             ToolKind::MagicWand => icons::MAGIC_WAND,
             ToolKind::SelectBrush => icons::HIGHLIGHTER,
             ToolKind::Crop => icons::CROP,
+            ToolKind::Slice => icons::GRID_NINE,
             ToolKind::Eyedropper => icons::EYEDROPPER,
             ToolKind::Brush => icons::PAINT_BRUSH,
             ToolKind::Pencil => icons::PENCIL_SIMPLE,
@@ -159,7 +165,7 @@ impl ToolKind {
             | ToolKind::PolyLasso
             | ToolKind::MagicWand
             | ToolKind::SelectBrush => 1,
-            ToolKind::Crop | ToolKind::Eyedropper => 2,
+            ToolKind::Crop | ToolKind::Slice | ToolKind::Eyedropper => 2,
             ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Clone => 3,
             ToolKind::Fill | ToolKind::Gradient => 4,
             ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse | ToolKind::Contour => 5,
@@ -424,6 +430,11 @@ pub enum ToolSession {
         start: Pt,
         cur: Pt,
     },
+    /// Slice tool drag: creating, moving or resizing a slice.
+    Slice {
+        drag: slice::SliceDrag,
+        cur: Pt,
+    },
     /// Freehand contour path in document space.
     Contour {
         pts: Vec<Pt>,
@@ -458,6 +469,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 | ToolKind::Rect
                 | ToolKind::Ellipse
                 | ToolKind::Crop
+                | ToolKind::Slice
                 | ToolKind::Move
                 | ToolKind::Gradient
         ) {
@@ -489,6 +501,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 | ToolKind::Rect
                 | ToolKind::Ellipse
                 | ToolKind::Crop
+                | ToolKind::Slice
                 | ToolKind::Move
                 | ToolKind::Gradient
         ) {
@@ -608,6 +621,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         ToolKind::Zoom => view::handle_zoom(state, doc_id, ev),
         ToolKind::Hand => view::handle_hand(state, doc_id, ev),
         ToolKind::RotateView => view::handle_rotate(state, doc_id, ev),
+        ToolKind::Slice => slice::handle(state, doc_id, ev),
     }
 }
 
@@ -748,6 +762,7 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
         floating::draw_selection_handles(state, doc_id, painter);
     }
     text::draw_overlay(state, doc_id, painter);
+    slice::draw_overlay(state, doc_id, painter);
     fill::draw_pick_loupe(state, doc_id, painter);
 
     // Crop overlay: darken outside the pending crop rect.

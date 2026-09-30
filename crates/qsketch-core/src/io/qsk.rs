@@ -43,6 +43,9 @@ struct Manifest {
     /// Ruler guides (0.49+). Optional.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     guides: Vec<Guide>,
+    /// Slices (0.56+).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    slices: Vec<crate::slice::Slice>,
     /// Pixel aspect ratio (0.54+), width : height; absent = square.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pixel_aspect: Option<[u8; 2]>,
@@ -140,6 +143,7 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
             palette: (!doc.palette.is_empty()).then(|| doc.palette.clone()),
             palette_lock: doc.palette_lock,
             pixel_aspect: (doc.pixel_aspect != [1, 1]).then_some(doc.pixel_aspect),
+            slices: doc.slices.clone(),
             stats: meta.stats.cloned(),
             guides: meta.guides.to_vec(),
             timelapse: meta.timelapse.filter(|t| t.recording || !t.frames.is_empty()).map(|t| TimelapseInfo {
@@ -214,6 +218,7 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
         palette: manifest.palette.unwrap_or_default(),
         palette_lock: manifest.palette_lock,
         pixel_aspect: manifest.pixel_aspect.unwrap_or([1, 1]),
+        slices: manifest.slices,
     };
     doc.repair_groups();
     let mut timelapse = crate::timelapse::Timelapse::default();

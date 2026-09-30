@@ -38,8 +38,10 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   deduplicated tileset export (sheet + map) round out the pixel-art kit,
   along with non-square pixel aspect ratios (2:1 and 1:2, kept in `.ase`
   files too), dither ink that turns soft edges and partial opacity into
-  ordered dither patterns, and RotSprite rotation in Free Transform, which
-  turns pixel art without blurring it or inventing colors.
+  ordered dither patterns, RotSprite rotation in Free Transform, which
+  turns pixel art without blurring it or inventing colors, and a Slice tool
+  for named 9-slice UI parts that export as PNGs plus JSON and round-trip
+  through Aseprite files.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
 - **Free Transform.** Move, scale, rotate, deform (corner pull) and warp

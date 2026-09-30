@@ -703,6 +703,8 @@ pub struct CanvasSettings {
     pub show_pixel_grid: bool,
     /// Tile grid over the canvas (View ▸ Grid), every `grid_size` pixels.
     pub show_grid: bool,
+    /// Draw the document's slices even when the Slice tool isn't active.
+    pub show_slices: bool,
     pub grid_size: u32,
     /// Shape, marquee, crop, move and gradient drags land on grid lines.
     pub snap_to_grid: bool,
@@ -776,6 +778,7 @@ impl Default for CanvasSettings {
             pixel_grid_min_zoom: 8.0,
             show_pixel_grid: false,
             show_grid: false,
+            show_slices: false,
             grid_size: 16,
             snap_to_grid: false,
             show_rulers: false,

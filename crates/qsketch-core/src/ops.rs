@@ -75,6 +75,7 @@ pub fn resize_canvas(doc: &mut DocState, new_w: u32, new_h: u32, anchor: Anchor)
     doc.selection = doc.selection.as_ref().map(|m| Arc::new(m.with_canvas_size(new_w, new_h, ox, oy)));
     doc.width = new_w;
     doc.height = new_h;
+    crate::slice::offset_all(doc, ox, oy);
 }
 
 pub fn resize_image(doc: &mut DocState, new_w: u32, new_h: u32, filter: ResizeFilter) {
@@ -86,9 +87,11 @@ pub fn resize_image(doc: &mut DocState, new_w: u32, new_h: u32, filter: ResizeFi
             l.mask = Some(Arc::new(m.resized(new_w, new_h)));
         }
     }
+    let (sx, sy) = (new_w as f32 / doc.width as f32, new_h as f32 / doc.height as f32);
     doc.selection = None;
     doc.width = new_w;
     doc.height = new_h;
+    crate::slice::scale_all(doc, sx, sy);
 }
 
 pub fn crop(doc: &mut DocState, rect: IRect) {
@@ -105,6 +108,7 @@ pub fn crop(doc: &mut DocState, rect: IRect) {
     doc.selection = None;
     doc.width = r.w as u32;
     doc.height = r.h as u32;
+    crate::slice::offset_all(doc, -r.x, -r.y);
 }
 
 pub fn flip_horizontal(doc: &mut DocState) {
@@ -115,6 +119,8 @@ pub fn flip_horizontal(doc: &mut DocState) {
         }
     }
     doc.selection = None;
+    let w = doc.width as i32;
+    crate::slice::transform_all(doc, |r| IRect::new(w - r.x - r.w, r.y, r.w, r.h), |x, y| (w - x, y));
 }
 
 pub fn flip_vertical(doc: &mut DocState) {
@@ -125,6 +131,8 @@ pub fn flip_vertical(doc: &mut DocState) {
         }
     }
     doc.selection = None;
+    let h = doc.height as i32;
+    crate::slice::transform_all(doc, |r| IRect::new(r.x, h - r.y - r.h, r.w, r.h), |x, y| (x, h - y));
 }
 
 /// Rotate the whole canvas by `times` × 90° clockwise.
@@ -135,10 +143,22 @@ pub fn rotate_canvas(doc: &mut DocState, times: u32) {
             l.mask = Some(Arc::new(m.rotated(times)));
         }
     }
+    let (w, h) = (doc.width as i32, doc.height as i32);
     if times % 2 == 1 {
         std::mem::swap(&mut doc.width, &mut doc.height);
     }
     doc.selection = None;
+    // Quarter turns clockwise, in the old canvas's coordinates.
+    match times % 4 {
+        1 => crate::slice::transform_all(doc, |r| IRect::new(h - r.y - r.h, r.x, r.h, r.w), |x, y| (h - y, x)),
+        2 => crate::slice::transform_all(
+            doc,
+            |r| IRect::new(w - r.x - r.w, h - r.y - r.h, r.w, r.h),
+            |x, y| (w - x, h - y),
+        ),
+        3 => crate::slice::transform_all(doc, |r| IRect::new(r.y, w - r.x - r.w, r.h, r.w), |x, y| (y, w - x)),
+        _ => {}
+    }
 }
 
 /// Flip / rotate a single layer in place (content only).
@@ -551,6 +571,18 @@ pub fn hue_saturation(doc: &mut DocState, layer_idx: usize, hue_shift: f32, sat_
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slices_follow_canvas_rotation_and_crop() {
+        let mut d = DocState::new(10, 6, None);
+        d.slices = vec![crate::slice::Slice::new("s", IRect::new(1, 2, 3, 1))];
+        rotate_canvas(&mut d, 1);
+        assert_eq!(d.slices[0].rect, IRect::new(3, 1, 1, 3));
+        crop(&mut d, IRect::new(2, 0, 3, 6));
+        assert_eq!(d.slices[0].rect, IRect::new(1, 1, 1, 3));
+        flip_horizontal(&mut d);
+        assert_eq!(d.slices[0].rect, IRect::new(1, 1, 1, 3));
+    }
 
     #[test]
     fn canvas_ops() {

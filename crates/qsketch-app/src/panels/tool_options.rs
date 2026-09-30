@@ -134,6 +134,24 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                 });
                 hint(ui, "Drag to draw a foreground → background gradient. Shift snaps the angle.");
             }
+            ToolKind::Slice => {
+                let doc_id = state.active_doc;
+                let sel = state.active().and_then(|d| d.slice_sel.and_then(|i| d.doc.state().slices.get(i).cloned().map(|s| (i, s))));
+                match (doc_id, sel) {
+                    (Some(doc_id), Some((i, s))) => {
+                        group(ui, &theme, Section::Tools, |ui| {
+                            ui.label(format!("{}  {} × {} at ({}, {})", s.name, s.rect.w, s.rect.h, s.rect.x, s.rect.y));
+                            if ui.button("Properties…").on_hover_text("Name, bounds, 9-slice center, pivot, color").clicked() {
+                                crate::dialogs::open_slice_props(state, doc_id, i);
+                            }
+                            if ui.button(format!("{} Delete", icons::TRASH)).on_hover_text("Delete").clicked() {
+                                crate::tools::slice::delete_selected(state);
+                            }
+                        });
+                    }
+                    _ => hint(ui, "Drag to add a slice. Drag a slice to move it, its corners to resize; double-click for its properties."),
+                }
+            }
             ToolKind::Eyedropper => {
                 group(ui, &theme, Section::Tools, |ui| {
                     ui.checkbox(&mut state.tool_opts.eyedropper_sample_merged, "All layers")

@@ -316,3 +316,31 @@ pub fn force_close(state: &mut AppState, doc_id: DocId) {
     state.remove_document(doc_id);
     state.close_doc_requests.retain(|d| *d != doc_id);
 }
+
+/// File ▸ Export Slices: each slice as a PNG plus `slices.json`, into a
+/// folder named after the document inside the one picked.
+pub fn export_slices(state: &mut AppState, doc_id: DocId) -> bool {
+    let Some(entry) = state.doc(doc_id) else { return false };
+    if entry.doc.state().slices.is_empty() {
+        state.toasts.push(Level::Info, "This document has no slices. Draw some with the Slice tool (Shift+C).");
+        return false;
+    }
+    let base = entry.doc.title.trim_end_matches('*').to_string();
+    let stem = Path::new(&base).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or(base);
+    let mut dlg = rfd::FileDialog::new().set_title("Export Slices To Folder");
+    if let Some(dir) = entry.doc.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
+        dlg = dlg.set_directory(dir);
+    }
+    let Some(dir) = dlg.pick_folder() else { return false };
+    let target = dir.join(format!("{stem} slices"));
+    match qsketch_core::slice::export(entry.doc.state(), &target) {
+        Ok(n) => {
+            state.toasts.push(Level::Success, format!("Exported {n} slices to {}", target.display()));
+            true
+        }
+        Err(e) => {
+            state.toasts.push(Level::Error, format!("Slice export failed: {e:#}"));
+            false
+        }
+    }
+}

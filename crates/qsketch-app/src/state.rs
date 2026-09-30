@@ -51,6 +51,8 @@ pub struct DocEntry {
     /// Selected run of palette slots in the Palette panel (anchor, end),
     /// which the shading ink uses as its ramp.
     pub palette_sel: Option<(usize, usize)>,
+    /// Slice selected with the Slice tool (index into `DocState::slices`).
+    pub slice_sel: Option<usize>,
     /// Size of the file on disk as of the last open / save, for the status
     /// bar. `None` for a document that was never saved.
     pub file_size: Option<u64>,
@@ -74,6 +76,7 @@ impl DocEntry {
             share: None,
             mask_edit: None,
             palette_sel: None,
+            slice_sel: None,
             flash_seen_active: None,
             layer_flash: None,
             file_size: None,

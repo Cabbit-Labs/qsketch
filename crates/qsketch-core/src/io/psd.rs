@@ -227,6 +227,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         palette: Default::default(),
         palette_lock: false,
         pixel_aspect: [1, 1],
+        slices: Vec::new(),
     })
 }
 

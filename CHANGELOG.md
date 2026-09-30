@@ -2,6 +2,18 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.56.0 — 2026-09-30
+
+- Slice tool (Shift+C): drag to add a named slice, drag one to move it,
+  drag the selected slice's corners to resize it, double-click for its
+  properties (name, bounds, a stretchable 9-slice center, a pivot point,
+  outline color), Delete to remove it. Slices snap to the grid and guides,
+  are undoable, follow crops, canvas and image resizes, rotations and
+  flips, and are saved in the `.qsk` and in Aseprite files (slice chunks,
+  with their color). View ▸ Rulers & Guides ▸ Show Slices keeps them
+  visible with other tools. File ▸ Export Slices… writes each slice as a
+  PNG plus `slices.json` with the rects, 9-slice centers and pivots.
+
 ## 0.55.0 — 2026-09-30
 
 - RotSprite in Free Transform (the options bar's Smooth / Pixel /

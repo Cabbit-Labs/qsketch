@@ -74,7 +74,10 @@ mydrawing.qsk  (a ZIP file)
   "stats": { "created": 1759180800, "work_secs": 5423.5, "edits": 812, "saves": 9 }, // 0.47+, optional
   "guides": [{ "vertical": true, "pos": 512.0 }, { "vertical": false, "pos": 300.0 }], // 0.49+, omitted when empty
   "timelapse": { "frames": 412, "recording": true, "every": 1 }, // 0.51+, omitted when there is none
-  "pixel_aspect": [2, 1] // 0.54+, pixel width : height; omitted when square
+  "pixel_aspect": [2, 1], // 0.54+, pixel width : height; omitted when square
+  "slices": [{ "name": "button", "rect": { "x": 8, "y": 8, "w": 48, "h": 16 },
+               "center": { "x": 4, "y": 4, "w": 40, "h": 8 }, "pivot": [24, 16],
+               "color": { "r": 0, "g": 120, "b": 255, "a": 255 } }] // 0.56+, omitted when empty
 }
 ```
 
@@ -117,6 +120,11 @@ Field notes:
   30 s without input), `edits` (committed history steps over the document's
   life) and `saves` (including the save that wrote the file). Shown in the
   Info panel. Optional; a file without them starts fresh when opened.
+- **`slices`** (0.56+) are named canvas rectangles (Slice tool): `rect` in
+  canvas pixels, an optional 9-slice `center` and `pivot` relative to the
+  rect's top-left corner, and the outline `color`. They are undoable, follow
+  crops, canvas resizes, image resizes, rotations and flips, and are also
+  read from and written to Aseprite slice chunks.
 - **`pixel_aspect`** (0.54+) is the pixel aspect ratio (width : height,
   e.g. `[2, 1]` for double-wide pixels). It only changes how the canvas
   shows the pixels and what Export Scaled writes; layer PNGs stay 1:1.

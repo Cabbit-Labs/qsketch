@@ -34,6 +34,8 @@ const CHUNK_CEL: u16 = 0x2005;
 const CHUNK_COLOR_PROFILE: u16 = 0x2007;
 const CHUNK_TAGS: u16 = 0x2018;
 const CHUNK_PALETTE: u16 = 0x2019;
+const CHUNK_USER_DATA: u16 = 0x2020;
+const CHUNK_SLICE: u16 = 0x2022;
 
 // Layer flags.
 const LAYER_VISIBLE: u16 = 1;
@@ -61,6 +63,7 @@ pub struct AseSprite {
     pub frames: Vec<AseFrame>,
     pub tags: Vec<AseTag>,
     pixel_aspect: [u8; 2],
+    slices: Vec<crate::slice::Slice>,
 }
 
 #[derive(Clone, Debug)]
@@ -196,6 +199,7 @@ pub fn parse(bytes: &[u8]) -> anyhow::Result<AseSprite> {
         tags: Vec::new(),
         // 0 in either byte means "square" (older files).
         pixel_aspect: if pixel_w == 0 || pixel_h == 0 { [1, 1] } else { [pixel_w, pixel_h] },
+        slices: Vec::new(),
     };
 
     for _ in 0..frame_count {
@@ -210,6 +214,7 @@ pub fn parse(bytes: &[u8]) -> anyhow::Result<AseSprite> {
         let new_chunks = c.u32()? as usize;
         let chunks = if new_chunks == 0 { old_chunks } else { new_chunks };
         let mut frame = AseFrame { duration_ms, cels: Vec::new() };
+        let mut last_slice: Option<usize> = None;
         for _ in 0..chunks {
             let chunk_start = c.p;
             let size = c.u32()? as usize;
@@ -332,9 +337,60 @@ pub fn parse(bytes: &[u8]) -> anyhow::Result<AseSprite> {
                         sprite.tags.push(AseTag { name, from, to, direction, repeat });
                     }
                 }
-                // Color profile, user data, slices, tilesets, external
-                // files: skipped by size.
+                CHUNK_SLICE => {
+                    let keys = d.u32()?;
+                    let flags = d.u32()?;
+                    d.u32()?;
+                    let name = d.string()?;
+                    // Only the first key (qsketch has no frames); later keys
+                    // are read past.
+                    let mut slice: Option<crate::slice::Slice> = None;
+                    for k in 0..keys {
+                        d.u32()?; // frame
+                        let x = d.u32()? as i32;
+                        let y = d.u32()? as i32;
+                        let w = d.u32()? as i32;
+                        let h = d.u32()? as i32;
+                        let center = if flags & 1 != 0 {
+                            let (cx, cy, cw, ch) = (d.u32()? as i32, d.u32()? as i32, d.u32()? as i32, d.u32()? as i32);
+                            Some(IRect::new(cx, cy, cw, ch))
+                        } else {
+                            None
+                        };
+                        let pivot = if flags & 2 != 0 { Some((d.u32()? as i32, d.u32()? as i32)) } else { None };
+                        if k == 0 && w > 0 && h > 0 {
+                            let mut s = crate::slice::Slice::new(name.clone(), IRect::new(x, y, w, h));
+                            s.center = center;
+                            s.pivot = pivot;
+                            slice = Some(s);
+                        }
+                    }
+                    last_slice = None;
+                    if let Some(s) = slice {
+                        sprite.slices.push(s);
+                        last_slice = Some(sprite.slices.len() - 1);
+                    }
+                    c.p = end;
+                    continue;
+                }
+                // A user data chunk right after a slice holds its color.
+                CHUNK_USER_DATA => {
+                    if let Some(i) = last_slice {
+                        let flags = d.u32()?;
+                        if flags & 1 != 0 {
+                            d.string()?;
+                        }
+                        if flags & 2 != 0 {
+                            let (r, g, b, a) = (d.u8()?, d.u8()?, d.u8()?, d.u8()?);
+                            sprite.slices[i].color = Rgba8::new(r, g, b, a.max(1));
+                        }
+                    }
+                }
+                // Color profile, tilesets, external files: skipped by size.
                 _ => {}
+            }
+            if kind != CHUNK_USER_DATA {
+                last_slice = None;
             }
             c.p = end;
         }
@@ -580,6 +636,7 @@ impl AseSprite {
             },
             palette_lock: self.depth == 8,
             pixel_aspect: self.pixel_aspect,
+            slices: self.slices.clone(),
         };
         doc.repair_groups();
         Ok((doc, warnings))
@@ -875,6 +932,37 @@ pub fn encode(doc: &DocState) -> anyhow::Result<Vec<u8>> {
         chunks += 1;
     }
 
+    // Slices, each followed by a user data chunk with its color.
+    for s in &doc.slices {
+        let at = o.chunk(CHUNK_SLICE);
+        let flags = u32::from(s.center.is_some()) | (u32::from(s.pivot.is_some()) << 1);
+        o.u32(1);
+        o.u32(flags);
+        o.u32(0);
+        o.string(&s.name);
+        o.u32(0); // frame
+        o.u32(s.rect.x as u32);
+        o.u32(s.rect.y as u32);
+        o.u32(s.rect.w.max(0) as u32);
+        o.u32(s.rect.h.max(0) as u32);
+        if let Some(c) = s.center {
+            o.u32(c.x as u32);
+            o.u32(c.y as u32);
+            o.u32(c.w.max(0) as u32);
+            o.u32(c.h.max(0) as u32);
+        }
+        if let Some((px, py)) = s.pivot {
+            o.u32(px as u32);
+            o.u32(py as u32);
+        }
+        o.end_chunk(at);
+        let at = o.chunk(CHUNK_USER_DATA);
+        o.u32(2); // has color
+        o.bytes(&[s.color.r, s.color.g, s.color.b, s.color.a]);
+        o.end_chunk(at);
+        chunks += 2;
+    }
+
     let frame_bytes = (o.0.len() - frame_at) as u32;
     o.patch_u32(frame_at, frame_bytes);
     let old = chunks.min(0xFFFF) as u16;
@@ -888,6 +976,25 @@ pub fn encode(doc: &DocState) -> anyhow::Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slices_round_trip() {
+        let mut doc = DocState::new(32, 32, None);
+        let mut sl = crate::slice::Slice::new("button", IRect::new(2, 3, 20, 10));
+        sl.center = Some(IRect::new(4, 2, 12, 6));
+        sl.pivot = Some((10, 9));
+        sl.color = Rgba8::new(255, 0, 128, 255);
+        doc.slices = vec![sl.clone(), crate::slice::Slice::new("plain", IRect::new(0, 0, 4, 4))];
+        let dir = std::env::temp_dir().join(format!("ase-slices-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s.aseprite");
+        save(&path, &doc).unwrap();
+        let (back, _) = load_with_warnings(&path).unwrap();
+        assert_eq!(back.slices.len(), 2);
+        assert_eq!(back.slices[0], sl);
+        assert_eq!(back.slices[1].rect, IRect::new(0, 0, 4, 4));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn pixel_aspect_round_trips() {

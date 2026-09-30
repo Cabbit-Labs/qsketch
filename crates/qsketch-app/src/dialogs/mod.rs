@@ -69,6 +69,119 @@ pub struct LayerPropsDialog {
     pub name: String,
 }
 
+/// Slice ▸ Properties: edit one slice.
+pub struct SlicePropsDialog {
+    pub doc: DocId,
+    pub index: usize,
+    pub slice: qsketch_core::Slice,
+}
+
+pub fn open_slice_props(state: &mut AppState, doc: DocId, index: usize) {
+    let Some(s) = state.doc(doc).and_then(|e| e.doc.state().slices.get(index).cloned()) else { return };
+    state.dialogs.slice_props = Some(SlicePropsDialog { doc, index, slice: s });
+}
+
+fn show_slice_props(ctx: &Context, state: &mut AppState) {
+    let Some(d) = state.dialogs.slice_props.as_mut() else { return };
+    let (mut apply, mut delete) = (false, false);
+    let (_, closed) = modal(ctx, "slice_props", "Slice Properties", 340.0, |ui| {
+        let s = &mut d.slice;
+        egui::Grid::new("slice_props_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            ui.label("Name");
+            ui.text_edit_singleline(&mut s.name);
+            ui.end_row();
+            ui.label("Position");
+            ui.horizontal(|ui| {
+                ui.add(egui::DragValue::new(&mut s.rect.x).prefix("x "));
+                ui.add(egui::DragValue::new(&mut s.rect.y).prefix("y "));
+            });
+            ui.end_row();
+            ui.label("Size");
+            ui.horizontal(|ui| {
+                ui.add(egui::DragValue::new(&mut s.rect.w).range(1..=65_535).prefix("w "));
+                ui.add(egui::DragValue::new(&mut s.rect.h).range(1..=65_535).prefix("h "));
+            });
+            ui.end_row();
+            ui.label("9-slice");
+            let mut nine = s.center.is_some();
+            ui.vertical(|ui| {
+                if ui.checkbox(&mut nine, "Stretchable center").changed() {
+                    s.center = nine.then(|| {
+                        let (w, h) = (s.rect.w, s.rect.h);
+                        qsketch_core::IRect::new(w / 3, h / 3, (w - 2 * (w / 3)).max(1), (h - 2 * (h / 3)).max(1))
+                    });
+                }
+                if let Some(c) = &mut s.center {
+                    ui.horizontal(|ui| {
+                        ui.add(egui::DragValue::new(&mut c.x).range(0..=s.rect.w).prefix("x "));
+                        ui.add(egui::DragValue::new(&mut c.y).range(0..=s.rect.h).prefix("y "));
+                        ui.add(egui::DragValue::new(&mut c.w).range(1..=s.rect.w).prefix("w "));
+                        ui.add(egui::DragValue::new(&mut c.h).range(1..=s.rect.h).prefix("h "));
+                    });
+                }
+            });
+            ui.end_row();
+            ui.label("Pivot");
+            let mut piv = s.pivot.is_some();
+            ui.horizontal(|ui| {
+                if ui.checkbox(&mut piv, "").changed() {
+                    s.pivot = piv.then_some((s.rect.w / 2, s.rect.h / 2));
+                }
+                if let Some((px, py)) = &mut s.pivot {
+                    ui.add(egui::DragValue::new(px).range(0..=s.rect.w).prefix("x "));
+                    ui.add(egui::DragValue::new(py).range(0..=s.rect.h).prefix("y "));
+                }
+            });
+            ui.end_row();
+            ui.label("Color");
+            let mut c32 = egui::Color32::from_rgb(s.color.r, s.color.g, s.color.b);
+            if egui::color_picker::color_edit_button_srgba(ui, &mut c32, egui::color_picker::Alpha::Opaque).changed() {
+                s.color = qsketch_core::Rgba8::new(c32.r(), c32.g(), c32.b(), 255);
+            }
+            ui.end_row();
+        });
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            if ui.button("Delete Slice").clicked() {
+                delete = true;
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    apply = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    ui.close();
+                }
+            });
+        });
+    });
+    if apply || delete {
+        let d = state.dialogs.slice_props.take().unwrap();
+        if let Some(entry) = state.doc_mut(d.doc) {
+            let s = entry.doc.state_mut();
+            if d.index < s.slices.len() {
+                if delete {
+                    s.slices.remove(d.index);
+                    entry.slice_sel = None;
+                    entry.doc.commit("Delete Slice");
+                } else {
+                    let mut new = d.slice;
+                    if new.name.trim().is_empty() {
+                        new.name = s.slices[d.index].name.clone();
+                    }
+                    new.clamp_parts();
+                    if s.slices[d.index] != new {
+                        s.slices[d.index] = new;
+                        entry.doc.commit("Slice Properties");
+                    }
+                }
+            }
+        }
+    } else if closed {
+        state.dialogs.slice_props = None;
+    }
+}
+
 pub struct CloseConfirm {
     pub doc: DocId,
     pub then: AfterClose,
@@ -99,6 +212,7 @@ pub struct Dialogs {
     pub share: Option<share::ShareDialog>,
     pub liquify: Option<liquify::LiquifyDialog>,
     pub layer_style: Option<layer_style::LayerStyleDialog>,
+    pub slice_props: Option<SlicePropsDialog>,
     pub adjustment: Option<adjustment::AdjustmentDialog>,
     pub about: bool,
     /// Autosave snapshots found at startup, offered for recovery.
@@ -113,6 +227,7 @@ impl Dialogs {
             || self.image_size.is_some()
             || self.filter.is_some()
             || self.layer_style.is_some()
+            || self.slice_props.is_some()
             || self.adjustment.is_some()
             || self.layer_props.is_some()
             || self.close_confirm.is_some()
@@ -161,6 +276,7 @@ pub fn show_all(ctx: &Context, state: &mut AppState) {
     show_image_size(ctx, state);
     filter::show(ctx, state);
     show_layer_props(ctx, state);
+    show_slice_props(ctx, state);
     show_close_confirm(ctx, state);
     show_save_confirm(ctx, state);
     settings::show(ctx, state);
