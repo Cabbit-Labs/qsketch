@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::document::{DocState, DocStats};
+use crate::document::{DocState, DocStats, Guide};
 use crate::layer::{Layer, LayerProps};
 use crate::mask::Mask;
 use crate::palette::Palette;
@@ -40,6 +40,9 @@ struct Manifest {
     /// counts. Optional; older files simply have none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stats: Option<DocStats>,
+    /// Ruler guides (0.49+). Optional.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    guides: Vec<Guide>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -72,6 +75,11 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
 
 /// Save with the document's lifetime statistics in the manifest.
 pub fn save_with_stats(path: &Path, doc: &DocState, stats: Option<&DocStats>) -> anyhow::Result<()> {
+    save_with_meta(path, doc, stats, &[])
+}
+
+/// Save with the document's statistics and ruler guides in the manifest.
+pub fn save_with_meta(path: &Path, doc: &DocState, stats: Option<&DocStats>, guides: &[Guide]) -> anyhow::Result<()> {
     let tmp = path.with_extension("qsk.tmp");
     {
         let file = File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
@@ -119,6 +127,7 @@ pub fn save_with_stats(path: &Path, doc: &DocState, stats: Option<&DocStats>) ->
             palette: (!doc.palette.is_empty()).then(|| doc.palette.clone()),
             palette_lock: doc.palette_lock,
             stats: stats.cloned(),
+            guides: guides.to_vec(),
         };
         zip.start_file("manifest.json", deflated)?;
         zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
@@ -140,6 +149,12 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
 /// Load a document and the statistics stored with it (default when the
 /// file predates them).
 pub fn load_with_stats(path: &Path) -> anyhow::Result<(DocState, DocStats)> {
+    let (doc, stats, _) = load_with_meta(path)?;
+    Ok((doc, stats))
+}
+
+/// Load a document with the statistics and ruler guides stored in the file.
+pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, DocStats, Vec<Guide>)> {
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut zip = ZipArchive::new(BufReader::new(file))?;
     let manifest: Manifest = {
@@ -181,7 +196,7 @@ pub fn load_with_stats(path: &Path) -> anyhow::Result<(DocState, DocStats)> {
         palette_lock: manifest.palette_lock,
     };
     doc.repair_groups();
-    Ok((doc, manifest.stats.unwrap_or_default()))
+    Ok((doc, manifest.stats.unwrap_or_default(), manifest.guides))
 }
 
 /// Read just the preview PNG bytes of a `.qsk` (for recent-file thumbnails).

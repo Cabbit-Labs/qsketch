@@ -30,12 +30,22 @@ pub fn save_document_with_stats(
     doc: &crate::document::DocState,
     stats: Option<&crate::document::DocStats>,
 ) -> anyhow::Result<()> {
+    save_document_with_meta(path, doc, stats, &[])
+}
+
+/// [`save_document`] with statistics and ruler guides (kept only by `.qsk`).
+pub fn save_document_with_meta(
+    path: &Path,
+    doc: &crate::document::DocState,
+    stats: Option<&crate::document::DocStats>,
+    guides: &[crate::document::Guide],
+) -> anyhow::Result<()> {
     if psd::is_psd(path) {
         psd::save(path, doc)
     } else if ase::is_ase(path) {
         ase::save(path, doc)
     } else {
-        qsk::save_with_stats(path, doc, stats)
+        qsk::save_with_meta(path, doc, stats, guides)
     }
 }
 
@@ -51,8 +61,18 @@ pub fn save_any_with_stats(
     doc: &crate::document::DocState,
     stats: Option<&crate::document::DocStats>,
 ) -> anyhow::Result<()> {
+    save_any_with_meta(path, doc, stats, &[])
+}
+
+/// [`save_any`] with statistics and ruler guides (kept only by `.qsk`).
+pub fn save_any_with_meta(
+    path: &Path,
+    doc: &crate::document::DocState,
+    stats: Option<&crate::document::DocStats>,
+    guides: &[crate::document::Guide],
+) -> anyhow::Result<()> {
     if is_document(path) {
-        save_document_with_stats(path, doc, stats)
+        save_document_with_meta(path, doc, stats, guides)
     } else if is_export_image(path) {
         image_io::export(path, doc)
     } else {
@@ -156,26 +176,30 @@ pub fn open(path: &Path) -> anyhow::Result<crate::document::DocState> {
 /// Open any supported file, with notes about what the import could not
 /// carry over (dropped animation frames, unsupported layer kinds).
 pub fn open_with_warnings(path: &Path) -> anyhow::Result<(crate::document::DocState, Vec<String>)> {
-    let (doc, _, warnings) = open_full(path)?;
+    let (doc, _, _, warnings) = open_full(path)?;
     Ok((doc, warnings))
 }
 
-/// [`open_with_warnings`] plus the statistics stored in the file: the ones
-/// a `.qsk` carries, or fresh ones (started now) for any other format.
-pub fn open_full(path: &Path) -> anyhow::Result<(crate::document::DocState, crate::document::DocStats, Vec<String>)> {
+/// [`open_with_warnings`] plus the statistics and ruler guides stored in
+/// the file: the ones a `.qsk` carries, or fresh stats (started now) and no
+/// guides for any other format.
+#[allow(clippy::type_complexity)]
+pub fn open_full(
+    path: &Path,
+) -> anyhow::Result<(crate::document::DocState, crate::document::DocStats, Vec<crate::document::Guide>, Vec<String>)> {
     let fresh = crate::document::DocStats::started_now;
     if is_native(path) {
-        let (doc, stats) = qsk::load_with_stats(path)?;
+        let (doc, stats, guides) = qsk::load_with_meta(path)?;
         let stats = if stats.created.is_none() { fresh() } else { stats };
-        Ok((doc, stats, Vec::new()))
+        Ok((doc, stats, guides, Vec::new()))
     } else if psd::is_psd(path) {
-        Ok((psd::load(path)?, fresh(), Vec::new()))
+        Ok((psd::load(path)?, fresh(), Vec::new(), Vec::new()))
     } else if ase::is_ase(path) {
         let (doc, warnings) = ase::load_with_warnings(path)?;
-        Ok((doc, fresh(), warnings))
+        Ok((doc, fresh(), Vec::new(), warnings))
     } else {
         let raster = image_io::import(path)?;
         let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Background").to_string();
-        Ok((crate::document::DocState::from_raster(name, raster), fresh(), Vec::new()))
+        Ok((crate::document::DocState::from_raster(name, raster), fresh(), Vec::new(), Vec::new()))
     }
 }

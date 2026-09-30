@@ -42,10 +42,11 @@ pub fn open_path(state: &mut AppState, path: &Path) -> Option<DocId> {
         return Some(id);
     }
     match io::open_full(path) {
-        Ok((doc_state, stats, warnings)) => {
+        Ok((doc_state, stats, guides, warnings)) => {
             let title = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Untitled".into());
             let mut doc = Document::from_state(doc_state, title, Some(path.to_path_buf()), "Open");
             doc.stats = stats;
+            doc.guides = guides;
             let id = state.add_document(doc);
             state.settings.push_recent(path.to_path_buf());
             for w in warnings {
@@ -140,7 +141,7 @@ pub fn write_document(state: &mut AppState, doc_id: DocId, path: &Path) -> bool 
     // The count includes this save, so the file records it.
     let mut stats = entry.doc.stats.clone();
     stats.saves += 1;
-    match io::save_any_with_stats(path, entry.doc.state(), Some(&stats)) {
+    match io::save_any_with_meta(path, entry.doc.state(), Some(&stats), &entry.doc.guides) {
         Ok(()) => {
             entry.doc.stats = stats;
             entry.doc.path = Some(path.to_path_buf());

@@ -71,7 +71,8 @@ mydrawing.qsk  (a ZIP file)
   "selection": "selection.png", // omitted (or null) if there is no selection
   "palette": { "name": "PICO-8", "colors": [{ "r": 0, "g": 0, "b": 0, "a": 255 }] }, // omitted when empty
   "palette_lock": false, // indexed-color mode: edits snap to the palette
-  "stats": { "created": 1759180800, "work_secs": 5423.5, "edits": 812, "saves": 9 } // 0.47+, optional
+  "stats": { "created": 1759180800, "work_secs": 5423.5, "edits": 812, "saves": 9 }, // 0.47+, optional
+  "guides": [{ "vertical": true, "pos": 512.0 }, { "vertical": false, "pos": 300.0 }] // 0.49+, omitted when empty
 }
 ```
 
@@ -114,6 +115,10 @@ Field notes:
   30 s without input), `edits` (committed history steps over the document's
   life) and `saves` (including the save that wrote the file). Shown in the
   Info panel. Optional; a file without them starts fresh when opened.
+- **`guides`** (0.49+) are the ruler guides: `vertical` (`x = pos`) or
+  horizontal (`y = pos`) lines in document pixels that the shape, marquee,
+  crop, move and gradient tools snap to. Kept outside the undo history,
+  like Photoshop's; omitted when there are none.
 - **`layers`** is an array of per-layer properties (`LayerProps`, flattened
   into each entry) plus that layer's PNG path (`file`). Layer order in this
   array is bottom-to-top and must match the physical stacking order; there's

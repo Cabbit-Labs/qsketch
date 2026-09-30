@@ -1098,6 +1098,35 @@ impl QSketchApp {
                         ui.close();
                     }
                 });
+                // Rulers and guides.
+                let has_guides = self.state.active().is_some_and(|d| !d.doc.guides.is_empty());
+                let c = &self.state.settings.canvas;
+                let rg_on = c.show_rulers || (c.show_guides && has_guides);
+                ui.menu_button(format!("{} Rulers & Guides", if rg_on { icons::CHECK } else { " " }), |ui| {
+                    ui.label(
+                        egui::RichText::new(
+                            "Drag from a ruler to add a guide; drag one back onto the ruler to remove it. The Move tool (or Ctrl with any tool) moves guides.",
+                        )
+                        .weak()
+                        .small(),
+                    );
+                    let c = self.state.settings.canvas.clone();
+                    for (a, on, enabled) in [
+                        (Action::ToggleRulers, c.show_rulers, true),
+                        (Action::ToggleGuides, c.show_guides, true),
+                        (Action::ToggleSnapToGuides, c.snap_to_guides, true),
+                        (Action::ToggleLockGuides, c.lock_guides, true),
+                    ] {
+                        let btn = egui::Button::new(format!("{} {}", if on { icons::CHECK } else { " " }, a.label()))
+                            .shortcut_text(self.state.keymap.primary_text(a));
+                        if ui.add_enabled(enabled, btn).clicked() {
+                            self.state.pending.push(a);
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                    self.menu_item(ui, Action::ClearGuides, has_guides);
+                });
                 let tiled = self.state.settings.canvas.tiled;
                 ui.menu_button(format!("{} Tiled Mode", if tiled > 0 { icons::CHECK } else { " " }), |ui| {
                     ui.label(
@@ -1914,6 +1943,28 @@ impl QSketchApp {
                 resize_settled(ctx);
             }
             Action::TogglePanels => self.state.panels_hidden = !self.state.panels_hidden,
+            Action::ToggleRulers => {
+                let c = &mut self.state.settings.canvas;
+                c.show_rulers = !c.show_rulers;
+            }
+            Action::ToggleGuides => {
+                let c = &mut self.state.settings.canvas;
+                c.show_guides = !c.show_guides;
+            }
+            Action::ToggleSnapToGuides => {
+                let c = &mut self.state.settings.canvas;
+                c.snap_to_guides = !c.snap_to_guides;
+            }
+            Action::ToggleLockGuides => {
+                let c = &mut self.state.settings.canvas;
+                c.lock_guides = !c.lock_guides;
+            }
+            Action::ClearGuides => {
+                if let Some(d) = self.state.active_mut() {
+                    d.doc.guides.clear();
+                }
+                self.state.guide_drag = None;
+            }
             Action::ToggleSymmetryHorizontal => self.state.symmetry.horizontal = !self.state.symmetry.horizontal,
             Action::ToggleSymmetryVertical => self.state.symmetry.vertical = !self.state.symmetry.vertical,
             Action::SymmetryOff => {

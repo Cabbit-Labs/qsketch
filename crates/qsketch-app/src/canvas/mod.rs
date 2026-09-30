@@ -2,6 +2,7 @@
 //! composite, and screen-space overlays (selection ants, brush cursor).
 
 pub mod flash;
+pub mod guides;
 pub mod render;
 pub mod view;
 
@@ -19,6 +20,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     if rect.width() < 2.0 || rect.height() < 2.0 {
         return;
     }
+    // Rulers take a band off the top and left; everything below works on
+    // the canvas proper.
+    let (rect, bands) = guides::layout(rect, state.settings.canvas.show_rulers);
     let ctx = ui.ctx().clone();
     let ppp = ctx.pixels_per_point();
 
@@ -120,6 +124,10 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
 
     let mouse = state.settings.mouse.clone();
     let popup_rect = state.brush_popup.map(|p| p.rect);
+
+    // Rulers and guides take the pointer before the tools see it.
+    let (guides_own, guide_cursor) = guides::handle(ui, state, doc_id, rect, bands, &events, mods, tool);
+    let events = if guides_own { Vec::new() } else { events };
 
     for ev in &events {
         match ev {
@@ -379,6 +387,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             // The loupe draws its own precision crosshair; a system cursor on
             // top of it would read as two pointers.
             egui::CursorIcon::None
+        } else if let Some(c) = guide_cursor {
+            c
         } else if state.temp_tool.is_some_and(|(t, _)| t == ToolKind::Hand) && capturing {
             egui::CursorIcon::Grabbing
         } else if rotate_band {
@@ -521,6 +531,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     draw_selection(&painter, entry, &ctx);
     flash::update(state, doc_id, &ctx, &painter);
     tools::draw_overlay(state, doc_id, &painter);
+    guides::draw(ui, state, doc_id, rect, bands);
     crate::share::draw_cursors(state, doc_id, &painter);
     {
         // The quick brush popup takes the pointer off the canvas, which would

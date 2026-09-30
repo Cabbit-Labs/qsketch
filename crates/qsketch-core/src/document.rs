@@ -390,6 +390,15 @@ pub fn civil_from_unix(secs: u64) -> (i64, u32, u32, u32, u32) {
     (y, m, d, (rem / 3600) as u32, ((rem / 60) % 60) as u32)
 }
 
+/// A ruler guide: a vertical (`x = pos`) or horizontal (`y = pos`) line in
+/// document pixels that geometric tools snap to. Not undoable; saved in
+/// `.qsk`.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Guide {
+    pub vertical: bool,
+    pub pos: f32,
+}
+
 pub struct Document {
     pub history: History,
     working: DocState,
@@ -397,6 +406,8 @@ pub struct Document {
     pub title: String,
     /// Lifetime statistics (see [`DocStats`]); saved in `.qsk`.
     pub stats: DocStats,
+    /// Ruler guides (see [`Guide`]); saved in `.qsk`, outside undo.
+    pub guides: Vec<Guide>,
     /// `History` id of the state on disk; `None` when never saved.
     saved_at: Option<u64>,
     /// Photoshop's snapshot row: the document as it was opened (or last
@@ -426,6 +437,7 @@ impl Document {
             path,
             title: title.into(),
             stats: DocStats::started_now(),
+            guides: Vec::new(),
             saved_at: Some(0),
             composite: Composite::new(w, h),
             dirty,

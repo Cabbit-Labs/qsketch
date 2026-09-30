@@ -176,6 +176,17 @@ pub struct BrushPopup {
     pub just_opened: bool,
 }
 
+/// A ruler guide being dragged: a new one pulled off a ruler (`index` is
+/// `None` until it is dropped on the canvas) or an existing one being moved.
+#[derive(Clone, Copy, Debug)]
+pub struct GuideDrag {
+    pub doc: DocId,
+    pub vertical: bool,
+    pub index: Option<usize>,
+    /// Current document coordinate along the guide's axis.
+    pub pos: f32,
+}
+
 /// A color pick in flight (the Eyedropper tool, or a pick chord held down).
 /// The loupe follows the pointer until the button is released.
 #[derive(Clone, Copy, Debug)]
@@ -270,6 +281,8 @@ pub struct AppState {
     pub last_activity: Option<std::time::Instant>,
     /// A color pick in progress: drives the zoomed loupe over the canvas.
     pub pick_preview: Option<PickPreview>,
+    /// A ruler guide being dragged (see `canvas::guides`).
+    pub guide_drag: Option<GuideDrag>,
     /// Seconds the pointer has been held in the auto-scroll band (velocity build-up).
     pub edge_scroll_hold: f32,
     /// Photoshop-style eye sweep: the visibility every eye the pointer
@@ -353,6 +366,7 @@ impl AppState {
             work_clock: None,
             last_activity: None,
             pick_preview: None,
+            guide_drag: None,
             edge_scroll_hold: 0.0,
             eye_drag: None,
             tablet_samples: Vec::new(),

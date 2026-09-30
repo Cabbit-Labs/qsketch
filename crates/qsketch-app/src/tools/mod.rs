@@ -476,6 +476,41 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     } else {
         ev
     };
+    // Snap to guides: the same tools land on a guide within a few screen
+    // pixels (guides are document coordinates, so the tolerance scales
+    // with the zoom).
+    let ev = if state.settings.canvas.snap_to_guides
+        && state.settings.canvas.show_guides
+        && matches!(
+            tool,
+            ToolKind::RectSelect
+                | ToolKind::EllipseSelect
+                | ToolKind::Line
+                | ToolKind::Rect
+                | ToolKind::Ellipse
+                | ToolKind::Crop
+                | ToolKind::Move
+                | ToolKind::Gradient
+        ) {
+        match state.doc(doc_id).filter(|d| !d.doc.guides.is_empty()).map(|d| (d.doc.guides.clone(), d.view.zoom)) {
+            Some((guides, zoom)) => {
+                let snap = |mut inp: CanvasInput| {
+                    inp.doc = crate::canvas::guides::snap_point(&guides, zoom, inp.doc, 8.0);
+                    inp
+                };
+                match ev {
+                    CanvasEvent::Press(i) => CanvasEvent::Press(snap(i)),
+                    CanvasEvent::Drag(i) => CanvasEvent::Drag(snap(i)),
+                    CanvasEvent::Release(i) => CanvasEvent::Release(snap(i)),
+                    CanvasEvent::Hover(i) => CanvasEvent::Hover(snap(i)),
+                    other => other,
+                }
+            }
+            None => ev,
+        }
+    } else {
+        ev
+    };
     // A filter dialog previews by holding its result in the working state;
     // editing underneath would bake that preview into the next undo step and
     // the following parameter change would then filter an already-filtered

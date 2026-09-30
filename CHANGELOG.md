@@ -2,6 +2,17 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.49.0 — 2026-09-30
+
+- Rulers (View ▸ Rulers & Guides ▸ Rulers, Ctrl+Shift+R) along the top and
+  left of the canvas, in document pixels, with the pointer tracked on both.
+- Guides: drag from a ruler onto the canvas to add one, drag a guide with
+  the Move tool (or Ctrl held with any tool) to move it, and drop it back on
+  the ruler to remove it. The shape, marquee, crop, move and gradient tools
+  snap to guides (Snap to Guides, Ctrl+Alt+;); Guides (Ctrl+;) hides them,
+  Lock Guides freezes them, Clear Guides removes them. Guides are saved in
+  the `.qsk` and follow autosaves and backups.
+
 ## 0.48.0 — 2026-09-30
 
 - Ctrl+Tab / Ctrl+Shift+Tab cycle through the open documents (Window ▸ Next

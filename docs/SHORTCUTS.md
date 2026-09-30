@@ -151,6 +151,10 @@ selection tool applies it and starts a new selection there.
 | Snap to Grid | `Ctrl+Shift+;` |
 | Tiled: Off / Across / Down / Both | — |
 | Fullscreen | `F11` |
+| Rulers (drag off a ruler to add a guide; drag a guide back to remove it) | `Ctrl+Shift+R` |
+| Guides (show / hide the document's guides) | `Ctrl+;` |
+| Snap to Guides | `Ctrl+Alt+;` |
+| Lock Guides / Clear Guides | — |
 | Hide/Show Panels | `Tab` |
 | Arrange: Side by Side / Stacked / Grid / All in Tabs (every open document at once) | — |
 | Next Document | `Ctrl+Tab` |

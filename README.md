@@ -84,6 +84,9 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   vertically or radially (up to 64 copies) around a movable center with
   on-canvas guides, and steady shaky lines with a rope ("lazy brush") or
   moving-average stabilizer per brush.
+- **Rulers and guides.** Rulers in document pixels along the canvas; drag
+  a guide off either ruler, move it with the Move tool, snap shapes,
+  marquees, crops and moves to it. Guides live in the `.qsk`.
 - **Crash recovery and backups.** Unsaved documents are autosaved to the
   settings folder on a timer and offered for recovery on the next launch if
   qsketch didn't exit cleanly; saving keeps a few previous versions of the

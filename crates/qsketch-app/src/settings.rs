@@ -697,6 +697,14 @@ pub struct CanvasSettings {
     pub grid_size: u32,
     /// Shape, marquee, crop, move and gradient drags land on grid lines.
     pub snap_to_grid: bool,
+    /// Rulers along the top and left of the canvas (drag off them for guides).
+    pub show_rulers: bool,
+    /// Draw the document's ruler guides.
+    pub show_guides: bool,
+    /// Geometric tools land on guides within a few pixels.
+    pub snap_to_guides: bool,
+    /// Guides can't be dragged, created or removed with the pointer.
+    pub lock_guides: bool,
     /// Tiled preview: repeat the document around itself (0 off, 1 across,
     /// 2 down, 3 both) so seamless tiles can be judged while painting.
     pub tiled: u8,
@@ -761,6 +769,10 @@ impl Default for CanvasSettings {
             show_grid: false,
             grid_size: 16,
             snap_to_grid: false,
+            show_rulers: false,
+            show_guides: true,
+            snap_to_guides: true,
+            lock_guides: false,
             tiled: 0,
             transform_filter: qsketch_core::raster::ResizeFilter::Bilinear,
             wheel: WheelBehavior::Zoom,
