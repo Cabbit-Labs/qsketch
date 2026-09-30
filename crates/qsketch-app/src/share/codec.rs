@@ -204,6 +204,7 @@ pub fn decode_snapshot(bytes: &[u8]) -> Result<(DocState, String)> {
             palette_lock: false,
             pixel_aspect: [1, 1],
             slices: Vec::new(),
+            tilesets: Vec::new(),
         },
         h.title,
     ))

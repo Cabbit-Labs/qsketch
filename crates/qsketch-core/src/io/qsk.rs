@@ -43,6 +43,9 @@ struct Manifest {
     /// Ruler guides (0.49+). Optional.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     guides: Vec<Guide>,
+    /// Tilesets of tilemap layers (0.57+): one PNG strip each.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tilesets: Vec<TilesetInfo>,
     /// Slices (0.56+).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     slices: Vec<crate::slice::Slice>,
@@ -52,6 +55,16 @@ struct Manifest {
     /// Timelapse (0.51+): frames live in `timelapse/NNNNNN.png`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     timelapse: Option<TimelapseInfo>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TilesetInfo {
+    name: String,
+    tile_w: u32,
+    tile_h: u32,
+    count: u32,
+    /// PNG with the tiles side by side, tile 0 (empty) first.
+    file: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -130,6 +143,25 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
             }
             _ => None,
         };
+        // Tilesets: the tiles of each side by side in one PNG.
+        let mut tileset_infos = Vec::with_capacity(doc.tilesets.len());
+        for (i, ts) in doc.tilesets.iter().enumerate() {
+            let n = ts.tiles.len().max(1) as u32;
+            let mut strip = Raster::new(ts.tile_w * n, ts.tile_h);
+            for (k, t) in ts.tiles.iter().enumerate() {
+                strip.blit(t, (k as u32 * ts.tile_w) as i32, 0, false);
+            }
+            let file = format!("tilesets/{i:03}.png");
+            zip.start_file(&file, stored)?;
+            zip.write_all(&super::image_io::encode_png(strip.width(), strip.height(), &strip.to_rgba())?)?;
+            tileset_infos.push(TilesetInfo {
+                name: ts.name.clone(),
+                tile_w: ts.tile_w,
+                tile_h: ts.tile_h,
+                count: n,
+                file,
+            });
+        }
         let manifest = Manifest {
             format: "qsketch".into(),
             version: FORMAT_VERSION,
@@ -144,6 +176,7 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
             palette_lock: doc.palette_lock,
             pixel_aspect: (doc.pixel_aspect != [1, 1]).then_some(doc.pixel_aspect),
             slices: doc.slices.clone(),
+            tilesets: tileset_infos,
             stats: meta.stats.cloned(),
             guides: meta.guides.to_vec(),
             timelapse: meta.timelapse.filter(|t| t.recording || !t.frames.is_empty()).map(|t| TimelapseInfo {
@@ -208,6 +241,32 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
     }
     let selection = manifest.selection.as_deref().and_then(|name| read_gray(&mut zip, name, w, h)).map(Arc::new);
     let next_layer_id = manifest.next_layer_id.max(layers.iter().map(|l| l.props.id).max().unwrap_or(0) + 1);
+    let mut tilesets = Vec::with_capacity(manifest.tilesets.len());
+    for info in &manifest.tilesets {
+        let mut ts = crate::tilemap::Tileset::new(info.name.clone(), info.tile_w, info.tile_h);
+        ts.tiles.clear();
+        let mut bytes = Vec::new();
+        if let Ok(mut f) = zip.by_name(&info.file) {
+            f.read_to_end(&mut bytes)?;
+        }
+        let strip = super::image_io::decode_bytes(&bytes).unwrap_or_else(|_| Raster::new(1, 1));
+        for k in 0..info.count.max(1) {
+            ts.tiles.push(strip.crop(crate::geom::IRect::new(
+                (k * info.tile_w) as i32,
+                0,
+                info.tile_w as i32,
+                info.tile_h as i32,
+            )));
+        }
+        tilesets.push(ts);
+    }
+    // A tilemap pointing at a missing tileset is plain pixels.
+    for l in &mut layers {
+        if l.props.tilemap.as_ref().is_some_and(|t| t.tileset >= tilesets.len()) {
+            l.props.tilemap = None;
+            l.props.kind = crate::layer::LayerKind::Raster;
+        }
+    }
     let mut doc = DocState {
         width: w,
         height: h,
@@ -219,6 +278,7 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
         palette_lock: manifest.palette_lock,
         pixel_aspect: manifest.pixel_aspect.unwrap_or([1, 1]),
         slices: manifest.slices,
+        tilesets,
     };
     doc.repair_groups();
     let mut timelapse = crate::timelapse::Timelapse::default();
@@ -250,6 +310,31 @@ pub fn read_preview(path: &Path) -> anyhow::Result<Raster> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tilemap_round_trips() {
+        let mut doc = DocState::new(16, 8, None);
+        for y in 0..4 {
+            for x in 0..4 {
+                doc.layers[0].raster.set_pixel(x, y, crate::color::Rgba8::new(255, 0, 0, 255));
+                doc.layers[0].raster.set_pixel(x + 8, y + 4, crate::color::Rgba8::new(255, 0, 0, 255));
+            }
+        }
+        let (ts, tm) = crate::tilemap::from_raster(&doc.layers[0].raster, "t", 4, 4);
+        doc.tilesets = vec![ts];
+        doc.layers[0].props.kind = crate::layer::LayerKind::Tilemap;
+        doc.layers[0].props.tilemap = Some(tm.clone());
+        let dir = std::env::temp_dir().join(format!("qsk-tilemap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.qsk");
+        save(&path, &doc).unwrap();
+        let back = load(&path).unwrap();
+        assert_eq!(back.tilesets.len(), 1);
+        assert_eq!(back.tilesets[0].tiles.len(), 2);
+        assert_eq!(back.tilesets[0].tiles[1].get_pixel(2, 2), crate::color::Rgba8::new(255, 0, 0, 255));
+        assert_eq!(back.layers[0].props.tilemap, Some(tm));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn pixel_aspect_round_trips() {

@@ -201,6 +201,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
                     mask_enabled: rec.mask_enabled,
                     style: Default::default(),
                     adjustment: None,
+                    tilemap: None,
                 };
                 next_id += 1;
                 layers.push(Layer { props, raster, mask: mask.map(std::sync::Arc::new) });
@@ -228,6 +229,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         palette_lock: false,
         pixel_aspect: [1, 1],
         slices: Vec::new(),
+        tilesets: Vec::new(),
     })
 }
 

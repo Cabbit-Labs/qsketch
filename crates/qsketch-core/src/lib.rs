@@ -36,6 +36,7 @@ pub mod shape;
 pub mod slice;
 pub mod style;
 pub mod text;
+pub mod tilemap;
 pub mod timelapse;
 pub mod tip;
 pub mod warp;

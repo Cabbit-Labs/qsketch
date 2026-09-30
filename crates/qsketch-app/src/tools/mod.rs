@@ -8,6 +8,7 @@ pub mod select;
 pub mod slice;
 pub mod symmetry;
 pub mod text;
+pub mod tile;
 mod transform;
 mod view;
 
@@ -58,10 +59,12 @@ pub enum ToolKind {
     Clone,
     /// Named rectangles (9-slice UI parts, sprite sub-images).
     Slice,
+    /// Stamps tiles into a tilemap layer's cells.
+    Tile,
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 25] = [
+    pub const ALL: [ToolKind; 26] = [
         ToolKind::Move,
         ToolKind::RectSelect,
         ToolKind::EllipseSelect,
@@ -77,6 +80,7 @@ impl ToolKind {
         ToolKind::Eraser,
         ToolKind::Smudge,
         ToolKind::Clone,
+        ToolKind::Tile,
         ToolKind::Fill,
         ToolKind::Gradient,
         ToolKind::Line,
@@ -100,6 +104,7 @@ impl ToolKind {
             ToolKind::SelectBrush => "Selection Brush",
             ToolKind::Crop => "Crop",
             ToolKind::Slice => "Slice",
+            ToolKind::Tile => "Tile",
             ToolKind::Eyedropper => "Eyedropper",
             ToolKind::Brush => "Brush",
             ToolKind::Pencil => "Pencil",
@@ -136,6 +141,7 @@ impl ToolKind {
             ToolKind::SelectBrush => icons::HIGHLIGHTER,
             ToolKind::Crop => icons::CROP,
             ToolKind::Slice => icons::GRID_NINE,
+            ToolKind::Tile => icons::SQUARES_FOUR,
             ToolKind::Eyedropper => icons::EYEDROPPER,
             ToolKind::Brush => icons::PAINT_BRUSH,
             ToolKind::Pencil => icons::PENCIL_SIMPLE,
@@ -166,7 +172,12 @@ impl ToolKind {
             | ToolKind::MagicWand
             | ToolKind::SelectBrush => 1,
             ToolKind::Crop | ToolKind::Slice | ToolKind::Eyedropper => 2,
-            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Clone => 3,
+            ToolKind::Brush
+            | ToolKind::Pencil
+            | ToolKind::Eraser
+            | ToolKind::Smudge
+            | ToolKind::Clone
+            | ToolKind::Tile => 3,
             ToolKind::Fill | ToolKind::Gradient => 4,
             ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse | ToolKind::Contour => 5,
             ToolKind::Text => 6,
@@ -296,6 +307,10 @@ pub struct ToolOptions {
     pub text_italic: bool,
     #[serde(skip)]
     pub crop_rect: Option<IRect>,
+    /// Tile tool: the tileset index to stamp, and its flips.
+    pub tile_index: u32,
+    pub tile_flip_h: bool,
+    pub tile_flip_v: bool,
 }
 
 fn default_liquify_size() -> f32 {
@@ -342,6 +357,9 @@ impl Default for ToolOptions {
             text_bold: false,
             text_italic: false,
             crop_rect: None,
+            tile_index: 1,
+            tile_flip_h: false,
+            tile_flip_v: false,
         }
     }
 }
@@ -429,6 +447,10 @@ pub enum ToolSession {
     CropDrag {
         start: Pt,
         cur: Pt,
+    },
+    /// Tile tool drag: stamping (or clearing) cells.
+    TileStamp {
+        erase: bool,
     },
     /// Slice tool drag: creating, moving or resizing a slice.
     Slice {
@@ -622,6 +644,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         ToolKind::Hand => view::handle_hand(state, doc_id, ev),
         ToolKind::RotateView => view::handle_rotate(state, doc_id, ev),
         ToolKind::Slice => slice::handle(state, doc_id, ev),
+        ToolKind::Tile => tile::handle(state, doc_id, ev),
     }
 }
 
@@ -763,6 +786,7 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     }
     text::draw_overlay(state, doc_id, painter);
     slice::draw_overlay(state, doc_id, painter);
+    tile::draw_grid(state, doc_id, painter);
     fill::draw_pick_loupe(state, doc_id, painter);
 
     // Crop overlay: darken outside the pending crop rect.

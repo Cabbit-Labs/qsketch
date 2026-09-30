@@ -158,7 +158,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             let limit = entry.doc.history.limit();
             let text = if len >= limit { format!("{len} states (oldest dropped)") } else { format!("{len} states") };
             ui.label(egui::RichText::new(text).weak()).on_hover_text(format!(
-                "Undo keeps the last {limit} states (Preferences ▸ General); the snapshot row above is always available"
+                "Undo keeps the last {limit} states (Preferences › General); the snapshot row above is always available"
             ));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if crate::ui::widgets::small_button(ui, "Clear")

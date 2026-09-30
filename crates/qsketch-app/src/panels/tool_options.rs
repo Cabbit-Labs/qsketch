@@ -134,6 +134,18 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                 });
                 hint(ui, "Drag to draw a foreground → background gradient. Shift snaps the angle.");
             }
+            ToolKind::Tile => {
+                group(ui, &theme, Section::Tools, |ui| {
+                    ui.label(format!("Tile {}", state.tool_opts.tile_index));
+                    let o = &mut state.tool_opts;
+                    crate::ui::widgets::icon_toggle(ui, icons::FLIP_HORIZONTAL, icons::FLIP_HORIZONTAL, &mut o.tile_flip_h, "Stamp flipped horizontally", 22.0);
+                    crate::ui::widgets::icon_toggle(ui, icons::FLIP_VERTICAL, icons::FLIP_VERTICAL, &mut o.tile_flip_v, "Stamp flipped vertically", 22.0);
+                    if ui.button("Tileset…").on_hover_text("Pick tiles in the Tileset panel").clicked() {
+                        state.show_panel_requests.push(crate::workspace::PanelKind::Tileset);
+                    }
+                });
+                hint(ui, "Click or drag to stamp the tile into a tilemap layer. Alt or right-click clears cells; Ctrl+click picks a tile.");
+            }
             ToolKind::Slice => {
                 let doc_id = state.active_doc;
                 let sel = state.active().and_then(|d| d.slice_sel.and_then(|i| d.doc.state().slices.get(i).cloned().map(|s| (i, s))));

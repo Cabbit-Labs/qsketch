@@ -47,6 +47,9 @@ pub struct LayerProps {
     /// Adjustment layers only: the color adjustment they apply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adjustment: Option<crate::filter::Filter>,
+    /// Tilemap layers only: which tile each cell shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tilemap: Option<crate::tilemap::Tilemap>,
 }
 
 fn default_true() -> bool {
@@ -61,6 +64,9 @@ pub enum LayerKind {
     /// Owns no pixels: applies `LayerProps::adjustment` to everything below
     /// it (within its group), through its mask and opacity.
     Adjustment,
+    /// Pixels made of tiles from a shared tileset (`LayerProps::tilemap`);
+    /// painting a cell edits its tile everywhere it is used.
+    Tilemap,
 }
 
 #[derive(Clone)]
@@ -91,6 +97,7 @@ impl Layer {
                 mask_enabled: true,
                 style: Default::default(),
                 adjustment: None,
+                tilemap: None,
             },
             raster: Raster::new(width, height),
             mask: None,
@@ -184,7 +191,7 @@ impl Layer {
     /// A plain raster layer: the only kind whose pixels filters, transforms
     /// and the like work on.
     pub fn owns_pixels(&self) -> bool {
-        self.props.kind == LayerKind::Raster
+        matches!(self.props.kind, LayerKind::Raster | LayerKind::Tilemap)
     }
 
     /// Apply this adjustment layer to `raster` (straight RGBA) the way the

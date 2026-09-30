@@ -12,5 +12,6 @@ pub mod palette;
 pub mod reference;
 pub mod swatches;
 pub mod thumbs;
+pub mod tileset;
 pub mod tool_options;
 pub mod tools_panel;

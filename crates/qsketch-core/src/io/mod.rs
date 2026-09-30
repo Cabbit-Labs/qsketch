@@ -118,6 +118,9 @@ pub fn compat_warnings(path: &Path, doc: &crate::document::DocState) -> Vec<Stri
         }
         return w;
     }
+    if doc.layers.iter().any(|l| l.props.tilemap.is_some()) {
+        w.push(format!("{name} can't store qsketch tilemaps: tilemap layers are saved as plain pixel layers."));
+    }
     if doc.layers.iter().any(|l| l.is_adjustment()) {
         w.push(format!("{name} can't store qsketch adjustment layers: they are left out of the file."));
     }

@@ -63,6 +63,8 @@ impl Anchor {
 }
 
 pub fn resize_canvas(doc: &mut DocState, new_w: u32, new_h: u32, anchor: Anchor) {
+    // The cell grid can't follow a canvas change: tilemaps become pixels.
+    crate::tilemap::detach_all(doc);
     let new_w = new_w.max(1);
     let new_h = new_h.max(1);
     let (ox, oy) = anchor.offset(doc.width, doc.height, new_w, new_h);
@@ -79,6 +81,8 @@ pub fn resize_canvas(doc: &mut DocState, new_w: u32, new_h: u32, anchor: Anchor)
 }
 
 pub fn resize_image(doc: &mut DocState, new_w: u32, new_h: u32, filter: ResizeFilter) {
+    // The cell grid can't follow a canvas change: tilemaps become pixels.
+    crate::tilemap::detach_all(doc);
     let new_w = new_w.max(1);
     let new_h = new_h.max(1);
     for l in &mut doc.layers {
@@ -95,6 +99,8 @@ pub fn resize_image(doc: &mut DocState, new_w: u32, new_h: u32, filter: ResizeFi
 }
 
 pub fn crop(doc: &mut DocState, rect: IRect) {
+    // The cell grid can't follow a canvas change: tilemaps become pixels.
+    crate::tilemap::detach_all(doc);
     let r = rect.intersect(&doc.rect());
     if r.is_empty() {
         return;
@@ -112,6 +118,8 @@ pub fn crop(doc: &mut DocState, rect: IRect) {
 }
 
 pub fn flip_horizontal(doc: &mut DocState) {
+    // The cell grid can't follow a canvas change: tilemaps become pixels.
+    crate::tilemap::detach_all(doc);
     for l in &mut doc.layers {
         l.raster = l.raster.flipped_h();
         if let Some(m) = &l.mask {
@@ -124,6 +132,8 @@ pub fn flip_horizontal(doc: &mut DocState) {
 }
 
 pub fn flip_vertical(doc: &mut DocState) {
+    // The cell grid can't follow a canvas change: tilemaps become pixels.
+    crate::tilemap::detach_all(doc);
     for l in &mut doc.layers {
         l.raster = l.raster.flipped_v();
         if let Some(m) = &l.mask {
@@ -137,6 +147,8 @@ pub fn flip_vertical(doc: &mut DocState) {
 
 /// Rotate the whole canvas by `times` × 90° clockwise.
 pub fn rotate_canvas(doc: &mut DocState, times: u32) {
+    // The cell grid can't follow a canvas change: tilemaps become pixels.
+    crate::tilemap::detach_all(doc);
     for l in &mut doc.layers {
         l.raster = l.raster.rotated(times);
         if let Some(m) = &l.mask {

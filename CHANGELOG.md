@@ -2,6 +2,26 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.57.0 — 2026-09-30
+
+- Tilemap layers (Layer ▸ Tilemap): a New Tilemap Layer, or Convert to
+  Tilemap Layer on an existing pixel layer, cuts the canvas into cells the
+  size of the grid (View ▸ Grid) backed by a shared tileset with identical
+  tiles merged. Paint on a tilemap layer with any brush: when the stroke
+  ends, the painted cells update their tiles and every other cell using
+  those tiles follows, in every tilemap layer on that tileset; painting an
+  empty cell makes a new tile. The Tile tool (Shift+T) stamps the tile
+  picked in the new Tileset panel (optionally flipped), Alt or right-click
+  clears cells and Ctrl+click picks the tile under the pointer. The cell
+  grid shows while a tilemap layer is active. Tilemaps are undoable and
+  saved in the `.qsk` (tilesets as PNG strips); Photoshop and Aseprite files
+  get them as plain pixel layers, and cropping, resizing, rotating or
+  flipping the canvas turns them into pixel layers. Convert to Pixel Layer
+  drops the tile structure.
+- The menu path hints in tooltips and messages ("File › Timelapse" and the
+  like) use a character the interface font has, instead of one that drew as
+  an empty box.
+
 ## 0.56.0 — 2026-09-30
 
 - Slice tool (Shift+C): drag to add a named slice, drag one to move it,

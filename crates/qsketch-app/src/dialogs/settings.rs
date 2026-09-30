@@ -184,12 +184,12 @@ fn general(ui: &mut Ui, state: &mut AppState) {
         })
         .response
         .on_hover_text(
-            "Saving over a file first copies the old one into the settings folder. File \u{25b8} Restore Previous Version opens one as a new document.",
+            "Saving over a file first copies the old one into the settings folder. File › Restore Previous Version opens one as a new document.",
         );
         ui.end_row();
         ui.label("Record a timelapse in new documents");
         ui.checkbox(&mut g.timelapse_new_documents, "").on_hover_text(
-            "Each new document starts recording (File \u{25b8} Timelapse). Frames are saved in the .qsk.",
+            "Each new document starts recording (File › Timelapse). Frames are saved in the .qsk.",
         );
         ui.end_row();
         ui.label("Timelapse frames");
@@ -813,7 +813,7 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             ui.add(egui::DragValue::new(&mut c.grid_size).range(1..=4096).suffix(" px"));
         })
         .response
-        .on_hover_text("A tile grid over the canvas (View ▸ Grid, Ctrl+Shift+G).");
+        .on_hover_text("A tile grid over the canvas (View › Grid, Ctrl+Shift+G).");
         ui.end_row();
         ui.label("Transparency checkerboard");
         ui.horizontal(|ui| {

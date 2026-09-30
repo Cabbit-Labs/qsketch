@@ -26,11 +26,12 @@ pub enum PanelKind {
     BrushSettings,
     Info,
     Reference,
+    Tileset,
 }
 
 impl PanelKind {
     #[allow(dead_code)]
-    pub const PANELS: [PanelKind; 11] = [
+    pub const PANELS: [PanelKind; 12] = [
         PanelKind::Tools,
         PanelKind::Layers,
         PanelKind::History,
@@ -42,6 +43,7 @@ impl PanelKind {
         PanelKind::BrushSettings,
         PanelKind::Info,
         PanelKind::Reference,
+        PanelKind::Tileset,
     ];
 
     pub fn static_title(&self) -> &'static str {
@@ -59,6 +61,7 @@ impl PanelKind {
             PanelKind::BrushSettings => "Brush Settings",
             PanelKind::Info => "Info",
             PanelKind::Reference => "Reference",
+            PanelKind::Tileset => "Tileset",
         }
     }
 
@@ -68,7 +71,7 @@ impl PanelKind {
             PanelKind::Home | PanelKind::Document(_) => None,
             PanelKind::Tools => Some(Section::Tools),
             PanelKind::Layers | PanelKind::History => Some(Section::Layers),
-            PanelKind::Color | PanelKind::Swatches | PanelKind::Palette => Some(Section::Color),
+            PanelKind::Color | PanelKind::Swatches | PanelKind::Palette | PanelKind::Tileset => Some(Section::Color),
             PanelKind::Navigator | PanelKind::Info | PanelKind::Reference => Some(Section::View),
             PanelKind::Brushes | PanelKind::BrushSettings => Some(Section::Brush),
         }
@@ -89,6 +92,7 @@ impl PanelKind {
             PanelKind::BrushSettings => icons::SLIDERS_HORIZONTAL,
             PanelKind::Info => icons::INFO,
             PanelKind::Reference => icons::IMAGES,
+            PanelKind::Tileset => icons::SQUARES_FOUR,
         }
     }
 }
@@ -304,7 +308,7 @@ impl Workspace {
             PanelKind::History => PanelKind::Layers,
             PanelKind::Color => PanelKind::Swatches,
             PanelKind::Swatches => PanelKind::Color,
-            PanelKind::Palette => PanelKind::Swatches,
+            PanelKind::Palette | PanelKind::Tileset => PanelKind::Swatches,
             PanelKind::Navigator | PanelKind::Brushes | PanelKind::Info | PanelKind::Reference => PanelKind::Layers,
             PanelKind::BrushSettings => PanelKind::Brushes,
             _ => PanelKind::Home,
@@ -564,6 +568,7 @@ impl TabViewer for Viewer<'_> {
             PanelKind::BrushSettings => panels::brush_settings::ui(ui, self.state),
             PanelKind::Info => panels::info::ui(ui, self.state),
             PanelKind::Reference => panels::reference::ui(ui, self.state),
+            PanelKind::Tileset => panels::tileset::ui(ui, self.state),
         }
     }
 

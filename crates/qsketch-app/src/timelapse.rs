@@ -107,7 +107,7 @@ pub fn export(state: &mut AppState, doc_id: DocId, gif: bool) {
     if frames.is_empty() {
         state.toasts.push(
             Level::Info,
-            "This document has no timelapse yet. Turn on File ▸ Timelapse ▸ Record Timelapse, then draw.",
+            "This document has no timelapse yet. Turn on File › Timelapse › Record Timelapse, then draw.",
         );
         return;
     }

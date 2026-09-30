@@ -96,6 +96,7 @@ reachable from its menu until you assign one.
 | Lock Layer | — |
 | Layer Properties… | — |
 | Layer Style ▸ Layer Style… / Copy / Paste / Clear Layer Style | — |
+| Tilemap ▸ New Tilemap Layer / Convert to Tilemap Layer / Convert to Pixel Layer | — |
 | New Adjustment Layer ▸ Brightness/Contrast / Levels / Curves / Hue/Saturation / Color Balance | — |
 | New Adjustment Layer ▸ Adjustment Layer Settings… | — |
 | Flip Layer Horizontal | — |
@@ -204,6 +205,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Selection Brush | — |
 | Crop | — |
 | Slice (drag to add, drag to move, corners to resize, double-click for properties, Delete removes) | `Shift+C` |
+| Tile (stamp the Tileset panel's tile; Alt or right-click clears; Ctrl+click picks) | `Shift+T` |
 | Eyedropper | `I` |
 | Brush | `B` |
 | Pencil | `N` |

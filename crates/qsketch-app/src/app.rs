@@ -1035,6 +1035,24 @@ impl QSketchApp {
                     })
                     .unwrap_or((false, false));
                 let is_adjustment = self.state.active().is_some_and(|d| d.doc.state().active_layer().is_adjustment());
+                let is_tilemap =
+                    self.state.active().is_some_and(|d| d.doc.state().active_layer().props.tilemap.is_some());
+                let is_pixels = self.state.active().is_some_and(|d| {
+                    d.doc.state().active_layer().props.kind == qsketch_core::layer::LayerKind::Raster
+                });
+                ui.menu_button("Tilemap", |ui| {
+                    self.menu_item(ui, Action::NewTilemapLayer, has_doc);
+                    self.menu_item(ui, Action::ConvertToTilemap, is_pixels);
+                    self.menu_item(ui, Action::ConvertToPixels, is_tilemap);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Tile size = grid size ({0}×{0}, View › Grid)",
+                            self.state.settings.canvas.grid_size
+                        ))
+                        .weak()
+                        .small(),
+                    );
+                });
                 ui.menu_button("New Adjustment Layer", |ui| {
                     for (a, label) in [
                         (Action::NewAdjBrightnessContrast, "Brightness/Contrast…"),
@@ -1283,6 +1301,7 @@ impl QSketchApp {
                     (Action::ShowBrushSettings, PanelKind::BrushSettings),
                     (Action::ShowInfo, PanelKind::Info),
                     (Action::ShowReference, PanelKind::Reference),
+                    (Action::ShowTileset, PanelKind::Tileset),
                 ] {
                     let open = self.workspace.is_panel_open(&k);
                     let btn = egui::Button::new(format!("{} {}", if open { icons::CHECK } else { " " }, a.label()))
@@ -1450,7 +1469,7 @@ impl QSketchApp {
                             .small()
                             .color(egui::Color32::from_rgb(235, 70, 70)),
                     )
-                    .on_hover_text(format!("Recording a timelapse ({n} frames). File ▸ Timelapse to export or stop."));
+                    .on_hover_text(format!("Recording a timelapse ({n} frames). File › Timelapse to export or stop."));
                 }
                 if let Some(pos) = self.state.hover_doc_pos {
                     ui.label(
@@ -2243,6 +2262,51 @@ impl QSketchApp {
             Action::ShowBrushSettings => self.state.show_panel_requests.push(PanelKind::BrushSettings),
             Action::ShowInfo => self.state.show_panel_requests.push(PanelKind::Info),
             Action::ShowReference => self.state.show_panel_requests.push(PanelKind::Reference),
+            Action::ShowTileset => self.state.show_panel_requests.push(PanelKind::Tileset),
+            Action::NewTilemapLayer | Action::ConvertToTilemap => {
+                let size = self.state.settings.canvas.grid_size.clamp(2, 256);
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let li = if action == Action::NewTilemapLayer {
+                        let name = s.unique_layer_name("Tilemap");
+                        let id = s.add_layer(name, None);
+                        s.index_of(id)
+                    } else {
+                        Some(s.active).filter(|&i| s.layers[i].props.kind == qsketch_core::layer::LayerKind::Raster)
+                    };
+                    if let Some(li) = li {
+                        let tname = format!("Tileset {}", s.tilesets.len() + 1);
+                        let (mut ts, mut tm) =
+                            qsketch_core::tilemap::from_raster(&s.layers[li].raster, &tname, size, size);
+                        tm.tileset = s.tilesets.len();
+                        ts.name = tname;
+                        s.tilesets.push(ts);
+                        let l = &mut s.layers[li];
+                        l.props.kind = qsketch_core::layer::LayerKind::Tilemap;
+                        l.props.tilemap = Some(tm);
+                        d.doc.commit(if action == Action::NewTilemapLayer {
+                            "New Tilemap Layer"
+                        } else {
+                            "Convert to Tilemap"
+                        });
+                        self.state.show_panel_requests.push(PanelKind::Tileset);
+                    } else {
+                        self.state.toasts.push(Level::Info, "Only a pixel layer can become a tilemap.");
+                    }
+                }
+            }
+            Action::ConvertToPixels => {
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let li = s.active;
+                    if s.layers[li].props.tilemap.take().is_some() {
+                        s.layers[li].props.kind = qsketch_core::layer::LayerKind::Raster;
+                        d.doc.commit("Convert to Pixel Layer");
+                    }
+                }
+            }
             Action::ResetLayout => self.state.layout_reset_requested = true,
             Action::About => self.state.dialogs.about = true,
             Action::CheckForUpdates => match self.state.settings.update.effective_manifest_url() {

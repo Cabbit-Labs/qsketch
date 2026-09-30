@@ -301,7 +301,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         if on {
             state.toasts.push(
                 Level::Info,
-                "Palette locked: new edits snap to the palette. Image ▸ Index Colors converts what is already there.",
+                "Palette locked: new edits snap to the palette. Image › Index Colors converts what is already there.",
             );
         }
     }

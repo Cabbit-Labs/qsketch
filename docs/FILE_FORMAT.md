@@ -120,6 +120,10 @@ Field notes:
   30 s without input), `edits` (committed history steps over the document's
   life) and `saves` (including the save that wrote the file). Shown in the
   Info panel. Optional; a file without them starts fresh when opened.
+- **`tilesets`** (0.57+) are the tilesets of the tilemap layers:
+  `[{ "name": "Tileset 1", "tile_w": 16, "tile_h": 16, "count": 42,
+  "file": "tilesets/000.png" }]`, each stored as one PNG with the tiles
+  side by side, tile 0 (always empty) first.
 - **`slices`** (0.56+) are named canvas rectangles (Slice tool): `rect` in
   canvas pixels, an optional 9-slice `center` and `pivot` relative to the
   rect's top-left corner, and the outline `color`. They are undoable, follow
@@ -159,7 +163,12 @@ Field notes:
   - `clipped` — clips this layer to the alpha of the nearest non-clipped
     layer below it (a clipping mask). Defaults to `false` if absent, for
     forward compatibility with files written before this field existed.
-  - `kind` — `Raster` (default), `Group`, or (0.53+) `Adjustment`: a
+  - `tilemap` (0.57+, `kind` `Tilemap`) — `{ "tileset": 0, "cols": 30,
+    "rows": 17, "cells": [...] }`: row-major cell values, each a tile index
+    into that tileset plus `0x80000000` (flipped horizontally) and
+    `0x40000000` (flipped vertically). The layer PNG holds the rendered
+    tiles, so readers that ignore tilemaps still see the right pixels.
+  - `kind` — `Raster` (default), `Group`, `Tilemap` (0.57+), or (0.53+) `Adjustment`: a
     layer that owns no pixels and applies its `adjustment` (a filter such as
     `{"Levels": {...}}`, `{"Curves": {...}}`, `{"HueSaturation": {...}}`,
     `{"BrightnessContrast": {...}}` or `{"ColorBalance": {...}}`) to

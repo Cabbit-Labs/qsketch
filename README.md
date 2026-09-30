@@ -41,7 +41,9 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   ordered dither patterns, RotSprite rotation in Free Transform, which
   turns pixel art without blurring it or inventing colors, and a Slice tool
   for named 9-slice UI parts that export as PNGs plus JSON and round-trip
-  through Aseprite files.
+  through Aseprite files. Tilemap layers build levels from a shared
+  tileset: stamp tiles with the Tile tool, paint any cell and every other
+  use of that tile follows.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
 - **Free Transform.** Move, scale, rotate, deform (corner pull) and warp

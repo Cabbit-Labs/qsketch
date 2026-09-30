@@ -38,6 +38,8 @@ pub struct DocState {
     /// Named rectangles (UI parts, sprite sub-images) with optional 9-slice
     /// centers and pivots; see `crate::slice`.
     pub slices: Vec<crate::slice::Slice>,
+    /// Tilesets of the tilemap layers (see `crate::tilemap`).
+    pub tilesets: Vec<crate::tilemap::Tileset>,
 }
 
 impl DocState {
@@ -79,6 +81,7 @@ impl DocState {
             palette_lock: false,
             pixel_aspect: [1, 1],
             slices: Vec::new(),
+            tilesets: Vec::new(),
         }
     }
 
@@ -95,6 +98,7 @@ impl DocState {
             palette_lock: false,
             pixel_aspect: [1, 1],
             slices: Vec::new(),
+            tilesets: Vec::new(),
         }
     }
 
@@ -563,6 +567,14 @@ impl Document {
     /// to the palette first, so every edit lands on palette colors.
     pub fn commit(&mut self, label: impl Into<String>) {
         self.enforce_palette();
+        // Painted tilemap cells update their tiles, and every other use of
+        // those tiles follows.
+        if self.working.layers.iter().any(|l| l.props.tilemap.is_some()) {
+            let redrawn = crate::tilemap::sync(&mut self.working, self.history.current());
+            for r in redrawn {
+                self.mark_dirty_rect(r);
+            }
+        }
         self.history.push(label, self.working.clone());
         self.stats.edits += 1;
     }

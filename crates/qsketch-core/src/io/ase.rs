@@ -577,6 +577,7 @@ impl AseSprite {
                 mask_enabled: true,
                 style: Default::default(),
                 adjustment: None,
+                tilemap: None,
             };
             let raster = match al.kind {
                 LAYER_KIND_GROUP => {
@@ -637,6 +638,7 @@ impl AseSprite {
             palette_lock: self.depth == 8,
             pixel_aspect: self.pixel_aspect,
             slices: self.slices.clone(),
+            tilesets: Vec::new(),
         };
         doc.repair_groups();
         Ok((doc, warnings))

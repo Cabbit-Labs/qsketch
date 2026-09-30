@@ -169,6 +169,9 @@ actions! {
     NewAdjHueSaturation => (Layer, "New Adjustment Layer: Hue/Saturation", []),
     NewAdjColorBalance => (Layer, "New Adjustment Layer: Color Balance", []),
     AdjustmentSettings => (Layer, "Adjustment Layer Settings…", []),
+    NewTilemapLayer => (Layer, "New Tilemap Layer", []),
+    ConvertToTilemap => (Layer, "Convert to Tilemap Layer", []),
+    ConvertToPixels => (Layer, "Convert to Pixel Layer", []),
     ClearLayerStyle => (Layer, "Clear Layer Style", []),
     CopyLayerStyle => (Layer, "Copy Layer Style", []),
     PasteLayerStyle => (Layer, "Paste Layer Style", []),
@@ -295,6 +298,7 @@ actions! {
     ToolZoom => (Tools, "Zoom", ["Z"]),
     ToolHand => (Tools, "Hand", ["H"]),
     ToolSlice => (Tools, "Slice", ["Shift+C"]),
+    ToolTile => (Tools, "Tile", ["Shift+T"]),
     ToolRotateView => (Tools, "Rotate View", ["Shift+R"]),
     // Brush
     BrushSizeUp => (Brush, "Increase Brush Size", ["]"]),
@@ -320,6 +324,7 @@ actions! {
     ShowInfo => (Window, "Info", ["F8"]),
     ShowPalette => (Window, "Palette", []),
     ShowReference => (Window, "Reference", []),
+    ShowTileset => (Window, "Tileset", []),
     ResetLayout => (Window, "Reset Workspace", []),
     NextDocument => (Window, "Next Document", ["Ctrl+Tab"]),
     PrevDocument => (Window, "Previous Document", ["Ctrl+Shift+Tab"]),
@@ -357,6 +362,7 @@ impl Action {
             Action::ToolZoom => ToolKind::Zoom,
             Action::ToolHand => ToolKind::Hand,
             Action::ToolSlice => ToolKind::Slice,
+            Action::ToolTile => ToolKind::Tile,
             Action::ToolRotateView => ToolKind::RotateView,
             _ => return None,
         })
@@ -388,6 +394,7 @@ impl Action {
             ToolKind::Zoom => Action::ToolZoom,
             ToolKind::Hand => Action::ToolHand,
             ToolKind::Slice => Action::ToolSlice,
+            ToolKind::Tile => Action::ToolTile,
             ToolKind::RotateView => Action::ToolRotateView,
         }
     }
