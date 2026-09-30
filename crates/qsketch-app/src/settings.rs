@@ -490,6 +490,12 @@ pub struct GeneralSettings {
     /// Delete drops the selection after clearing it, instead of leaving the
     /// marching ants around the hole it made.
     pub deselect_after_delete: bool,
+    /// Start recording a timelapse in every new document.
+    pub timelapse_new_documents: bool,
+    /// Longest side of a timelapse frame, in pixels.
+    pub timelapse_size: u32,
+    /// Playback speed of an exported timelapse, frames per second.
+    pub timelapse_fps: u32,
 }
 
 impl Default for GeneralSettings {
@@ -509,6 +515,9 @@ impl Default for GeneralSettings {
             backup_versions: 3,
             paste_new_layer: true,
             deselect_after_delete: true,
+            timelapse_new_documents: false,
+            timelapse_size: 720,
+            timelapse_fps: 15,
         }
     }
 }

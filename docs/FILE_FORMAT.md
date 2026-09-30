@@ -72,7 +72,8 @@ mydrawing.qsk  (a ZIP file)
   "palette": { "name": "PICO-8", "colors": [{ "r": 0, "g": 0, "b": 0, "a": 255 }] }, // omitted when empty
   "palette_lock": false, // indexed-color mode: edits snap to the palette
   "stats": { "created": 1759180800, "work_secs": 5423.5, "edits": 812, "saves": 9 }, // 0.47+, optional
-  "guides": [{ "vertical": true, "pos": 512.0 }, { "vertical": false, "pos": 300.0 }] // 0.49+, omitted when empty
+  "guides": [{ "vertical": true, "pos": 512.0 }, { "vertical": false, "pos": 300.0 }], // 0.49+, omitted when empty
+  "timelapse": { "frames": 412, "recording": true, "every": 1 } // 0.51+, omitted when there is none
 }
 ```
 
@@ -115,6 +116,13 @@ Field notes:
   30 s without input), `edits` (committed history steps over the document's
   life) and `saves` (including the save that wrote the file). Shown in the
   Info panel. Optional; a file without them starts fresh when opened.
+- **`timelapse`** (0.51+) describes the recorded timelapse: `frames` PNGs
+  stored as `timelapse/000000.png`, `timelapse/000001.png`… (oldest first,
+  each a downscaled snapshot of the composite taken after an edit),
+  whether recording continues when the file is opened, and `every`, the
+  number of committed edits between frames (it doubles each time the
+  recording is thinned to stay under 3000 frames). Frames that are missing
+  from the archive are skipped.
 - **`guides`** (0.49+) are the ruler guides: `vertical` (`x = pos`) or
   horizontal (`y = pos`) lines in document pixels that the shape, marquee,
   crop, move and gradient tools snap to. Kept outside the undo history,

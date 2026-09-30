@@ -34,6 +34,7 @@ pub mod palette;
 pub mod raster;
 pub mod shape;
 pub mod text;
+pub mod timelapse;
 pub mod tip;
 pub mod warp;
 
@@ -42,7 +43,7 @@ pub use brush::{AngleControl, BrushSettings, PaintMode, StabilizerMode, StrokeEn
 pub use clipboard::ClipImage;
 pub use color::{Hsv, Rgba8};
 pub use composite::{Composite, TileSet};
-pub use document::{DocState, DocStats, Document, Guide};
+pub use document::{DocMeta, DocState, DocStats, Document, Guide, LoadedMeta};
 pub use filter::Filter;
 pub use geom::{IRect, Pt};
 pub use history::{History, HistoryEntry};
@@ -51,6 +52,7 @@ pub use mask::Mask;
 pub use palette::Palette;
 pub use raster::{Raster, Tile, TILE, TILE_BYTES, TILE_PX};
 pub use text::{TextAlign, TextImage, TextStyle};
+pub use timelapse::Timelapse;
 pub use tip::TipImage;
 
 /// Crate version, surfaced in the About dialog and file manifests.

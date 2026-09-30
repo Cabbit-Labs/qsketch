@@ -2,6 +2,20 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.51.0 — 2026-09-30
+
+- Timelapse (File ▸ Timelapse): Record Timelapse captures a small snapshot
+  of the picture after every edit (a worker thread encodes it, so strokes
+  never wait). The frames are saved inside the `.qsk` and survive autosave,
+  recovery and backups; recording resumes when the file is reopened. Export
+  as a looping animated GIF (holding the finished picture for two seconds)
+  or as numbered PNG frames for a video editor; exports run in the
+  background with progress in the status bar. A red REC counter in the
+  status bar and a Timelapse row in the Info panel show what is recorded.
+  Very long recordings are thinned to at most 3000 frames. Preferences ▸
+  General can start recording in every new document and sets the frame
+  size and playback speed.
+
 ## 0.50.0 — 2026-09-30
 
 - Reference panel (Window ▸ Reference): open a picture to draw from and keep

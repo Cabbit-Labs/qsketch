@@ -895,6 +895,41 @@ impl QSketchApp {
                     }
                 });
                 self.menu_item(ui, Action::ExportTileset, has_doc);
+                let (recording, frames, bytes) = self
+                    .state
+                    .active()
+                    .map(|d| (d.doc.timelapse.recording, d.doc.timelapse.frames.len(), d.doc.timelapse.bytes()))
+                    .unwrap_or((false, 0, 0));
+                ui.menu_button(format!("{} Timelapse", if recording { icons::CHECK } else { " " }), |ui| {
+                    let btn = egui::Button::new(format!(
+                        "{} {}",
+                        if recording { icons::CHECK } else { " " },
+                        Action::ToggleTimelapse.label()
+                    ))
+                    .shortcut_text(self.state.keymap.primary_text(Action::ToggleTimelapse));
+                    if ui
+                        .add_enabled(has_doc, btn)
+                        .on_hover_text("Capture a small frame after every edit; the frames are saved in the .qsk")
+                        .clicked()
+                    {
+                        self.state.pending.push(Action::ToggleTimelapse);
+                        ui.close();
+                    }
+                    ui.separator();
+                    self.menu_item(ui, Action::ExportTimelapseGif, frames > 0);
+                    self.menu_item(ui, Action::ExportTimelapseFrames, frames > 0);
+                    self.menu_item(ui, Action::ClearTimelapse, frames > 0);
+                    if has_doc {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{frames} frames · {}",
+                                crate::ui::widgets::fmt_bytes(bytes as u64)
+                            ))
+                            .weak()
+                            .small(),
+                        );
+                    }
+                });
                 ui.separator();
                 let shared = self.state.active().is_some_and(|d| d.share.is_some());
                 self.menu_item(ui, Action::ShareCanvas, true);
@@ -1356,6 +1391,15 @@ impl QSketchApp {
                         "File size on disk"
                     });
                 }
+                if d.doc.timelapse.recording {
+                    let n = d.doc.timelapse.frames.len();
+                    ui.label(
+                        RichText::new(format!("{} REC {n}", icons::RECORD))
+                            .small()
+                            .color(egui::Color32::from_rgb(235, 70, 70)),
+                    )
+                    .on_hover_text(format!("Recording a timelapse ({n} frames). File ▸ Timelapse to export or stop."));
+                }
                 if let Some(pos) = self.state.hover_doc_pos {
                     ui.label(
                         RichText::new(format!("{}, {}", pos.x.floor() as i32, pos.y.floor() as i32))
@@ -1391,6 +1435,15 @@ impl QSketchApp {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(RichText::new(format!("v{}", crate::update::CURRENT_VERSION)).weak().small());
+                for job in &self.state.jobs {
+                    let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
+                    ui.add(
+                        egui::ProgressBar::new(done as f32 / job.total.max(1) as f32)
+                            .desired_width(90.0)
+                            .desired_height(10.0),
+                    );
+                    ui.label(RichText::new(format!("{} {done}/{}", job.label, job.total)).weak().small());
+                }
                 let tool = self.state.effective_tool();
                 let hint = match tool {
                     ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser => {
@@ -1483,6 +1536,21 @@ impl QSketchApp {
             Action::ExportImage => {
                 if let Some(id) = active {
                     crate::files::export(&mut self.state, id);
+                }
+            }
+            Action::ToggleTimelapse => {
+                if let Some(id) = active {
+                    crate::timelapse::toggle(&mut self.state, id);
+                }
+            }
+            Action::ExportTimelapseGif | Action::ExportTimelapseFrames => {
+                if let Some(id) = active {
+                    crate::timelapse::export(&mut self.state, id, action == Action::ExportTimelapseGif);
+                }
+            }
+            Action::ClearTimelapse => {
+                if let Some(d) = self.state.active_mut() {
+                    d.doc.timelapse.clear();
                 }
             }
             Action::QuickExport => {
@@ -2311,6 +2379,12 @@ impl eframe::App for QSketchApp {
         let pending = std::mem::take(&mut self.state.pending);
         for a in pending {
             self.perform(a, &ctx);
+        }
+        // Timelapse frames for documents edited this frame, and finished
+        // background jobs.
+        crate::timelapse::tick(&mut self.state, &ctx);
+        if crate::timelapse::poll_jobs(&mut self.state) {
+            ctx.request_repaint_after(Duration::from_millis(150));
         }
         // Actions may have created documents that still need tabs.
         let ids: Vec<DocId> = self.state.docs.iter().map(|d| d.id).collect();

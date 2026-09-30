@@ -187,6 +187,18 @@ fn general(ui: &mut Ui, state: &mut AppState) {
             "Saving over a file first copies the old one into the settings folder. File \u{25b8} Restore Previous Version opens one as a new document.",
         );
         ui.end_row();
+        ui.label("Record a timelapse in new documents");
+        ui.checkbox(&mut g.timelapse_new_documents, "").on_hover_text(
+            "Each new document starts recording (File \u{25b8} Timelapse). Frames are saved in the .qsk.",
+        );
+        ui.end_row();
+        ui.label("Timelapse frames");
+        ui.horizontal(|ui| {
+            ui.add(egui::DragValue::new(&mut g.timelapse_size).range(128..=2048).suffix(" px"));
+            ui.label("longest side, played at");
+            ui.add(egui::DragValue::new(&mut g.timelapse_fps).range(1..=60).suffix(" fps"));
+        });
+        ui.end_row();
     });
     ui.add_space(14.0);
     ui.heading("Updates");

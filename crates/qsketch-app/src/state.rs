@@ -176,6 +176,15 @@ pub struct BrushPopup {
     pub just_opened: bool,
 }
 
+/// Work running on another thread (a timelapse export, say), shown with
+/// its progress in the status bar and toasted when it ends.
+pub struct BackgroundJob {
+    pub label: String,
+    pub done: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    pub total: usize,
+    pub rx: std::sync::mpsc::Receiver<Result<String, String>>,
+}
+
 /// A ruler guide being dragged: a new one pulled off a ruler (`index` is
 /// `None` until it is dropped on the canvas) or an existing one being moved.
 #[derive(Clone, Copy, Debug)]
@@ -296,6 +305,10 @@ pub struct AppState {
     pub thumbs: crate::panels::thumbs::ThumbCache,
     /// The Reference panel's picture and view.
     pub reference: crate::panels::reference::Reference,
+    /// Encodes timelapse frames off the UI thread.
+    pub recorder: crate::timelapse::Recorder,
+    /// Background work with progress (exports).
+    pub jobs: Vec<BackgroundJob>,
     pub updater: crate::update::Updater,
     /// Crash-recovery snapshots of unsaved documents.
     pub autosave: crate::autosave::Autosave,
@@ -375,6 +388,8 @@ impl AppState {
             render_state: None,
             thumbs: Default::default(),
             reference: Default::default(),
+            recorder: Default::default(),
+            jobs: Vec::new(),
             updater: Default::default(),
             autosave: Default::default(),
             library: crate::brush_library::BrushLibrary::load(),

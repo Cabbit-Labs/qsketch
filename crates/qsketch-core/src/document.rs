@@ -399,6 +399,24 @@ pub struct Guide {
     pub pos: f32,
 }
 
+/// What a `.qsk` stores besides the layer stack, borrowed from a
+/// [`Document`] for saving (see [`Document::meta`]). The default stores none
+/// of it.
+#[derive(Clone, Copy, Default)]
+pub struct DocMeta<'a> {
+    pub stats: Option<&'a DocStats>,
+    pub guides: &'a [Guide],
+    pub timelapse: Option<&'a crate::timelapse::Timelapse>,
+}
+
+/// The same, as read back from a file (see [`Document::apply_meta`]).
+#[derive(Clone, Debug, Default)]
+pub struct LoadedMeta {
+    pub stats: DocStats,
+    pub guides: Vec<Guide>,
+    pub timelapse: crate::timelapse::Timelapse,
+}
+
 pub struct Document {
     pub history: History,
     working: DocState,
@@ -408,6 +426,8 @@ pub struct Document {
     pub stats: DocStats,
     /// Ruler guides (see [`Guide`]); saved in `.qsk`, outside undo.
     pub guides: Vec<Guide>,
+    /// Timelapse recording and frames; saved in `.qsk`, outside undo.
+    pub timelapse: crate::timelapse::Timelapse,
     /// `History` id of the state on disk; `None` when never saved.
     saved_at: Option<u64>,
     /// Photoshop's snapshot row: the document as it was opened (or last
@@ -438,6 +458,7 @@ impl Document {
             title: title.into(),
             stats: DocStats::started_now(),
             guides: Vec::new(),
+            timelapse: Default::default(),
             saved_at: Some(0),
             composite: Composite::new(w, h),
             dirty,
@@ -641,6 +662,23 @@ impl Document {
 
     pub fn is_modified(&self) -> bool {
         self.saved_at != Some(self.history.current_id())
+    }
+
+    /// Everything besides the layers that a `.qsk` save should carry.
+    pub fn meta(&self) -> DocMeta<'_> {
+        DocMeta { stats: Some(&self.stats), guides: &self.guides, timelapse: Some(&self.timelapse) }
+    }
+
+    /// Take over what a file stored with the layers: its statistics (when it
+    /// had any), guides and timelapse. Recording resumes from here without
+    /// an immediate frame.
+    pub fn apply_meta(&mut self, meta: LoadedMeta) {
+        if meta.stats.created.is_some() {
+            self.stats = meta.stats;
+        }
+        self.guides = meta.guides;
+        self.timelapse = meta.timelapse;
+        self.timelapse.last_edits = Some(self.stats.edits);
     }
 
     pub fn mark_saved(&mut self) {

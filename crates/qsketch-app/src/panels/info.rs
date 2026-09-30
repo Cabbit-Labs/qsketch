@@ -79,7 +79,20 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             ui.end_row();
             // Lifetime statistics carried in the .qsk.
             let st = &entry.doc.stats;
-            ui.label(egui::RichText::new("Created").weak());
+            let tl = &entry.doc.timelapse;
+        ui.label(egui::RichText::new("Timelapse").weak());
+        ui.label(if tl.recording || !tl.frames.is_empty() {
+            format!(
+                "{}{} frames · {}",
+                if tl.recording { "recording · " } else { "" },
+                tl.frames.len(),
+                crate::ui::widgets::fmt_bytes(tl.bytes() as u64)
+            )
+        } else {
+            "off".to_string()
+        });
+        ui.end_row();
+        ui.label(egui::RichText::new("Created").weak());
             ui.label(st.created_text().unwrap_or_else(|| "—".into()));
             ui.end_row();
             ui.label(egui::RichText::new("Work").weak()).on_hover_text(

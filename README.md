@@ -84,6 +84,9 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   vertically or radially (up to 64 copies) around a movable center with
   on-canvas guides, and steady shaky lines with a rope ("lazy brush") or
   moving-average stabilizer per brush.
+- **Timelapse.** Record a document as you paint (File ▸ Timelapse); the
+  frames are saved in the `.qsk` and export as a looping GIF or as
+  numbered PNG frames for a video editor.
 - **Reference panel.** Keep a picture beside the canvas: pan, zoom, flip
   it, view it in grayscale to judge values, and click it to pick colors.
 - **Rulers and guides.** Rulers in document pixels along the canvas; drag

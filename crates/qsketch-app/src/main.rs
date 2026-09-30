@@ -19,6 +19,7 @@ mod startup_trace;
 mod state;
 mod tablet;
 mod thumbnail;
+mod timelapse;
 mod tools;
 mod ui;
 mod update;

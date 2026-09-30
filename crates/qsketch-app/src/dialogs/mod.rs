@@ -548,7 +548,8 @@ fn show_new_doc(ctx: &Context, state: &mut AppState) {
         state.settings.general.new_doc_width = d.width;
         state.settings.general.new_doc_height = d.height;
         state.settings.general.new_doc_background = d.background;
-        let doc = Document::new(d.width.max(1), d.height.max(1), bg, name);
+        let mut doc = Document::new(d.width.max(1), d.height.max(1), bg, name);
+        doc.timelapse.recording = state.settings.general.timelapse_new_documents;
         state.add_document(doc);
     } else if closed {
         state.dialogs.new_doc = None;

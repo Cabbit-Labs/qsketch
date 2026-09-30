@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::document::{DocState, DocStats, Guide};
+use crate::document::{DocMeta, DocState, DocStats, Guide, LoadedMeta};
 use crate::layer::{Layer, LayerProps};
 use crate::mask::Mask;
 use crate::palette::Palette;
@@ -43,6 +43,20 @@ struct Manifest {
     /// Ruler guides (0.49+). Optional.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     guides: Vec<Guide>,
+    /// Timelapse (0.51+): frames live in `timelapse/NNNNNN.png`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timelapse: Option<TimelapseInfo>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TimelapseInfo {
+    frames: usize,
+    recording: bool,
+    every: u32,
+}
+
+fn timelapse_entry(i: usize) -> String {
+    format!("timelapse/{i:06}.png")
 }
 
 #[derive(Serialize, Deserialize)]
@@ -70,16 +84,12 @@ fn read_gray(zip: &mut ZipArchive<BufReader<File>>, name: &str, w: u32, h: u32) 
 }
 
 pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
-    save_with_stats(path, doc, None)
+    save_with_meta(path, doc, DocMeta::default())
 }
 
-/// Save with the document's lifetime statistics in the manifest.
-pub fn save_with_stats(path: &Path, doc: &DocState, stats: Option<&DocStats>) -> anyhow::Result<()> {
-    save_with_meta(path, doc, stats, &[])
-}
-
-/// Save with the document's statistics and ruler guides in the manifest.
-pub fn save_with_meta(path: &Path, doc: &DocState, stats: Option<&DocStats>, guides: &[Guide]) -> anyhow::Result<()> {
+/// Save with what the document keeps beside its layers: statistics, ruler
+/// guides and the timelapse (see [`DocMeta`]).
+pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow::Result<()> {
     let tmp = path.with_extension("qsk.tmp");
     {
         let file = File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
@@ -126,9 +136,20 @@ pub fn save_with_meta(path: &Path, doc: &DocState, stats: Option<&DocStats>, gui
             selection,
             palette: (!doc.palette.is_empty()).then(|| doc.palette.clone()),
             palette_lock: doc.palette_lock,
-            stats: stats.cloned(),
-            guides: guides.to_vec(),
+            stats: meta.stats.cloned(),
+            guides: meta.guides.to_vec(),
+            timelapse: meta.timelapse.filter(|t| t.recording || !t.frames.is_empty()).map(|t| TimelapseInfo {
+                frames: t.frames.len(),
+                recording: t.recording,
+                every: t.every,
+            }),
         };
+        if let Some(t) = meta.timelapse {
+            for (i, frame) in t.frames.iter().enumerate() {
+                zip.start_file(timelapse_entry(i), stored)?;
+                zip.write_all(frame)?;
+            }
+        }
         zip.start_file("manifest.json", deflated)?;
         zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
         // Flattened preview for thumbnails / quick look.
@@ -143,18 +164,12 @@ pub fn save_with_meta(path: &Path, doc: &DocState, stats: Option<&DocStats>, gui
 }
 
 pub fn load(path: &Path) -> anyhow::Result<DocState> {
-    Ok(load_with_stats(path)?.0)
+    Ok(load_with_meta(path)?.0)
 }
 
-/// Load a document and the statistics stored with it (default when the
-/// file predates them).
-pub fn load_with_stats(path: &Path) -> anyhow::Result<(DocState, DocStats)> {
-    let (doc, stats, _) = load_with_meta(path)?;
-    Ok((doc, stats))
-}
-
-/// Load a document with the statistics and ruler guides stored in the file.
-pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, DocStats, Vec<Guide>)> {
+/// Load a document with what the file stores beside its layers (defaults
+/// for anything it predates).
+pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut zip = ZipArchive::new(BufReader::new(file))?;
     let manifest: Manifest = {
@@ -196,7 +211,21 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, DocStats, Vec<Gu
         palette_lock: manifest.palette_lock,
     };
     doc.repair_groups();
-    Ok((doc, manifest.stats.unwrap_or_default(), manifest.guides))
+    let mut timelapse = crate::timelapse::Timelapse::default();
+    if let Some(info) = manifest.timelapse {
+        timelapse.recording = info.recording;
+        timelapse.every = info.every.max(1);
+        for i in 0..info.frames {
+            let mut bytes = Vec::new();
+            if let Ok(mut f) = zip.by_name(&timelapse_entry(i)) {
+                if f.read_to_end(&mut bytes).is_ok() {
+                    timelapse.frames.push(bytes.into());
+                }
+            }
+        }
+    }
+    let meta = LoadedMeta { stats: manifest.stats.unwrap_or_default(), guides: manifest.guides, timelapse };
+    Ok((doc, meta))
 }
 
 /// Read just the preview PNG bytes of a `.qsk` (for recent-file thumbnails).

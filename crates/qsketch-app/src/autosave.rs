@@ -114,16 +114,13 @@ pub fn scan() -> Vec<Recoverable> {
 /// Open a snapshot as a modified document pointing at its original path.
 pub fn recover(state: &mut AppState, r: &Recoverable) -> Option<DocId> {
     match io::qsk::load_with_meta(&r.qsk) {
-        Ok((ds, stats, guides)) => {
+        Ok((ds, loaded)) => {
             let path = r.meta.path.clone().filter(|p| io::is_document(p));
             // An untitled snapshot must not collide with this session's own Untitled-N.
             let taken = path.is_none() && state.docs.iter().any(|d| d.doc.title == r.meta.title);
             let title = if r.meta.title.is_empty() || taken { state.untitled_title() } else { r.meta.title.clone() };
             let mut doc = Document::from_state(ds, title, path.clone(), "Recovered");
-            if stats.created.is_some() {
-                doc.stats = stats;
-            }
-            doc.guides = guides;
+            doc.apply_meta(loaded);
             doc.mark_unsaved();
             // The file may already be open (e.g. reopened after an update
             // relaunch); the snapshot is newer, so it takes that tab's place.
@@ -207,6 +204,7 @@ impl Autosave {
             let snapshot = e.doc.state().clone();
             let stats = e.doc.stats.clone();
             let guides = e.doc.guides.clone();
+            let timelapse = e.doc.timelapse.clone();
             self.snapshotted.insert(e.id, cursor);
             let busy = self.busy.clone();
             busy.store(true, Ordering::Relaxed);
@@ -216,7 +214,17 @@ impl Autosave {
                 .spawn(move || {
                     let res = std::fs::create_dir_all(&d)
                         .map_err(anyhow::Error::from)
-                        .and_then(|_| io::qsk::save_with_meta(&qsk, &snapshot, Some(&stats), &guides))
+                        .and_then(|_| {
+                            io::qsk::save_with_meta(
+                                &qsk,
+                                &snapshot,
+                                qsketch_core::DocMeta {
+                                    stats: Some(&stats),
+                                    guides: &guides,
+                                    timelapse: Some(&timelapse),
+                                },
+                            )
+                        })
                         .and_then(|_| Ok(std::fs::write(&json, serde_json::to_vec(&meta)?)?));
                     if let Err(e) = res {
                         log::warn!("autosave {}: {e:#}", qsk.display());
@@ -269,7 +277,7 @@ impl Autosave {
             };
             let res = std::fs::create_dir_all(&d)
                 .map_err(anyhow::Error::from)
-                .and_then(|_| io::qsk::save_with_meta(&qsk, e.doc.state(), Some(&e.doc.stats), &e.doc.guides))
+                .and_then(|_| io::qsk::save_with_meta(&qsk, e.doc.state(), e.doc.meta()))
                 .and_then(|_| Ok(std::fs::write(&json, serde_json::to_vec(&meta)?)?));
             match res {
                 Ok(()) => {

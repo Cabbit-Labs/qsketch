@@ -26,6 +26,7 @@ reachable from its menu until you assign one.
 | Share via Leyline… | — |
 | Stop Sharing | — |
 | Quick Export (re-export to the last export path, no dialog) | `Ctrl+Alt+E` |
+| Timelapse ▸ Record Timelapse / Export as GIF… / Export Frames… / Clear | — |
 | Close | `Ctrl+W` |
 | Quit | `Ctrl+Q` |
 
