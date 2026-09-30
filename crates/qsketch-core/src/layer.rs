@@ -44,6 +44,9 @@ pub struct LayerProps {
     /// the compositor, never baked into the pixels.
     #[serde(default, skip_serializing_if = "crate::style::LayerStyle::is_off")]
     pub style: crate::style::LayerStyle,
+    /// Adjustment layers only: the color adjustment they apply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjustment: Option<crate::filter::Filter>,
 }
 
 fn default_true() -> bool {
@@ -55,6 +58,9 @@ pub enum LayerKind {
     #[default]
     Raster,
     Group,
+    /// Owns no pixels: applies `LayerProps::adjustment` to everything below
+    /// it (within its group), through its mask and opacity.
+    Adjustment,
 }
 
 #[derive(Clone)]
@@ -84,6 +90,7 @@ impl Layer {
                 expanded: true,
                 mask_enabled: true,
                 style: Default::default(),
+                adjustment: None,
             },
             raster: Raster::new(width, height),
             mask: None,
@@ -169,10 +176,60 @@ impl Layer {
         self.props.kind == LayerKind::Group
     }
 
+    /// An adjustment layer (see [`LayerKind::Adjustment`]).
+    pub fn is_adjustment(&self) -> bool {
+        self.props.kind == LayerKind::Adjustment
+    }
+
+    /// A plain raster layer: the only kind whose pixels filters, transforms
+    /// and the like work on.
+    pub fn owns_pixels(&self) -> bool {
+        self.props.kind == LayerKind::Raster
+    }
+
+    /// Apply this adjustment layer to `raster` (straight RGBA) the way the
+    /// compositor would draw it over those pixels: through the mask, at the
+    /// layer's opacity and blend mode. Alpha is kept. For Merge Down.
+    pub fn apply_adjustment_to(&self, raster: &mut Raster) {
+        let Some(f) = self.props.adjustment.as_ref().and_then(crate::filter::adjust::pixel_fn) else { return };
+        let mask = self.active_mask();
+        let (opacity, mode) = (self.props.opacity, self.props.blend);
+        let tile = crate::raster::TILE;
+        for ty in 0..raster.tiles_y() {
+            for tx in 0..raster.tiles_x() {
+                if raster.tile(tx, ty).is_none() {
+                    continue;
+                }
+                let t = raster.tile_mut(tx, ty);
+                for ly in 0..tile {
+                    for lx in 0..tile {
+                        let p = t.get(lx, ly);
+                        if p.a == 0 {
+                            continue;
+                        }
+                        let (x, y) = ((tx as usize * tile + lx) as i32, (ty as usize * tile + ly) as i32);
+                        let k = opacity * mask.map_or(1.0, |m| m.get(x, y) as f32 / 255.0);
+                        if k <= 0.0 {
+                            continue;
+                        }
+                        let c = [p.r as f32 / 255.0, p.g as f32 / 255.0, p.b as f32 / 255.0];
+                        let adj = f(c);
+                        let b = crate::composite::adjusted(mode, c, adj);
+                        let q = |i: usize| ((c[i] + (b[i] - c[i]) * k).clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+                        t.set(lx, ly, crate::color::Rgba8::new(q(0), q(1), q(2), p.a));
+                    }
+                }
+            }
+        }
+    }
+
     /// Can the user paint on this layer right now? Groups own no pixels, so
     /// they are never editable; ancestors' visibility is checked by
     /// [`crate::DocState::layer_editable`].
     pub fn editable(&self) -> bool {
-        self.props.visible && !self.props.locked && !self.is_group()
+        // An adjustment layer is painted through its mask only.
+        self.props.visible
+            && !self.props.locked
+            && (self.owns_pixels() || (self.is_adjustment() && self.mask.is_some()))
     }
 }

@@ -1,36 +1,133 @@
 //! Color adjustments that run through the filter pipeline so they get the
 //! same live preview, selection handling and multi-layer application.
 
-use super::{map_rgb, ColorBalance, Curves, Img, Levels, Src};
+use super::{map_rgb, ColorBalance, Curves, Filter, Img, Levels, Src};
+
+/// A color adjustment as a function of one straight RGB pixel (0..=1).
+pub type PixelFn = Box<dyn Fn([f32; 3]) -> [f32; 3] + Send + Sync>;
+
+/// The per-pixel form of a color adjustment, for adjustment layers (and the
+/// filters below): `None` for filters that are not a pure per-pixel color
+/// map.
+pub fn pixel_fn(f: &Filter) -> Option<PixelFn> {
+    Some(match f {
+        Filter::BrightnessContrast { brightness, contrast } => Box::new(brightness_contrast_fn(*brightness, *contrast)),
+        Filter::Levels(l) => Box::new(levels_fn(l)),
+        Filter::Curves(c) => Box::new(curves_fn(c)),
+        Filter::ColorBalance(b) => Box::new(color_balance_fn(b)),
+        Filter::HueSaturation { hue, saturation, lightness, colorize } => {
+            Box::new(hue_saturation_fn(*hue, *saturation, *lightness, *colorize))
+        }
+        _ => return None,
+    })
+}
+
+/// Whether `f` can drive an adjustment layer.
+pub fn is_adjustment(f: &Filter) -> bool {
+    matches!(
+        f,
+        Filter::BrightnessContrast { .. }
+            | Filter::Levels(_)
+            | Filter::Curves(_)
+            | Filter::ColorBalance(_)
+            | Filter::HueSaturation { .. }
+    )
+}
+
+fn brightness_contrast_fn(brightness: f32, contrast: f32) -> impl Fn([f32; 3]) -> [f32; 3] + Send + Sync {
+    let b = (brightness / 100.0).clamp(-1.0, 1.0);
+    let k = (1.0 + contrast / 100.0).max(0.0);
+    move |c| {
+        let m = |v: f32| ((v - 0.5) * k + 0.5 + b).clamp(0.0, 1.0);
+        [m(c[0]), m(c[1]), m(c[2])]
+    }
+}
+
+fn lut_index(v: f32) -> usize {
+    (v.clamp(0.0, 1.0) * 255.0 + 0.5) as usize
+}
+
+fn levels_fn(l: &Levels) -> impl Fn([f32; 3]) -> [f32; 3] + Send + Sync {
+    let lut =
+        |ch: &super::LevelsCurve| -> Vec<f32> { (0..256).map(|i| l.rgb.apply(ch.apply(i as f32 / 255.0))).collect() };
+    let (lr, lg, lb) = (lut(&l.red), lut(&l.green), lut(&l.blue));
+    move |c| [lr[lut_index(c[0])], lg[lut_index(c[1])], lb[lut_index(c[2])]]
+}
+
+fn curves_fn(c: &Curves) -> impl Fn([f32; 3]) -> [f32; 3] + Send + Sync {
+    let lut = |ch: &super::Curve| -> Vec<f32> { (0..256).map(|i| c.rgb.apply(ch.apply(i as f32 / 255.0))).collect() };
+    let (lr, lg, lb) = (lut(&c.red), lut(&c.green), lut(&c.blue));
+    move |c| [lr[lut_index(c[0])], lg[lut_index(c[1])], lb[lut_index(c[2])]]
+}
+
+fn color_balance_fn(b: &ColorBalance) -> impl Fn([f32; 3]) -> [f32; 3] + Send + Sync {
+    let scale = 1.0 / 100.0;
+    let sh = b.shadows.map(|v| v * scale);
+    let mid = b.midtones.map(|v| v * scale);
+    let hi = b.highlights.map(|v| v * scale);
+    let preserve = b.preserve_luminosity;
+    move |c| {
+        let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+        // Smooth tonal weights that sum to about one across the range.
+        let ws = (1.0 - l * 2.0).clamp(0.0, 1.0);
+        let wh = (l * 2.0 - 1.0).clamp(0.0, 1.0);
+        let wm = 1.0 - ws - wh;
+        let mut out = [0.0f32; 3];
+        for k in 0..3 {
+            // Midtone adjustments are the gentlest, as in Photoshop.
+            let d = sh[k] * ws * 0.6 + mid[k] * wm * 0.5 + hi[k] * wh * 0.6;
+            out[k] = (c[k] + d).clamp(0.0, 1.0);
+        }
+        if preserve {
+            // Shift all three channels equally until the luma is back where
+            // it was: a tint, not a lightening.
+            let l1 = 0.299 * out[0] + 0.587 * out[1] + 0.114 * out[2];
+            let d = l - l1;
+            out = out.map(|v| (v + d).clamp(0.0, 1.0));
+        }
+        out
+    }
+}
+
+fn hue_saturation_fn(
+    hue: f32,
+    saturation: f32,
+    lightness: f32,
+    colorize: bool,
+) -> impl Fn([f32; 3]) -> [f32; 3] + Send + Sync {
+    let sat = (saturation / 100.0).clamp(-1.0, 1.0);
+    let light = (lightness / 100.0).clamp(-1.0, 1.0);
+    move |c| {
+        let rgb = if colorize {
+            let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+            hsl_to_rgb(hue, sat.max(0.0), l)
+        } else {
+            let [h, s, l] = rgb_to_hsl(c);
+            let s = if sat < 0.0 { s * (1.0 + sat) } else { s + (1.0 - s) * sat };
+            hsl_to_rgb(h + hue, s, l)
+        };
+        let m = |v: f32| if light >= 0.0 { v + (1.0 - v) * light } else { v * (1.0 + light) };
+        [m(rgb[0]), m(rgb[1]), m(rgb[2])]
+    }
+}
 
 /// Photoshop-style Brightness/Contrast, both -100..=100.
 pub fn brightness_contrast(src: &Src, brightness: f32, contrast: f32) -> Img {
-    let b = (brightness / 100.0).clamp(-1.0, 1.0);
-    let k = (1.0 + contrast / 100.0).max(0.0);
-    src.map(|x, y| {
-        map_rgb(src.at(x, y), |c| {
-            let m = |v: f32| ((v - 0.5) * k + 0.5 + b).clamp(0.0, 1.0);
-            [m(c[0]), m(c[1]), m(c[2])]
-        })
-    })
+    let f = brightness_contrast_fn(brightness, contrast);
+    src.map(|x, y| map_rgb(src.at(x, y), &f))
 }
 
 /// Levels: per-channel curves first, then the master RGB curve, through
 /// 256-entry lookup tables.
 pub fn levels(src: &Src, l: &Levels) -> Img {
-    let lut =
-        |ch: &super::LevelsCurve| -> Vec<f32> { (0..256).map(|i| l.rgb.apply(ch.apply(i as f32 / 255.0))).collect() };
-    let (lr, lg, lb) = (lut(&l.red), lut(&l.green), lut(&l.blue));
-    let idx = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as usize;
-    src.map(|x, y| map_rgb(src.at(x, y), |c| [lr[idx(c[0])], lg[idx(c[1])], lb[idx(c[2])]]))
+    let f = levels_fn(l);
+    src.map(|x, y| map_rgb(src.at(x, y), &f))
 }
 
 /// Curves: per-channel curves first, then the master curve, via 256-entry LUTs.
 pub fn curves(src: &Src, c: &Curves) -> Img {
-    let lut = |ch: &super::Curve| -> Vec<f32> { (0..256).map(|i| c.rgb.apply(ch.apply(i as f32 / 255.0))).collect() };
-    let (lr, lg, lb) = (lut(&c.red), lut(&c.green), lut(&c.blue));
-    let idx = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as usize;
-    src.map(|x, y| map_rgb(src.at(x, y), |c| [lr[idx(c[0])], lg[idx(c[1])], lb[idx(c[2])]]))
+    let f = curves_fn(c);
+    src.map(|x, y| map_rgb(src.at(x, y), &f))
 }
 
 /// Photoshop-style Color Balance. Each tonal range's three sliders shift
@@ -39,33 +136,8 @@ pub fn curves(src: &Src, c: &Curves) -> Img {
 /// between); `preserve_luminosity` then restores the original lightness so
 /// the tint does not also brighten or darken.
 pub fn color_balance(src: &Src, b: &ColorBalance) -> Img {
-    let scale = 1.0 / 100.0;
-    let sh = b.shadows.map(|v| v * scale);
-    let mid = b.midtones.map(|v| v * scale);
-    let hi = b.highlights.map(|v| v * scale);
-    src.map(|x, y| {
-        map_rgb(src.at(x, y), |c| {
-            let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
-            // Smooth tonal weights that sum to about one across the range.
-            let ws = (1.0 - l * 2.0).clamp(0.0, 1.0);
-            let wh = (l * 2.0 - 1.0).clamp(0.0, 1.0);
-            let wm = 1.0 - ws - wh;
-            let mut out = [0.0f32; 3];
-            for k in 0..3 {
-                // Midtone adjustments are the gentlest, as in Photoshop.
-                let d = sh[k] * ws * 0.6 + mid[k] * wm * 0.5 + hi[k] * wh * 0.6;
-                out[k] = (c[k] + d).clamp(0.0, 1.0);
-            }
-            if b.preserve_luminosity {
-                // Shift all three channels equally until the luma is back
-                // where it was: a tint, not a lightening.
-                let l1 = 0.299 * out[0] + 0.587 * out[1] + 0.114 * out[2];
-                let d = l - l1;
-                out = out.map(|v| (v + d).clamp(0.0, 1.0));
-            }
-            out
-        })
-    })
+    let f = color_balance_fn(b);
+    src.map(|x, y| map_rgb(src.at(x, y), &f))
 }
 
 /// RGB (straight, 0..=1) to HSL with hue in degrees.
@@ -112,22 +184,8 @@ pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> [f32; 3] {
 /// hue when `colorize`), `saturation` and `lightness` in -100..=100
 /// (`colorize` uses saturation 0..=100 as an absolute amount).
 pub fn hue_saturation(src: &Src, hue: f32, saturation: f32, lightness: f32, colorize: bool) -> Img {
-    let sat = (saturation / 100.0).clamp(-1.0, 1.0);
-    let light = (lightness / 100.0).clamp(-1.0, 1.0);
-    src.map(|x, y| {
-        map_rgb(src.at(x, y), |c| {
-            let rgb = if colorize {
-                let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
-                hsl_to_rgb(hue, sat.max(0.0), l)
-            } else {
-                let [h, s, l] = rgb_to_hsl(c);
-                let s = if sat < 0.0 { s * (1.0 + sat) } else { s + (1.0 - s) * sat };
-                hsl_to_rgb(h + hue, s, l)
-            };
-            let m = |v: f32| if light >= 0.0 { v + (1.0 - v) * light } else { v * (1.0 + light) };
-            [m(rgb[0]), m(rgb[1]), m(rgb[2])]
-        })
-    })
+    let f = hue_saturation_fn(hue, saturation, lightness, colorize);
+    src.map(|x, y| map_rgb(src.at(x, y), &f))
 }
 
 #[cfg(test)]

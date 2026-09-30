@@ -145,6 +145,12 @@ Field notes:
   - `clipped` — clips this layer to the alpha of the nearest non-clipped
     layer below it (a clipping mask). Defaults to `false` if absent, for
     forward compatibility with files written before this field existed.
+  - `kind` — `Raster` (default), `Group`, or (0.53+) `Adjustment`: a
+    layer that owns no pixels and applies its `adjustment` (a filter such as
+    `{"Levels": {...}}`, `{"Curves": {...}}`, `{"HueSaturation": {...}}`,
+    `{"BrightnessContrast": {...}}` or `{"ColorBalance": {...}}`) to
+    everything below it in its group, through its mask and opacity. Its
+    layer PNG is empty.
   - `style` (0.52+) — layer effects, omitted when none is on:
     `drop_shadow` (`color`, `opacity`, `angle` in degrees, `distance`,
     `spread`, `size`), `outer_glow` and `inner_glow` (`color`, `opacity`,

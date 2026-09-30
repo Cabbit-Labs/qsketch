@@ -446,20 +446,47 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 x += 40.0;
             } else {
                 let thumb_rect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 1.0), egui::vec2(48.0, 36.0));
-                let raster = &s.layers[i].raster;
-                let tex = thumbs.get(&ctx, (doc_id, layer_id), generation, [48, 36], |m| {
-                    crate::panels::thumbs::raster_thumb(raster, m, true)
-                });
-                let size = tex.size_vec2();
-                let scale = (thumb_rect.width() / size.x).min(thumb_rect.height() / size.y);
-                let draw = egui::Rect::from_center_size(thumb_rect.center(), size * scale);
-                ui.painter().image(
-                    tex.id(),
-                    draw,
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    Color32::WHITE,
-                );
-                let mask_target = entry_mask_edit == Some(layer_id) && s.layers[i].mask.is_some();
+                let adjustment = s.layers[i].is_adjustment();
+                let draw = if adjustment {
+                    // Adjustment layers have no pixels to show: a half-filled
+                    // circle stands for them (click it for the settings).
+                    let draw = egui::Rect::from_center_size(thumb_rect.center(), egui::vec2(36.0, 36.0));
+                    let adj = ui.interact(draw, ui.id().with(("adj_thumb", layer_id)), Sense::click());
+                    crate::ui::chrome::fill_box(ui.painter(), draw, 3.0, ui.visuals().extreme_bg_color);
+                    ui.painter().text(
+                        draw.center(),
+                        egui::Align2::CENTER_CENTER,
+                        icons::CIRCLE_HALF,
+                        egui::FontId::new(20.0, ICON_FAMILY()),
+                        if adj.hovered() {
+                            ui.visuals().text_color()
+                        } else {
+                            crate::ui::theme::dim_text(ui.visuals())
+                        },
+                    );
+                    let what = s.layers[i].props.adjustment.as_ref().map(|f| f.name()).unwrap_or("Adjustment");
+                    if adj.on_hover_text(format!("{what} adjustment layer — click to edit its settings")).clicked() {
+                        click = Some(Click::Only(i));
+                        pending.push(Action::AdjustmentSettings);
+                    }
+                    draw
+                } else {
+                    let raster = &s.layers[i].raster;
+                    let tex = thumbs.get(&ctx, (doc_id, layer_id), generation, [48, 36], |m| {
+                        crate::panels::thumbs::raster_thumb(raster, m, true)
+                    });
+                    let size = tex.size_vec2();
+                    let scale = (thumb_rect.width() / size.x).min(thumb_rect.height() / size.y);
+                    let draw = egui::Rect::from_center_size(thumb_rect.center(), size * scale);
+                    ui.painter().image(
+                        tex.id(),
+                        draw,
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        Color32::WHITE,
+                    );
+                    draw
+                };
+                let mask_target = (entry_mask_edit == Some(layer_id) || adjustment) && s.layers[i].mask.is_some();
                 let pixels_target = is_active && !mask_target;
                 ui.painter().rect_stroke(
                     draw,
@@ -664,8 +691,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 if ui.button("Layer Properties…").clicked() {
                     queued = Some(Action::LayerProperties);
                 }
-                if !is_group && ui.button("Layer Style…").clicked() {
+                if s.layers[i].owns_pixels() && ui.button("Layer Style…").clicked() {
                     queued = Some(Action::LayerStyle);
+                }
+                if s.layers[i].is_adjustment() && ui.button("Adjustment Settings…").clicked() {
+                    queued = Some(Action::AdjustmentSettings);
                 }
                 if let Some(a) = queued {
                     pending.push(a);

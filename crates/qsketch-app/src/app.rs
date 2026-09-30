@@ -1013,9 +1013,27 @@ impl QSketchApp {
                     .active()
                     .map(|d| {
                         let l = d.doc.state().active_layer();
-                        (!l.props.style.is_off(), !l.is_group())
+                        (!l.props.style.is_off(), l.owns_pixels())
                     })
                     .unwrap_or((false, false));
+                let is_adjustment = self.state.active().is_some_and(|d| d.doc.state().active_layer().is_adjustment());
+                ui.menu_button("New Adjustment Layer", |ui| {
+                    for (a, label) in [
+                        (Action::NewAdjBrightnessContrast, "Brightness/Contrast…"),
+                        (Action::NewAdjLevels, "Levels…"),
+                        (Action::NewAdjCurves, "Curves…"),
+                        (Action::NewAdjHueSaturation, "Hue/Saturation…"),
+                        (Action::NewAdjColorBalance, "Color Balance…"),
+                    ] {
+                        let btn = egui::Button::new(label).shortcut_text(self.state.keymap.primary_text(a));
+                        if ui.add_enabled(has_doc, btn).clicked() {
+                            self.state.pending.push(a);
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                    self.menu_item(ui, Action::AdjustmentSettings, is_adjustment);
+                });
                 ui.menu_button("Layer Style", |ui| {
                     self.menu_item(ui, Action::LayerStyle, pixel_layer);
                     self.menu_item(ui, Action::CopyLayerStyle, styled);
@@ -1935,6 +1953,41 @@ impl QSketchApp {
             }
             Action::LayerProperties => dialogs::open_layer_props(&mut self.state),
             Action::LayerStyle => dialogs::layer_style::open(&mut self.state),
+            Action::AdjustmentSettings => dialogs::adjustment::open(&mut self.state),
+            Action::NewAdjBrightnessContrast
+            | Action::NewAdjLevels
+            | Action::NewAdjCurves
+            | Action::NewAdjHueSaturation
+            | Action::NewAdjColorBalance => {
+                let base = match action {
+                    Action::NewAdjBrightnessContrast => Action::BrightnessContrast,
+                    Action::NewAdjLevels => Action::Levels,
+                    Action::NewAdjCurves => Action::Curves,
+                    Action::NewAdjHueSaturation => Action::HueSaturation,
+                    _ => Action::ColorBalance,
+                };
+                let (fg, bg) = (self.state.fg, self.state.bg);
+                let Some(filter) = dialogs::filter::default_filter(base, fg, bg) else { return };
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let (w, h) = (s.width, s.height);
+                    let name = s.unique_layer_name(filter.name());
+                    let id = s.add_layer(name, None);
+                    if let Some(i) = s.index_of(id) {
+                        let l = &mut s.layers[i];
+                        l.props.kind = qsketch_core::layer::LayerKind::Adjustment;
+                        l.props.adjustment = Some(filter);
+                        // Reveal-all mask: paint black to keep the
+                        // adjustment off an area.
+                        l.mask = Some(std::sync::Arc::new(qsketch_core::Mask::full(w, h)));
+                    }
+                    d.mask_edit = Some(id);
+                    d.doc.mark_all_dirty();
+                    d.doc.commit("New Adjustment Layer");
+                }
+                dialogs::adjustment::open(&mut self.state);
+            }
             Action::CopyLayerStyle => {
                 if let Some(d) = self.state.active() {
                     let s = d.doc.state().active_layer().props.style.clone();
@@ -1954,7 +2007,7 @@ impl QSketchApp {
                     let mut changed = false;
                     for id in ids {
                         if let Some(i) = s.index_of(id) {
-                            if !s.layers[i].is_group() && s.layers[i].props.style != style {
+                            if s.layers[i].owns_pixels() && s.layers[i].props.style != style {
                                 s.layers[i].props.style = style.clone();
                                 changed = true;
                             }

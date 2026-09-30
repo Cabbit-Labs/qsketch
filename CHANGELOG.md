@@ -2,6 +2,21 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.53.0 — 2026-09-30
+
+- Adjustment layers (Layer ▸ New Adjustment Layer): Brightness/Contrast,
+  Levels, Curves, Hue/Saturation and Color Balance as layers that change
+  everything below them (within their group) without touching those
+  pixels. Each comes with a reveal-all mask that painting always goes to:
+  paint black to keep the adjustment off an area. Opacity, blend mode and
+  clipping (to adjust one layer only) work as for any layer. Click the
+  layer's half-circle icon, or Layer ▸ New Adjustment Layer ▸ Adjustment
+  Layer Settings…, to change the settings with a live preview (Levels and
+  Curves show the histogram of what lies below). Merge Down bakes the
+  adjustment into the layer below; flattening and exporting apply it.
+  Saved in the `.qsk`; Photoshop and Aseprite files leave them out (Save As
+  says so).
+
 ## 0.52.0 — 2026-09-30
 
 - Layer styles (Layer ▸ Layer Style ▸ Layer Style…, or the Layers panel's

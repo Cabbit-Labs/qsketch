@@ -96,6 +96,8 @@ reachable from its menu until you assign one.
 | Lock Layer | — |
 | Layer Properties… | — |
 | Layer Style ▸ Layer Style… / Copy / Paste / Clear Layer Style | — |
+| New Adjustment Layer ▸ Brightness/Contrast / Levels / Curves / Hue/Saturation / Color Balance | — |
+| New Adjustment Layer ▸ Adjustment Layer Settings… | — |
 | Flip Layer Horizontal | — |
 | Flip Layer Vertical | — |
 | Clear Layer | — |

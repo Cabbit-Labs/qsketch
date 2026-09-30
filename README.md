@@ -64,6 +64,11 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   (white reveals, black hides); disable, apply or delete it. Masks round-trip
   through `.qsk` and `.psd`, and follow the layer through moves, flips,
   rotations and resizes.
+- **Adjustment layers.** Brightness/Contrast, Levels, Curves,
+  Hue/Saturation and Color Balance as layers that change everything below
+  them without touching it: paint the mask to limit where, lower the
+  opacity to soften, clip one to a single layer, or merge it down to bake
+  it in.
 - **Layer styles.** Non-destructive drop shadow, outer and inner glow,
   stroke (outside, inside or centered) and color overlay, with a live
   preview; effects follow the layer as you paint and never touch its

@@ -82,7 +82,7 @@ impl DocState {
             let Some(idx) = self.index_of(id) else { continue };
             let range = if self.layers[idx].is_group() { self.members(idx) } else { idx..idx + 1 };
             for i in range {
-                if !self.layers[i].is_group() && self.layer_editable(i) && !out.contains(&i) {
+                if self.layers[i].owns_pixels() && self.layer_editable(i) && !out.contains(&i) {
                     out.push(i);
                 }
             }

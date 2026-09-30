@@ -118,6 +118,9 @@ pub fn compat_warnings(path: &Path, doc: &crate::document::DocState) -> Vec<Stri
         }
         return w;
     }
+    if doc.layers.iter().any(|l| l.is_adjustment()) {
+        w.push(format!("{name} can't store qsketch adjustment layers: they are left out of the file."));
+    }
     if doc.layers.iter().any(|l| !l.props.style.is_off()) {
         w.push(format!("{name} can't store qsketch layer styles: the effects are left out of the file."));
     }

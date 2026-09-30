@@ -217,6 +217,10 @@ impl DocState {
             return self.rasterize_group(idx);
         }
         let Some(below) = self.sibling_below(idx) else { return false };
+        // Nothing to merge into: an adjustment layer owns no pixels.
+        if self.layers[below].is_adjustment() {
+            return false;
+        }
         let idx = if self.layers[below].is_group() {
             let shrink = self.block(below).len() - 1;
             self.rasterize_group(below);
@@ -226,7 +230,14 @@ impl DocState {
         };
         let top = self.layers[idx].clone();
         let below = &mut self.layers[idx - 1];
-        if top.props.visible {
+        if top.is_adjustment() {
+            // Merging an adjustment layer bakes the adjustment into the
+            // pixels below.
+            if top.props.visible {
+                below.apply_mask();
+                top.apply_adjustment_to(&mut below.raster);
+            }
+        } else if top.props.visible {
             // Merging bakes both masks in: the result has none.
             below.apply_mask();
             merge_raster(&mut below.raster, &top.masked_raster(), top.props.blend, top.props.opacity);

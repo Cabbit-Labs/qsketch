@@ -119,7 +119,9 @@ impl DocEntry {
     pub fn editing_mask(&self) -> bool {
         let s = self.doc.state();
         let l = s.active_layer();
-        self.mask_edit == Some(l.props.id) && l.mask.is_some()
+        // An adjustment layer has no pixels of its own: its mask is always
+        // what gets painted.
+        (self.mask_edit == Some(l.props.id) || l.is_adjustment()) && l.mask.is_some()
     }
 
     /// `target_layers` as layer ids, for callers that outlive a single frame

@@ -58,8 +58,8 @@ pub fn open(state: &mut AppState) {
     state.settle();
     let Some(e) = state.active() else { return };
     let l = e.doc.state().active_layer();
-    if l.is_group() {
-        state.toasts.push(Level::Info, "Layer styles apply to pixel layers, not groups.");
+    if !l.owns_pixels() {
+        state.toasts.push(Level::Info, "Layer styles apply to pixel layers, not groups or adjustment layers.");
         return;
     }
     let style = l.props.style.clone();

@@ -517,6 +517,7 @@ impl AseSprite {
                 expanded: al.flags & LAYER_COLLAPSED == 0,
                 mask_enabled: true,
                 style: Default::default(),
+                adjustment: None,
             };
             let raster = match al.kind {
                 LAYER_KIND_GROUP => {
@@ -720,7 +721,8 @@ pub fn encode(doc: &DocState) -> anyhow::Result<Vec<u8>> {
         doc.layers
             .iter()
             .enumerate()
-            .filter(|(_, l)| l.props.parent == parent)
+            // Aseprite has no adjustment layers: they are left out.
+            .filter(|(_, l)| l.props.parent == parent && !l.is_adjustment())
             .map(|(qi, l)| Node {
                 qi,
                 children: if l.is_group() { collect(doc, Some(l.props.id)) } else { Vec::new() },

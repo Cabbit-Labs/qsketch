@@ -1,6 +1,7 @@
 //! Modal dialogs: new document, canvas/image size, adjustments, filters,
 //! layer properties, unsaved-changes confirmation, about, and preferences.
 
+pub mod adjustment;
 pub mod filter;
 pub mod layer_style;
 pub mod liquify;
@@ -98,6 +99,7 @@ pub struct Dialogs {
     pub share: Option<share::ShareDialog>,
     pub liquify: Option<liquify::LiquifyDialog>,
     pub layer_style: Option<layer_style::LayerStyleDialog>,
+    pub adjustment: Option<adjustment::AdjustmentDialog>,
     pub about: bool,
     /// Autosave snapshots found at startup, offered for recovery.
     pub recover: Option<Vec<crate::autosave::Recoverable>>,
@@ -111,6 +113,7 @@ impl Dialogs {
             || self.image_size.is_some()
             || self.filter.is_some()
             || self.layer_style.is_some()
+            || self.adjustment.is_some()
             || self.layer_props.is_some()
             || self.close_confirm.is_some()
             || self.save_confirm.is_some()
@@ -164,6 +167,7 @@ pub fn show_all(ctx: &Context, state: &mut AppState) {
     share::show(ctx, state);
     liquify::show(ctx, state);
     layer_style::show(ctx, state);
+    adjustment::show(ctx, state);
     show_about(ctx, state);
     show_update(ctx, state);
     show_recover(ctx, state);

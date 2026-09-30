@@ -892,6 +892,36 @@ fn palettize_ui(
     }
 }
 
+/// The controls for a color adjustment, for adjustment layers.
+pub fn adjustment_ui(ui: &mut Ui, f: &mut Filter, hist: Option<&[[u32; 256]; 4]>) {
+    match f {
+        Filter::Levels(l) => levels_ui(ui, l, hist),
+        Filter::Curves(c) => curves_ui(ui, c, hist),
+        Filter::ColorBalance(b) => color_balance_ui(ui, b),
+        f => params_ui(ui, f),
+    }
+}
+
+/// Luma and per-channel histogram of a straight-alpha raster (opaque-ish
+/// pixels only), for the Levels / Curves displays.
+pub fn raster_histogram(r: &qsketch_core::Raster) -> Box<[[u32; 256]; 4]> {
+    let mut h = Box::new([[0u32; 256]; 4]);
+    for y in 0..r.height() as i32 {
+        for x in 0..r.width() as i32 {
+            let p = r.get_pixel(x, y);
+            if p.a == 0 {
+                continue;
+            }
+            let luma = (0.299 * p.r as f32 + 0.587 * p.g as f32 + 0.114 * p.b as f32 + 0.5) as usize;
+            h[0][luma.min(255)] += 1;
+            h[1][p.r as usize] += 1;
+            h[2][p.g as usize] += 1;
+            h[3][p.b as usize] += 1;
+        }
+    }
+    h
+}
+
 fn params_ui(ui: &mut Ui, f: &mut Filter) {
     match f {
         Filter::ReplaceColor { from, to, tolerance, soft } => {

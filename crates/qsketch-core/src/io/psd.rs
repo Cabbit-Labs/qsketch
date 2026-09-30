@@ -200,6 +200,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
                     expanded: true,
                     mask_enabled: rec.mask_enabled,
                     style: Default::default(),
+                    adjustment: None,
                 };
                 next_id += 1;
                 layers.push(Layer { props, raster, mask: mask.map(std::sync::Arc::new) });
@@ -625,10 +626,10 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
     }
     // Groups are written as their member layers (folder opacity/blend are
     // not baked in); a member of a hidden group is written hidden.
-    let export = if doc.layers.iter().any(|l| l.is_group()) {
+    let export = if doc.layers.iter().any(|l| !l.owns_pixels()) {
         let mut flat = doc.clone();
         flat.layers = (0..doc.layers.len())
-            .filter(|&i| !doc.layers[i].is_group())
+            .filter(|&i| doc.layers[i].owns_pixels())
             .map(|i| {
                 let mut l = doc.layers[i].clone();
                 l.props.visible = doc.effectively_visible(i);

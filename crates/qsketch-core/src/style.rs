@@ -518,7 +518,7 @@ impl StyleCache {
         let mut seen: Vec<LayerId> = Vec::new();
         for layer in &doc.layers {
             let style = &layer.props.style;
-            if layer.is_group() || !layer.props.visible || style.is_off() {
+            if !layer.owns_pixels() || !layer.props.visible || style.is_off() {
                 continue;
             }
             let id = layer.props.id;

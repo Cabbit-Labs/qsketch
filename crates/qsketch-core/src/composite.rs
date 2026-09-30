@@ -290,7 +290,8 @@ pub fn composite_range(
         if !layer.props.visible {
             continue;
         }
-        if !layer.props.clipped {
+        // An adjustment layer owns no pixels, so it can't be a clipping base.
+        if !layer.props.clipped && !layer.is_adjustment() {
             base = Some(li);
         }
         let opacity = layer.props.opacity;
@@ -337,6 +338,29 @@ pub fn composite_range(
                 None => 1.0,
             }
         };
+        if layer.is_adjustment() {
+            let Some(f) = layer.props.adjustment.as_ref().and_then(crate::filter::adjust::pixel_fn) else {
+                continue;
+            };
+            for (i, o) in out.iter_mut().enumerate() {
+                if o[3] <= 0.0 {
+                    continue;
+                }
+                let mut k = opacity * mask_at(i);
+                if let Some(ct) = clip_tile {
+                    k *= ct.px[i * 4 + 3] as f32 / 255.0;
+                }
+                if k <= 0.0 {
+                    continue;
+                }
+                let c = [o[0], o[1], o[2]];
+                let b = adjusted(mode, c, f(c));
+                for ch in 0..3 {
+                    o[ch] += (b[ch] - o[ch]) * k;
+                }
+            }
+            continue;
+        }
         if layer.is_group() {
             let mut buf = [[0f32; 4]; TILE_PX];
             composite_range(doc, fx, tx, ty, doc.members(li), Some(layer.props.id), &mut buf);
@@ -380,6 +404,18 @@ pub fn composite_range(
     }
 }
 
+/// The color an adjustment layer puts over `c` before its opacity: the
+/// adjusted color itself in Normal mode, or the adjusted color blended onto
+/// `c` with the layer's blend mode.
+#[inline]
+pub fn adjusted(mode: BlendMode, c: [f32; 3], adj: [f32; 3]) -> [f32; 3] {
+    if matches!(mode, BlendMode::Normal | BlendMode::PassThrough) {
+        adj
+    } else {
+        crate::blend::blend_rgb(mode, c, adj)
+    }
+}
+
 /// Flatten all visible layers into a single straight-alpha raster.
 pub fn flatten(doc: &DocState) -> Raster {
     flatten_range(doc, 0..doc.layers.len(), None)
@@ -418,6 +454,33 @@ pub fn flatten_range(doc: &DocState, range: std::ops::Range<usize>, parent: Opti
 mod tests {
     use super::*;
     use crate::color::Rgba8;
+
+    #[test]
+    fn adjustment_layer_changes_what_is_below_through_its_mask() {
+        let base = Rgba8::new(200, 100, 50, 255);
+        let mut doc = DocState::new(64, 64, Some(base));
+        let id = doc.add_layer("Adj", None);
+        let i = doc.index_of(id).unwrap();
+        doc.layers[i].props.kind = crate::layer::LayerKind::Adjustment;
+        // Brightness -100 takes every channel to black.
+        doc.layers[i].props.adjustment =
+            Some(crate::filter::Filter::BrightnessContrast { brightness: -100.0, contrast: 0.0 });
+        let mut m = crate::mask::Mask::full(64, 64);
+        for y in 0..64 {
+            for x in 0..32 {
+                m.set(x, y, 0);
+            }
+        }
+        doc.layers[i].mask = Some(std::sync::Arc::new(m));
+        let flat = flatten(&doc);
+        assert_eq!(flat.get_pixel(10, 10), base, "masked off: unchanged");
+        assert_eq!(flat.get_pixel(48, 10), Rgba8::new(0, 0, 0, 255), "revealed: adjusted");
+        // Merge Down bakes the adjustment into the layer below, masked.
+        assert!(doc.merge_down(i));
+        assert_eq!(doc.layers.len(), 1);
+        assert_eq!(doc.layers[0].raster.get_pixel(10, 10), base);
+        assert_eq!(doc.layers[0].raster.get_pixel(48, 10), Rgba8::new(0, 0, 0, 255));
+    }
 
     #[test]
     fn tileset_basic() {
