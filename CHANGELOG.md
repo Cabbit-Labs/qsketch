@@ -2,6 +2,17 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.58.0 — 2026-09-30
+
+- Large brushes keep up with the pen: the stroke engine now fills big dabs
+  and writes their pixels on all CPU cores, tile by tile, and a layer stroke
+  writes the dabs of all the samples that arrive in one frame in a single
+  pass instead of once per dab. On the benchmark machine a 500 px soft round
+  went from 2.7 ms to 0.47 ms per input sample (about 6× faster), a 500 px
+  hard round from 2.1 to 0.36 ms and a 400 px chalk tip from 1.4 to 0.28 ms;
+  small brushes got a little faster too. The painted pixels are identical to
+  before.
+
 ## 0.57.0 — 2026-09-30
 
 - Tilemap layers (Layer ▸ Tilemap): a New Tilemap Layer, or Convert to

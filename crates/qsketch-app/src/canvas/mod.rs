@@ -303,6 +303,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             tools::handle(state, doc_id, CanvasEvent::Drag(inp));
         }
     }
+    // A layer stroke placed this frame's dabs without writing them; write
+    // them now, once, before the composite picks them up.
+    tools::paint::flush_pending(state, doc_id);
     if response.double_clicked() {
         if let Some(pos) = response.interact_pointer_pos() {
             let inp = make_input(state, pos, egui::PointerButton::Primary, mods);

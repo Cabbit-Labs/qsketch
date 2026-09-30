@@ -159,6 +159,20 @@ radius and a `hardness`-controlled smoothstep transition inside it; brushes
 with `antialias: false` (e.g. the "Pixel" preset) instead get a hard 0/1 cutoff
 for Aseprite-style crisp pixels.
 
+Placing a dab and writing pixels are separate steps. `dab()` only adds to
+the per-tile coverage (and color) buffers and grows a pending rect;
+`flush()` then rewrites the pending rect from the stroke's `original`
+snapshot plus the coverage, once. `extend()` flushes after every sample;
+the app calls `extend_deferred()` for strokes onto layer pixels and flushes
+once per frame (`tools::paint::flush_pending`, called by the canvas after
+the frame's input), so several tablet samples per frame cost one pass over
+their pixels. Both steps work tile by tile: dabs covering at least
+128 × 128 px fill their tiles' coverage and write their tiles on rayon's
+thread pool (`Raster::par_tiles_mut`), smaller ones stay on the UI thread.
+Coverage for a pixel depends only on that pixel, so the result is identical
+to the serial engine (a test paints the same stroke both ways). Smudge dabs
+read what is under them and are always written at once.
+
 ## Compositor: dirty tiles → GPU tile uploads
 
 [`TileSet`](../crates/qsketch-core/src/composite.rs) is a bitset over tile

@@ -195,6 +195,24 @@ impl Raster {
         Arc::make_mut(slot.as_mut().unwrap())
     }
 
+    /// Run `f` on each listed tile, in parallel (allocating absent tiles and
+    /// un-sharing shared ones first). The tiles are distinct, so the calls
+    /// never touch the same memory.
+    pub fn par_tiles_mut(&mut self, which: &[(u32, u32)], f: impl Fn(u32, u32, &mut Tile) + Sync + Send) {
+        use rayon::prelude::*;
+        let tx = self.tiles_x;
+        let mut wanted = vec![false; self.tiles.len()];
+        for &(x, y) in which {
+            if let Some(w) = wanted.get_mut((y * tx + x) as usize) {
+                *w = true;
+            }
+        }
+        self.tiles.par_iter_mut().enumerate().filter(|(i, _)| wanted[*i]).for_each(|(i, slot)| {
+            let t = Arc::make_mut(slot.get_or_insert_with(Tile::zeroed));
+            f(i as u32 % tx, i as u32 / tx, t);
+        });
+    }
+
     /// Replace a tile slot wholesale (`None` = transparent).
     pub fn set_tile(&mut self, tx: u32, ty: u32, tile: Option<Arc<Tile>>) {
         let i = self.tile_index(tx, ty);

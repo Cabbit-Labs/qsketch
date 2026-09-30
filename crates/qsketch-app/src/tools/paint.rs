@@ -302,18 +302,43 @@ fn stroke_label(tool: ToolKind) -> &'static str {
     }
 }
 
+/// Write the dabs a layer stroke placed this frame into the layer, in one
+/// pass (see `feed`). Called by the canvas after the frame's input.
+pub fn flush_pending(state: &mut AppState, doc_id: DocId) {
+    if state.session_doc != Some(doc_id) {
+        return;
+    }
+    let Some(ToolSession::Stroke { engine, layer, extra }) = &mut state.session else { return };
+    if !matches!(extra.target, StrokeTarget::Layer) {
+        return;
+    }
+    let Some(entry) = state.docs.iter_mut().find(|d| d.id == doc_id) else { return };
+    let s = entry.doc.state_mut();
+    let Some(l) = s.layers.get_mut(*layer) else { return };
+    engine.flush(&mut l.raster);
+    for (_, m) in extra.mirrors.iter_mut() {
+        m.flush(&mut l.raster);
+    }
+}
+
 pub(super) fn feed(state: &mut AppState, doc_id: DocId, sample: StrokeSample) {
     let Some(ToolSession::Stroke { engine, layer, extra }) = &mut state.session else { return };
     let Some(entry) = state.docs.iter_mut().find(|d| d.id == doc_id) else { return };
     let li = *layer;
     let doc_state = entry.doc.state_mut();
+    // Strokes onto layer pixels only place their dabs here; the canvas writes
+    // them once per frame (`flush_pending`), however many samples arrived.
+    // Selection and mask strokes merge their scratch raster right away, so
+    // they write at once.
+    let batch = matches!(extra.target, StrokeTarget::Layer);
     let raster = match &mut extra.target {
         StrokeTarget::Layer => &mut doc_state.layers[li].raster,
         StrokeTarget::Selection { scratch, .. } | StrokeTarget::Mask { scratch, .. } => scratch,
     };
-    let mut dirty = engine.extend(raster, sample);
+    let mut dirty = if batch { engine.extend_deferred(raster, sample) } else { engine.extend(raster, sample) };
     for (t, m) in extra.mirrors.iter_mut() {
-        let d = m.extend(raster, StrokeSample { pos: t.apply(sample.pos), pressure: sample.pressure });
+        let s = StrokeSample { pos: t.apply(sample.pos), pressure: sample.pressure };
+        let d = if batch { m.extend_deferred(raster, s) } else { m.extend(raster, s) };
         dirty = if dirty.is_empty() {
             d
         } else if d.is_empty() {

@@ -614,6 +614,8 @@ pub struct StrokeEngine {
     until_next_dab: f32,
     dabs: usize,
     dirty_total: IRect,
+    /// Dabs placed but not yet written into the raster (see `flush`).
+    pending: IRect,
     rng: Rng,
 }
 
@@ -668,6 +670,7 @@ impl StrokeEngine {
             until_next_dab: 0.0,
             dabs: 0,
             dirty_total: IRect::EMPTY,
+            pending: IRect::EMPTY,
             rng: Rng::new(0x5EED),
         }
     }
@@ -769,6 +772,17 @@ impl StrokeEngine {
 
     /// Feed a new input sample. Returns the pixel rect modified by this call.
     pub fn extend(&mut self, raster: &mut Raster, sample: StrokeSample) -> IRect {
+        let r = self.extend_deferred(raster, sample);
+        self.flush(raster);
+        r
+    }
+
+    /// Place the dabs for `sample` without writing them into `raster` yet:
+    /// several samples in a row then cost one pass over the pixels they
+    /// cover (in `flush`) instead of one pass per dab. The returned rect is
+    /// what `flush` will change. Smudge dabs read what is under them and
+    /// are always written at once.
+    pub fn extend_deferred(&mut self, raster: &mut Raster, sample: StrokeSample) -> IRect {
         let pressure = sample.pressure.clamp(0.0, 1.0);
         self.last_raw = Some(sample.pos);
         // Distance-based low-pass on position: the painted point closes the
@@ -861,6 +875,7 @@ impl StrokeEngine {
         } else {
             IRect::EMPTY
         };
+        self.flush(raster);
         if self.mode == PaintMode::Erase {
             raster.prune_empty_tiles();
         }
@@ -871,6 +886,16 @@ impl StrokeEngine {
         } else {
             r.union(&catch_up)
         }
+    }
+
+    /// Write the dabs placed since the last flush into `raster`; returns the
+    /// rect that changed.
+    pub fn flush(&mut self, raster: &mut Raster) -> IRect {
+        let r = std::mem::replace(&mut self.pending, IRect::EMPTY);
+        if !r.is_empty() {
+            self.apply(raster, r);
+        }
+        r
     }
 
     fn spacing_px(&self, pressure: f32) -> f32 {
@@ -1092,12 +1117,37 @@ impl StrokeEngine {
         let use_colors = self.colors.is_some();
         let clone = self.clone.clone();
         let dab_seed = self.dabs as u64;
-        for (tx, ty) in raster.tiles_in_rect(rect) {
+        // Each 64 px tile's coverage is independent of the others, so large
+        // dabs fill their tiles in parallel; small ones stay on this thread.
+        let tiles_x = raster.tiles_x();
+        let list = raster.tiles_in_rect(rect);
+        for &(tx, ty) in &list {
+            let idx = raster.tile_index(tx, ty);
+            self.coverage.entry(idx).or_insert_with(|| Box::new([0.0; TILE_PX]));
+            if let Some(m) = self.colors.as_mut() {
+                m.entry(idx).or_insert_with(|| Box::new([[0.0; 4]; TILE_PX]));
+            }
+        }
+        let mut wanted = vec![false; raster.tile_count()];
+        for &(tx, ty) in &list {
+            wanted[raster.tile_index(tx, ty)] = true;
+        }
+        let mut covs: Vec<(usize, &mut Box<[f32; TILE_PX]>)> =
+            self.coverage.iter_mut().filter(|(k, _)| wanted[**k]).map(|(k, v)| (*k, v)).collect();
+        covs.sort_unstable_by_key(|(k, _)| *k);
+        let cols: Vec<Option<&mut Box<[[f32; 4]; TILE_PX]>>> = match self.colors.as_mut() {
+            Some(m) => {
+                let mut v: Vec<(usize, &mut Box<[[f32; 4]; TILE_PX]>)> =
+                    m.iter_mut().filter(|(k, _)| wanted[**k]).map(|(k, v)| (*k, v)).collect();
+                v.sort_unstable_by_key(|(k, _)| *k);
+                v.into_iter().map(|(_, b)| Some(b)).collect()
+            }
+            None => (0..covs.len()).map(|_| None).collect(),
+        };
+        let fill_tile = |(idx, cov, mut col): TileJob<'_>| {
+            let (tx, ty) = (idx as u32 % tiles_x, idx as u32 / tiles_x);
             let tr = tile_rect(tx, ty);
             let sub = rect.intersect(&tr);
-            let idx = raster.tile_index(tx, ty);
-            let cov = self.coverage.entry(idx).or_insert_with(|| Box::new([0.0; TILE_PX]));
-            let mut col = self.colors.as_mut().map(|m| m.entry(idx).or_insert_with(|| Box::new([[0.0; 4]; TILE_PX])));
             for y in sub.y..sub.bottom() {
                 let py = y as f32 + 0.5 - center.y;
                 for x in sub.x..sub.right() {
@@ -1175,8 +1225,16 @@ impl StrokeEngine {
                     *c += add;
                 }
             }
+        };
+        let jobs: Vec<_> = covs.into_iter().zip(cols).map(|((k, c), col)| (k, c, col)).collect();
+        // Threads only pay off for big dabs (about 128 × 128 px and up).
+        if rect.w as i64 * rect.h as i64 >= PARALLEL_MIN_PX {
+            use rayon::prelude::*;
+            jobs.into_par_iter().for_each(fill_tile);
+        } else {
+            jobs.into_iter().for_each(fill_tile);
         }
-        self.apply(raster, rect);
+        self.pending = self.pending.union(&rect);
         self.dirty_total = self.dirty_total.union(&rect);
         rect
     }
@@ -1186,15 +1244,21 @@ impl StrokeEngine {
         let opacity = self.settings.opacity;
         let dither = self.settings.dither;
         let base_color = self.color.to_f32();
-        for (tx, ty) in raster.tiles_in_rect(rect) {
-            let idx = raster.tile_index(tx, ty);
-            let Some(cov) = self.coverage.get(&idx) else { continue };
+        let tiles_x = raster.tiles_x();
+        let tiles: Vec<(u32, u32)> = raster
+            .tiles_in_rect(rect)
+            .into_iter()
+            .filter(|&(tx, ty)| self.coverage.contains_key(&((ty * tiles_x + tx) as usize)))
+            .collect();
+        let apply_tile = |tx: u32, ty: u32, dst: &mut crate::raster::Tile| {
+            let idx = (ty * tiles_x + tx) as usize;
+            let Some(cov) = self.coverage.get(&idx) else { return };
+
             let colors = self.colors.as_ref().and_then(|m| m.get(&idx));
             let tr = tile_rect(tx, ty);
             let sub = rect.intersect(&tr);
             let orig = self.original.tile(tx, ty).cloned();
             let sel = self.selection.clone();
-            let dst = raster.tile_mut(tx, ty);
             for y in sub.y..sub.bottom() {
                 for x in sub.x..sub.right() {
                     let li = (y - tr.y) as usize * TILE + (x - tr.x) as usize;
@@ -1275,6 +1339,13 @@ impl StrokeEngine {
                     dst.set(li % TILE, li / TILE, Rgba8::from_f32(out));
                 }
             }
+        };
+        if rect.w as i64 * rect.h as i64 >= PARALLEL_MIN_PX {
+            raster.par_tiles_mut(&tiles, apply_tile);
+        } else {
+            for (tx, ty) in tiles {
+                apply_tile(tx, ty, raster.tile_mut(tx, ty));
+            }
         }
     }
 }
@@ -1288,6 +1359,15 @@ fn hash_pixel(x: i32, y: i32, seed: u64) -> f32 {
     h ^= h >> 27;
     (h >> 40) as f32 / (1u64 << 24) as f32
 }
+
+/// One tile's share of a dab: its index, coverage, and (with color
+/// dynamics or the clone stamp) per-pixel colors.
+type TileJob<'a> = (usize, &'a mut Box<[f32; TILE_PX]>, Option<&'a mut Box<[[f32; 4]; TILE_PX]>>);
+
+/// Dab rects at least this many pixels are filled and applied on several
+/// threads (tile by tile); smaller ones stay on the calling thread, where the
+/// hand-off would cost more than it saves.
+const PARALLEL_MIN_PX: i64 = 128 * 128;
 
 /// Where a hard-edged dab of radius `r` actually lands: on the pixel grid.
 /// An odd diameter centers on the pixel under the pointer, an even one on the
@@ -1559,6 +1639,38 @@ mod tests {
 
     /// The clone stamp paints what sits at the source offset, transparency
     /// included; smudge drags a color into empty space.
+    #[test]
+    fn deferred_samples_paint_exactly_like_immediate_ones() {
+        for (name, size) in [("Soft Round", 300.0), ("Hard Round", 40.0), ("Chalk", 200.0)] {
+            let l = Layer::new(1, "l", 600, 400);
+            let mut s = BrushSettings::preset(name);
+            s.size = size;
+            let pts: Vec<StrokeSample> = (0..40)
+                .map(|i| StrokeSample {
+                    pos: Pt::new(50.0 + i as f32 * 12.0, 200.0 + (i as f32 * 0.4).sin() * 90.0),
+                    pressure: 0.8,
+                })
+                .collect();
+            // Seeded identically, so jitter matches between the two runs.
+            let mut a = l.raster.clone();
+            let mut ea = StrokeEngine::new(s.clone(), PaintMode::Paint, Rgba8::BLACK, &l, None);
+            for p in &pts {
+                ea.extend(&mut a, *p);
+            }
+            ea.finish(&mut a);
+            let mut b = l.raster.clone();
+            let mut eb = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
+            for (i, p) in pts.iter().enumerate() {
+                eb.extend_deferred(&mut b, *p);
+                if i % 5 == 4 {
+                    eb.flush(&mut b);
+                }
+            }
+            eb.finish(&mut b);
+            assert!(a.to_rgba() == b.to_rgba(), "{name} {size}: batched stroke differs");
+        }
+    }
+
     #[test]
     fn dither_ink_paints_whole_pixels_in_the_pattern() {
         let l = Layer::new(1, "l", 32, 32);
