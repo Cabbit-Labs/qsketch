@@ -40,6 +40,7 @@ pub mod text;
 pub mod tilemap;
 pub mod timelapse;
 pub mod tip;
+pub mod vector;
 pub mod warp;
 
 pub use anim::{Cel, Frame, NewFrame, OnionSettings, Tag, TagDirection};
@@ -61,6 +62,7 @@ pub use style::LayerStyle;
 pub use text::{TextAlign, TextImage, TextStyle};
 pub use timelapse::Timelapse;
 pub use tip::TipImage;
+pub use vector::ShapePath;
 
 /// Crate version, surfaced in the About dialog and file manifests.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

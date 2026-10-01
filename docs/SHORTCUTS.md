@@ -69,6 +69,7 @@ reachable from its menu until you assign one.
 | Liquify… | — |
 | Disable/Enable Layer Mask | `Shift+Ctrl+M` |
 | Color Balance… | `Ctrl+B` |
+| Posterize… / Gradient Map… / Black & White | — |
 | Hue/Saturation… | `Ctrl+H` (also `Ctrl+U`) |
 | Replace Color… | — |
 | Index Colors… | — |
@@ -97,9 +98,12 @@ reachable from its menu until you assign one.
 | Lock Transparent Pixels | `/` |
 | Lock Layer | — |
 | Layer Properties… | — |
+| Outline… (layer style Stroke page, switched on) | `Ctrl+Shift+O` |
+| Shape ▸ New Shape Layer / Rasterize Shape Layer | — |
+| HD Index Painting ▸ Setup / New Dither Pattern Layer | — |
 | Layer Style ▸ Layer Style… / Copy / Paste / Clear Layer Style | — |
 | Tilemap ▸ New Tilemap Layer / Convert to Tilemap Layer / Convert to Pixel Layer | — |
-| New Adjustment Layer ▸ Brightness/Contrast / Levels / Curves / Hue/Saturation / Color Balance | — |
+| New Adjustment Layer ▸ Brightness/Contrast / Levels / Curves / Posterize / Gradient Map / Black & White / Hue/Saturation / Color Balance | — |
 | New Adjustment Layer ▸ Adjustment Layer Settings… | — |
 | Flip Layer Horizontal | — |
 | Flip Layer Vertical | — |
@@ -234,6 +238,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Crop | — |
 | Slice (drag to add, drag to move, corners to resize, double-click for properties, Delete removes) | `Shift+C` |
 | Tile (stamp the Tileset panel's tile; Alt or right-click clears; Ctrl+click picks) | `Shift+T` |
+| Shape (click to add points to a shape layer, drag to move, Alt+click or Delete removes) | `P` |
 | Eyedropper | `I` |
 | Brush | `B` |
 | Pencil | `N` |

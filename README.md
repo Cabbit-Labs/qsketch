@@ -44,6 +44,12 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   through Aseprite files. Tilemap layers build levels from a shared
   tileset: stamp tiles with the Tile tool, paint any cell and every other
   use of that tile follows.
+- **Shape layers.** Pixel-art vector shapes: points you can keep moving,
+  redrawn without anti-aliasing every time, with fill and outline.
+- **HD index painting.** Posterize, Gradient Map and Black & White
+  adjustment layers plus a dither pattern layer, set up in one command, so
+  you paint in grayscale with any brush and the stack turns it into
+  dithered, re-indexable pixel art.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
 - **Free Transform.** Move, scale, rotate, deform (corner pull) and warp

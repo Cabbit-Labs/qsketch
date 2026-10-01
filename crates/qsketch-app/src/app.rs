@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use egui::{Context, Key, RichText, Ui};
 use qsketch_core::ops;
 use qsketch_core::Document;
+use qsketch_core::Filter;
 
 use crate::actions::{Action, Category, Trigger};
 use crate::canvas::render::CanvasRenderer;
@@ -1000,6 +1001,10 @@ impl QSketchApp {
                     self.menu_item(ui, Action::HueSaturation, has_doc);
                     self.menu_item(ui, Action::ColorBalance, has_doc);
                     ui.separator();
+                    self.menu_item(ui, Action::Posterize, has_doc);
+                    self.menu_item(ui, Action::GradientMap, has_doc);
+                    self.menu_item(ui, Action::BlackWhite, has_doc);
+                    ui.separator();
                     self.menu_item(ui, Action::Desaturate, has_doc);
                     self.menu_item(ui, Action::InvertColors, has_doc);
                     ui.separator();
@@ -1023,6 +1028,27 @@ impl QSketchApp {
                 self.menu_item(ui, Action::DuplicateLayer, has_doc);
                 self.menu_item(ui, Action::DeleteLayer, layers > 1);
                 self.menu_item(ui, Action::LayerProperties, has_doc);
+                let is_shape = self.state.active().is_some_and(|d| d.doc.state().active_layer().is_shape());
+                menus::submenu(ui, false, "Shape", |ui| {
+                    self.menu_item(ui, Action::NewShapeLayer, has_doc);
+                    self.menu_item(ui, Action::RasterizeShape, is_shape);
+                    ui.label(
+                        egui::RichText::new("Pixel-art vector shapes: the Shape tool (P) adds and moves points")
+                            .weak()
+                            .small(),
+                    );
+                });
+                menus::submenu(ui, false, "HD Index Painting", |ui| {
+                    self.menu_item(ui, Action::IndexPaintingSetup, has_doc);
+                    self.menu_item(ui, Action::NewDitherLayer, has_doc);
+                    ui.label(
+                        egui::RichText::new(
+                            "Paint in grayscale with any brush; Black & White, Posterize and Gradient Map adjustment layers above turn it into indexed pixel art, a dither layer adds patterns.",
+                        )
+                        .weak()
+                        .small(),
+                    );
+                });
                 let (styled, pixel_layer) = self
                     .state
                     .active()
@@ -1055,6 +1081,9 @@ impl QSketchApp {
                         (Action::NewAdjBrightnessContrast, "Brightness/Contrast…"),
                         (Action::NewAdjLevels, "Levels…"),
                         (Action::NewAdjCurves, "Curves…"),
+                        (Action::NewAdjPosterize, "Posterize…"),
+                        (Action::NewAdjGradientMap, "Gradient Map…"),
+                        (Action::NewAdjBlackWhite, "Black & White"),
                         (Action::NewAdjHueSaturation, "Hue/Saturation…"),
                         (Action::NewAdjColorBalance, "Color Balance…"),
                     ] {
@@ -1067,6 +1096,7 @@ impl QSketchApp {
                     ui.separator();
                     self.menu_item(ui, Action::AdjustmentSettings, is_adjustment);
                 });
+                self.menu_item(ui, Action::Outline, pixel_layer);
                 menus::submenu(ui, false, "Layer Style", |ui| {
                     self.menu_item(ui, Action::LayerStyle, pixel_layer);
                     self.menu_item(ui, Action::CopyLayerStyle, styled);
@@ -1761,6 +1791,13 @@ impl QSketchApp {
             {
                 crate::tools::slice::delete_selected(&mut self.state);
             }
+            // With the Shape tool, Delete removes the selected point.
+            Action::Clear
+                if self.state.effective_tool() == ToolKind::Shape
+                    && self.state.active().is_some_and(|d| d.shape_sel.is_some()) =>
+            {
+                crate::tools::vector::delete_selected(&mut self.state);
+            }
             Action::Clear => self.clear_selected(),
             Action::ClearLayer => {
                 if let Some(d) = self.state.active_mut() {
@@ -1819,6 +1856,9 @@ impl QSketchApp {
             | Action::Levels
             | Action::Curves
             | Action::ColorBalance
+            | Action::Posterize
+            | Action::GradientMap
+            | Action::BlackWhite
             | Action::HueSaturation => dialogs::filter::open(&mut self.state, action),
             Action::Liquify => dialogs::liquify::open(&mut self.state),
             Action::ReplaceColor => dialogs::filter::open_replace_color(&mut self.state),
@@ -2043,16 +2083,30 @@ impl QSketchApp {
             | Action::NewAdjLevels
             | Action::NewAdjCurves
             | Action::NewAdjHueSaturation
+            | Action::NewAdjPosterize
+            | Action::NewAdjGradientMap
+            | Action::NewAdjBlackWhite
             | Action::NewAdjColorBalance => {
                 let base = match action {
                     Action::NewAdjBrightnessContrast => Action::BrightnessContrast,
                     Action::NewAdjLevels => Action::Levels,
                     Action::NewAdjCurves => Action::Curves,
                     Action::NewAdjHueSaturation => Action::HueSaturation,
+                    Action::NewAdjPosterize => Action::Posterize,
+                    Action::NewAdjGradientMap => Action::GradientMap,
+                    Action::NewAdjBlackWhite => Action::BlackWhite,
                     _ => Action::ColorBalance,
                 };
                 let (fg, bg) = (self.state.fg, self.state.bg);
-                let Some(filter) = dialogs::filter::default_filter(base, fg, bg) else { return };
+                let Some(mut filter) = dialogs::filter::default_filter(base, fg, bg) else { return };
+                // A gradient map starts from the document's palette when it has one.
+                if let Filter::GradientMap { colors } = &mut filter {
+                    if let Some(pal) = self.state.active().map(|d| d.doc.state().palette.colors.clone()) {
+                        if pal.len() >= 2 {
+                            *colors = pal;
+                        }
+                    }
+                }
                 self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     let s = d.doc.state_mut();
@@ -2072,6 +2126,66 @@ impl QSketchApp {
                     d.doc.commit("New Adjustment Layer");
                 }
                 dialogs::adjustment::open(&mut self.state);
+            }
+            Action::Outline => dialogs::layer_style::open_outline(&mut self.state),
+            Action::NewShapeLayer => {
+                self.state.settle();
+                self.state.set_tool(ToolKind::Shape);
+                let fill = self.state.tool_opts.shape_fill.then_some(self.state.fg);
+                let stroke = self.state.tool_opts.shape_stroke.then_some(self.state.bg);
+                let (width, closed) =
+                    (self.state.tool_opts.shape_stroke_width.max(1), self.state.tool_opts.shape_closed);
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let name = s.unique_layer_name("Shape");
+                    let id = s.add_layer(name, None);
+                    if let Some(i) = s.index_of(id) {
+                        let l = &mut s.layers[i];
+                        l.props.kind = qsketch_core::layer::LayerKind::Shape;
+                        let mut shape = qsketch_core::ShapePath::new(fill, stroke);
+                        shape.stroke_width = width;
+                        shape.closed = closed;
+                        l.props.shape = Some(shape);
+                    }
+                    d.selected.clear();
+                    d.shape_sel = None;
+                    d.doc.commit("New Shape Layer");
+                }
+                self.state.toasts.push(Level::Info, "Click the canvas with the Shape tool to add points.");
+            }
+            Action::RasterizeShape => {
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let li = s.active;
+                    if qsketch_core::vector::rasterize(s, li) {
+                        d.shape_sel = None;
+                        d.doc.commit("Rasterize Shape");
+                    } else {
+                        self.state.toasts.push(Level::Info, "The active layer isn't a shape layer.");
+                    }
+                }
+            }
+            Action::NewDitherLayer => {
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    dither_layer(&mut d.doc);
+                    d.doc.commit("New Dither Pattern Layer");
+                }
+            }
+            Action::IndexPaintingSetup => {
+                self.state.settle();
+                let (fg, bg) = (self.state.fg, self.state.bg);
+                if let Some(d) = self.state.active_mut() {
+                    index_painting_setup(&mut d.doc, fg, bg);
+                    d.doc.commit("HD Index Painting Setup");
+                }
+                self.state.tool_opts.eyedropper_sample_merged = false;
+                self.state.tool_opts.eyedropper_sample_below = true;
+                self.state.toasts.push(
+                    Level::Info,
+                    "Paint in grayscale on the layer below the new ones. The eyedropper now samples the current layer and below.",
+                );
             }
             Action::CopyLayerStyle => {
                 if let Some(d) = self.state.active() {
@@ -2745,6 +2859,82 @@ impl eframe::App for QSketchApp {
         let [r, g, b, _] = p.bg.to_normalized_gamma_f32();
         [r, g, b, 1.0]
     }
+}
+
+/// A layer above the active one filled with a Bayer pattern at low
+/// opacity: under Posterize it nudges values across the thresholds, so
+/// soft strokes come out dithered (Dan Fessler's HD index painting).
+fn dither_layer(doc: &mut qsketch_core::Document) {
+    use qsketch_core::filter::fx::dither_threshold;
+    use qsketch_core::filter::DitherPattern;
+    let s = doc.state_mut();
+    let (w, h) = (s.width, s.height);
+    let name = s.unique_layer_name("Dither");
+    let id = s.add_layer(name, None);
+    let Some(i) = s.index_of(id) else { return };
+    // Mid-gray plus or minus the pattern, blended with Overlay: a flat area
+    // keeps its value on average (pure black and white are untouched) and
+    // only values near a posterize threshold flip, pixel by pixel.
+    let mut r = qsketch_core::Raster::new(w, h);
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let t = dither_threshold(x, y, DitherPattern::Bayer4);
+            let v = ((0.5 + 0.4 * (t - 0.5)) * 255.0).round() as u8;
+            r.set_pixel(x, y, qsketch_core::Rgba8::new(v, v, v, 255));
+        }
+    }
+    let l = &mut s.layers[i];
+    l.raster = r;
+    l.props.blend = qsketch_core::BlendMode::Overlay;
+    l.props.opacity = 0.5;
+    doc.mark_all_dirty();
+}
+
+/// The HD index painting stack above the active layer: a dither pattern,
+/// then Black & White, Posterize and Gradient Map adjustment layers.
+fn index_painting_setup(doc: &mut qsketch_core::Document, fg: qsketch_core::Rgba8, bg: qsketch_core::Rgba8) {
+    dither_layer(doc);
+    let s = doc.state_mut();
+    let (w, h) = (s.width, s.height);
+    let palette = s.palette.colors.clone();
+    let ramp = if palette.len() >= 2 {
+        palette
+    } else {
+        // Darkest first, whichever of the two colors that is.
+        let luma = |c: qsketch_core::Rgba8| 0.299 * c.r as f32 + 0.587 * c.g as f32 + 0.114 * c.b as f32;
+        let (a, b) = if fg == bg {
+            (qsketch_core::Rgba8::BLACK, qsketch_core::Rgba8::WHITE)
+        } else if luma(fg) <= luma(bg) {
+            (fg, bg)
+        } else {
+            (bg, fg)
+        };
+        (0..8)
+            .map(|k| {
+                let t = k as f32 / 7.0;
+                let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+                qsketch_core::Rgba8::new(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b), 255)
+            })
+            .collect()
+    };
+    let levels = ramp.len().clamp(2, 64) as u32;
+    for (name, filter) in [
+        ("Black & White", Filter::BlackWhite),
+        ("Posterize", Filter::Posterize { levels }),
+        ("Gradient Map", Filter::GradientMap { colors: ramp }),
+    ] {
+        let name = s.unique_layer_name(name);
+        let id = s.add_layer(name, None);
+        if let Some(i) = s.index_of(id) {
+            let l = &mut s.layers[i];
+            l.props.kind = qsketch_core::layer::LayerKind::Adjustment;
+            l.props.adjustment = Some(filter);
+            l.mask = Some(std::sync::Arc::new(qsketch_core::Mask::full(w, h)));
+        }
+    }
+    // Back to the paint layer: the one the stack was built over.
+    s.active = s.active.saturating_sub(4);
+    doc.mark_all_dirty();
 }
 
 /// Right edge of the last top-level menu button this frame (temp data).

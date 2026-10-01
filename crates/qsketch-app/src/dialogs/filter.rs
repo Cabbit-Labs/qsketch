@@ -57,6 +57,9 @@ pub fn default_filter(a: Action, fg: Rgba8, bg: Rgba8) -> Option<Filter> {
         Action::Levels => Filter::Levels(Levels::default()),
         Action::Curves => Filter::Curves(Curves::default()),
         Action::ColorBalance => Filter::ColorBalance(ColorBalance::default()),
+        Action::Posterize => Filter::Posterize { levels: 8 },
+        Action::GradientMap => Filter::GradientMap { colors: vec![bg, fg] },
+        Action::BlackWhite => Filter::BlackWhite,
         Action::FilterGaussianBlur => Filter::GaussianBlur { radius: 5.0 },
         Action::FilterBoxBlur => Filter::BoxBlur { radius: 3 },
         Action::FilterMotionBlur => Filter::MotionBlur { angle: 0.0, distance: 20.0 },
@@ -936,6 +939,56 @@ fn params_ui(ui: &mut Ui, f: &mut Filter) {
             slider(ui, contrast, -100.0..=100.0, "Contrast", "");
         }
         Filter::Levels(_) | Filter::Curves(_) | Filter::ColorBalance(_) => {}
+        Filter::Posterize { levels } => {
+            slider(ui, levels, 2..=64, "Levels", "");
+        }
+        Filter::GradientMap { colors } => {
+            ui.label(egui::RichText::new("Dark to light").weak().small());
+            let mut remove: Option<usize> = None;
+            let mut insert: Option<usize> = None;
+            let n = colors.len();
+            ui.horizontal_wrapped(|ui| {
+                for (i, c) in colors.iter_mut().enumerate() {
+                    let mut c32 = egui::Color32::from_rgb(c.r, c.g, c.b);
+                    if egui::color_picker::color_edit_button_srgba(ui, &mut c32, egui::color_picker::Alpha::Opaque)
+                        .changed()
+                    {
+                        *c = Rgba8::new(c32.r(), c32.g(), c32.b(), 255);
+                    }
+                    if n > 1 && ui.small_button("×").on_hover_text("Remove this stop").clicked() {
+                        remove = Some(i);
+                    }
+                    if ui.small_button("+").on_hover_text("Add a stop after this one").clicked() {
+                        insert = Some(i + 1);
+                    }
+                }
+            });
+            if let Some(i) = remove {
+                colors.remove(i);
+            }
+            if let Some(i) = insert {
+                let a = colors[i - 1];
+                let b = colors.get(i).copied().unwrap_or(a);
+                let mid = Rgba8::new(
+                    ((a.r as u16 + b.r as u16) / 2) as u8,
+                    ((a.g as u16 + b.g as u16) / 2) as u8,
+                    ((a.b as u16 + b.b as u16) / 2) as u8,
+                    255,
+                );
+                colors.insert(i, mid);
+            }
+            ui.horizontal(|ui| {
+                if ui.small_button("Reverse").clicked() {
+                    colors.reverse();
+                }
+                if ui.small_button("Black → white").clicked() {
+                    *colors = vec![Rgba8::BLACK, Rgba8::WHITE];
+                }
+            });
+        }
+        Filter::BlackWhite => {
+            ui.label(egui::RichText::new("No settings: keeps the luminance only.").weak());
+        }
         Filter::HueSaturation { hue, saturation, lightness, colorize } => {
             if *colorize {
                 slider(ui, hue, 0.0..=360.0, "Hue", "°");

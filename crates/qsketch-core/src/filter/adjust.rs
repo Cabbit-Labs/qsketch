@@ -18,8 +18,62 @@ pub fn pixel_fn(f: &Filter) -> Option<PixelFn> {
         Filter::HueSaturation { hue, saturation, lightness, colorize } => {
             Box::new(hue_saturation_fn(*hue, *saturation, *lightness, *colorize))
         }
+        Filter::Posterize { levels } => Box::new(posterize_fn(*levels)),
+        Filter::GradientMap { colors } => Box::new(gradient_map_fn(colors.clone())),
+        Filter::BlackWhite => Box::new(black_white_fn),
         _ => return None,
     })
+}
+
+fn posterize_fn(levels: u32) -> impl Fn([f32; 3]) -> [f32; 3] + Send + Sync {
+    let steps = (levels.clamp(2, 256) - 1) as f32;
+    move |c| {
+        let q = |v: f32| ((v.clamp(0.0, 1.0) * steps).round() / steps).clamp(0.0, 1.0);
+        [q(c[0]), q(c[1]), q(c[2])]
+    }
+}
+
+fn luma(c: [f32; 3]) -> f32 {
+    (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]).clamp(0.0, 1.0)
+}
+
+fn black_white_fn(c: [f32; 3]) -> [f32; 3] {
+    let l = luma(c);
+    [l, l, l]
+}
+
+/// Luminance → a color along the ramp (linear between the stops).
+fn gradient_map_fn(colors: Vec<crate::color::Rgba8>) -> impl Fn([f32; 3]) -> [f32; 3] + Send + Sync {
+    let stops: Vec<[f32; 3]> =
+        colors.iter().map(|c| [c.r as f32 / 255.0, c.g as f32 / 255.0, c.b as f32 / 255.0]).collect();
+    move |c| {
+        let l = luma(c);
+        match stops.len() {
+            0 => [l, l, l],
+            1 => stops[0],
+            n => {
+                let t = l * (n - 1) as f32;
+                let i = (t.floor() as usize).min(n - 2);
+                let f = t - i as f32;
+                let (a, b) = (stops[i], stops[i + 1]);
+                [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]
+            }
+        }
+    }
+}
+
+pub fn posterize(src: &Src, levels: u32) -> Img {
+    let f = posterize_fn(levels);
+    src.map(|x, y| map_rgb(src.at(x, y), &f))
+}
+
+pub fn gradient_map(src: &Src, colors: &[crate::color::Rgba8]) -> Img {
+    let f = gradient_map_fn(colors.to_vec());
+    src.map(|x, y| map_rgb(src.at(x, y), &f))
+}
+
+pub fn black_white(src: &Src) -> Img {
+    src.map(|x, y| map_rgb(src.at(x, y), black_white_fn))
 }
 
 /// Whether `f` can drive an adjustment layer.
@@ -31,6 +85,9 @@ pub fn is_adjustment(f: &Filter) -> bool {
             | Filter::Curves(_)
             | Filter::ColorBalance(_)
             | Filter::HueSaturation { .. }
+            | Filter::Posterize { .. }
+            | Filter::GradientMap { .. }
+            | Filter::BlackWhite
     )
 }
 

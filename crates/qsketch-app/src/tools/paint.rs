@@ -229,6 +229,13 @@ pub(super) fn begin_engine_with(
     };
     // Hidden or locked, including by an enclosing group: nothing to paint on.
     if !to_selection && !s.layer_editable(li) {
+        if s.layers[li].is_shape() {
+            state.toasts.push(
+                Level::Info,
+                "This is a shape layer: edit its points with the Shape tool, or Layer › Rasterize Shape Layer to paint on it.",
+            );
+            return None;
+        }
         let why = if !s.effectively_visible(li) { "hidden" } else { "locked" };
         state.toasts.push(Level::Info, format!("The active layer is {why}."));
         return None;
@@ -336,8 +343,19 @@ pub(super) fn feed(state: &mut AppState, doc_id: DocId, sample: StrokeSample) {
         StrokeTarget::Selection { scratch, .. } | StrokeTarget::Mask { scratch, .. } => scratch,
     };
     let mut dirty = if batch { engine.extend_deferred(raster, sample) } else { engine.extend(raster, sample) };
+    // A hard pixel brush lands on whole pixels, so mirror the pixel it lands
+    // on rather than the raw sample: a sample at x = 3.0 lands on pixel 3,
+    // and its mirror must land on the mirrored pixel, not one over.
+    let snapped = {
+        let st = engine.settings();
+        if !st.antialias && st.is_round() {
+            qsketch_core::brush::pixel_snap(sample.pos, st.dab_radius(sample.pressure))
+        } else {
+            sample.pos
+        }
+    };
     for (t, m) in extra.mirrors.iter_mut() {
-        let s = StrokeSample { pos: t.apply(sample.pos), pressure: sample.pressure };
+        let s = StrokeSample { pos: t.apply(snapped), pressure: sample.pressure };
         let d = if batch { m.extend_deferred(raster, s) } else { m.extend(raster, s) };
         dirty = if dirty.is_empty() {
             d

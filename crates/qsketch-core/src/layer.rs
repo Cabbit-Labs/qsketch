@@ -50,6 +50,9 @@ pub struct LayerProps {
     /// Tilemap layers only: which tile each cell shows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tilemap: Option<crate::tilemap::Tilemap>,
+    /// Shape layers only: the polygon the pixels are drawn from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<crate::vector::ShapePath>,
     /// Animation: a new frame's cel on this layer links to the frame
     /// before instead of starting empty (or as a copy), so the picture
     /// carries on until it is deliberately unlinked.
@@ -78,6 +81,9 @@ pub enum LayerKind {
     /// Pixels made of tiles from a shared tileset (`LayerProps::tilemap`);
     /// painting a cell edits its tile everywhere it is used.
     Tilemap,
+    /// Pixels drawn from an editable vector shape (`LayerProps::shape`):
+    /// the Shape tool moves its points and the layer is redrawn, crisp.
+    Shape,
 }
 
 #[derive(Clone)]
@@ -114,6 +120,7 @@ impl Layer {
                 style: Default::default(),
                 adjustment: None,
                 tilemap: None,
+                shape: None,
                 continuous: false,
                 color: None,
                 notes: String::new(),
@@ -211,7 +218,12 @@ impl Layer {
     /// A plain raster layer: the only kind whose pixels filters, transforms
     /// and the like work on.
     pub fn owns_pixels(&self) -> bool {
-        matches!(self.props.kind, LayerKind::Raster | LayerKind::Tilemap)
+        matches!(self.props.kind, LayerKind::Raster | LayerKind::Tilemap | LayerKind::Shape)
+    }
+
+    /// A vector shape layer (see [`LayerKind::Shape`]).
+    pub fn is_shape(&self) -> bool {
+        self.props.kind == LayerKind::Shape && self.props.shape.is_some()
     }
 
     /// Apply this adjustment layer to `raster` (straight RGBA) the way the
@@ -254,9 +266,11 @@ impl Layer {
     /// they are never editable; ancestors' visibility is checked by
     /// [`crate::DocState::layer_editable`].
     pub fn editable(&self) -> bool {
-        // An adjustment layer is painted through its mask only.
+        // An adjustment layer is painted through its mask only; a shape
+        // layer is drawn from its points (rasterize it to paint on it).
         self.props.visible
             && !self.props.locked
+            && !self.is_shape()
             && (self.owns_pixels() || (self.is_adjustment() && self.mask.is_some()))
     }
 }

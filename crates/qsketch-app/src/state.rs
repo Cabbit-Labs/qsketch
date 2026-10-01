@@ -61,6 +61,8 @@ pub struct DocEntry {
     /// Frames selected in the Timeline as (anchor, end), inclusive and in
     /// either order; `None` = just the current frame.
     pub frame_sel: Option<(usize, usize)>,
+    /// Point of the active shape layer selected with the Shape tool.
+    pub shape_sel: Option<usize>,
 }
 
 impl DocEntry {
@@ -85,6 +87,7 @@ impl DocEntry {
             file_size: None,
             last_export: None,
             frame_sel: None,
+            shape_sel: None,
         }
     }
 

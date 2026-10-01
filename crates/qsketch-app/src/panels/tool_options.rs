@@ -134,6 +134,75 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                 });
                 hint(ui, "Drag to draw a foreground → background gradient. Shift snaps the angle.");
             }
+            ToolKind::Shape => {
+                let doc_id = state.active_doc;
+                let shape = state.active().and_then(|d| {
+                    let l = d.doc.state().active_layer();
+                    l.props.shape.clone().filter(|_| l.is_shape())
+                });
+                match (doc_id, shape) {
+                    (Some(doc_id), Some(sh)) => {
+                        group(ui, &theme, Section::Tools, |ui| {
+                            let mut fill = sh.fill.is_some();
+                            if ui.checkbox(&mut fill, "Fill").changed() {
+                                let fg = state.fg;
+                                crate::tools::vector::edit_shape(state, doc_id, "Shape Fill", |s| {
+                                    s.fill = fill.then_some(fg);
+                                });
+                            }
+                            if let Some(c) = sh.fill {
+                                let mut c32 = egui::Color32::from_rgb(c.r, c.g, c.b);
+                                if egui::color_picker::color_edit_button_srgba(ui, &mut c32, egui::color_picker::Alpha::Opaque).changed() {
+                                    crate::tools::vector::edit_shape(state, doc_id, "Shape Fill", |s| {
+                                        s.fill = Some(qsketch_core::Rgba8::new(c32.r(), c32.g(), c32.b(), 255));
+                                    });
+                                }
+                            }
+                            let mut stroke = sh.stroke.is_some();
+                            if ui.checkbox(&mut stroke, "Outline").changed() {
+                                let bg = state.bg;
+                                crate::tools::vector::edit_shape(state, doc_id, "Shape Outline", |s| {
+                                    s.stroke = stroke.then_some(bg);
+                                });
+                            }
+                            if let Some(c) = sh.stroke {
+                                let mut c32 = egui::Color32::from_rgb(c.r, c.g, c.b);
+                                if egui::color_picker::color_edit_button_srgba(ui, &mut c32, egui::color_picker::Alpha::Opaque).changed() {
+                                    crate::tools::vector::edit_shape(state, doc_id, "Shape Outline", |s| {
+                                        s.stroke = Some(qsketch_core::Rgba8::new(c32.r(), c32.g(), c32.b(), 255));
+                                    });
+                                }
+                                let mut w = sh.stroke_width.max(1);
+                                let r = ui.add(egui::DragValue::new(&mut w).range(1..=64).suffix(" px"));
+                                if r.changed() && w != sh.stroke_width {
+                                    crate::tools::vector::edit_shape(state, doc_id, "Outline Width", |s| s.stroke_width = w);
+                                }
+                            }
+                            let mut closed = sh.closed;
+                            if ui.checkbox(&mut closed, "Closed").on_hover_text("Join the last point back to the first (and fill)").changed() {
+                                crate::tools::vector::edit_shape(state, doc_id, "Shape Closed", |s| s.closed = closed);
+                            }
+                            ui.label(egui::RichText::new(format!("{} points", sh.points.len())).weak());
+                            if ui.button("Rasterize").on_hover_text("Turn the shape into plain pixels (Layer › Rasterize Shape Layer)").clicked() {
+                                state.pending.push(crate::actions::Action::RasterizeShape);
+                            }
+                        });
+                        hint(ui, "Click to add a point (on an edge: splits it; Shift: after the selected point). Drag a point to move it, Alt+click or Delete removes it.");
+                    }
+                    _ => {
+                        group(ui, &theme, Section::Tools, |ui| {
+                            let o = &mut state.tool_opts;
+                            ui.checkbox(&mut o.shape_fill, "Fill").on_hover_text("Fill with the foreground color");
+                            ui.checkbox(&mut o.shape_stroke, "Outline").on_hover_text("Outline in the background color");
+                            if o.shape_stroke {
+                                ui.add(egui::DragValue::new(&mut o.shape_stroke_width).range(1..=64).suffix(" px"));
+                            }
+                            ui.checkbox(&mut o.shape_closed, "Closed");
+                        });
+                        hint(ui, "Click the canvas to start a new shape layer; keep clicking to add points. Shapes stay editable and draw crisp pixels.");
+                    }
+                }
+            }
             ToolKind::Tile => {
                 group(ui, &theme, Section::Tools, |ui| {
                     ui.label(format!("Tile {}", state.tool_opts.tile_index));
@@ -166,8 +235,19 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
             }
             ToolKind::Eyedropper => {
                 group(ui, &theme, Section::Tools, |ui| {
-                    ui.checkbox(&mut state.tool_opts.eyedropper_sample_merged, "All layers")
-                        .on_hover_text("Sample all layers");
+                    let o = &mut state.tool_opts;
+                    let mut scope = if o.eyedropper_sample_merged { 2 } else if o.eyedropper_sample_below { 1 } else { 0 };
+                    ui.label("Sample");
+                    egui::ComboBox::from_id_salt("eyedropper_scope")
+                        .selected_text(["Current layer", "Current & below", "All layers"][scope])
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut scope, 0, "Current layer");
+                            ui.selectable_value(&mut scope, 1, "Current & below")
+                                .on_hover_text("The layers up to the active one: picks the gray under index-painting adjustments");
+                            ui.selectable_value(&mut scope, 2, "All layers");
+                        });
+                    o.eyedropper_sample_merged = scope == 2;
+                    o.eyedropper_sample_below = scope == 1;
                 });
                 hint(ui, "Alt+click / right-click sets the background color");
             }

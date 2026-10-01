@@ -599,6 +599,23 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                         pending.push(Action::LayerStyle);
                     }
                 }
+                if p.shape.is_some() {
+                    ui.painter().text(
+                        name_rect.left_center()
+                            + egui::vec2(
+                                ui.painter()
+                                    .layout_no_wrap(p.name.clone(), egui::FontId::proportional(13.0), Color32::WHITE)
+                                    .size()
+                                    .x
+                                    + 6.0,
+                                0.0,
+                            ),
+                        egui::Align2::LEFT_CENTER,
+                        icons::PENTAGON,
+                        egui::FontId::new(11.0, ICON_FAMILY()),
+                        crate::ui::theme::dim_text(ui.visuals()),
+                    );
+                }
                 if p.tilemap.is_some() {
                     ui.painter().text(
                         name_rect.left_center()

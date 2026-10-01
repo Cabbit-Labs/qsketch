@@ -642,6 +642,16 @@ pub enum Filter {
     Levels(Levels),
     Curves(Curves),
     ColorBalance(ColorBalance),
+    /// Quantize each channel to `levels` steps (2..=256).
+    Posterize {
+        levels: u32,
+    },
+    /// Map luminance (dark to light) onto a run of colors.
+    GradientMap {
+        colors: Vec<Rgba8>,
+    },
+    /// Drop the color, keeping luminance.
+    BlackWhite,
     /// Snap every pixel to the nearest color of a palette, optionally
     /// dithering between the two closest candidates.
     Palettize {
@@ -847,6 +857,9 @@ impl Filter {
             Filter::Palettize { .. } => "palettize",
             Filter::ReplaceColor { .. } => "replace_color",
             Filter::ColorBalance(_) => "color_balance",
+            Filter::Posterize { .. } => "posterize",
+            Filter::GradientMap { .. } => "gradient_map",
+            Filter::BlackWhite => "black_white",
             Filter::GaussianBlur { .. } => "gaussian_blur",
             Filter::BoxBlur { .. } => "box_blur",
             Filter::MotionBlur { .. } => "motion_blur",
@@ -903,6 +916,9 @@ impl Filter {
             Filter::Palettize { .. } => "Snap to Palette",
             Filter::ReplaceColor { .. } => "Replace Color",
             Filter::ColorBalance(_) => "Color Balance",
+            Filter::Posterize { .. } => "Posterize",
+            Filter::GradientMap { .. } => "Gradient Map",
+            Filter::BlackWhite => "Black & White",
             Filter::GaussianBlur { .. } => "Gaussian Blur",
             Filter::BoxBlur { .. } => "Box Blur",
             Filter::MotionBlur { .. } => "Motion Blur",
@@ -964,6 +980,9 @@ impl Filter {
             Filter::ReplaceColor { .. } => "Swaps one color for another everywhere it appears, within a tolerance. It starts from the foreground (Alt+click picks one) and background colors.",
             Filter::Curves(_) => "Reshapes tones freely: click the curve to add a point, drag to bend, right-click a point to remove it. An S-curve adds contrast.",
             Filter::ColorBalance(_) => "Tints the shadows, midtones and highlights separately toward or away from each primary.",
+            Filter::Posterize { .. } => "Rounds every channel to a few steps. As an adjustment layer over a grayscale painting it sets how many colors the Gradient Map above it will use.",
+            Filter::GradientMap { .. } => "Paints luminance with a run of colors, darkest first: a palette defined as a ramp rather than as swatches.",
+            Filter::BlackWhite => "Keeps only the luminance. The first step of index painting: paint in gray, let the layers above choose the colors.",
             Filter::GaussianBlur { .. } => "Smooth, even blur. The everyday one for softening.",
             Filter::BoxBlur { .. } => "Averages a square of pixels: blockier than Gaussian, and faster.",
             Filter::MotionBlur { .. } => "Smears in one direction, like a camera panning.",
@@ -1019,6 +1038,9 @@ impl Filter {
             | Filter::Levels(_)
             | Filter::Curves(_)
             | Filter::ColorBalance(_)
+            | Filter::Posterize { .. }
+            | Filter::GradientMap { .. }
+            | Filter::BlackWhite
             | Filter::Palettize { .. }
             | Filter::ReplaceColor { .. } => 0,
             Filter::GaussianBlur { radius } => g(radius),
@@ -1073,6 +1095,9 @@ impl Filter {
             Filter::Palettize { colors, pattern, strength } => fx::palettize(src, colors, *pattern, *strength),
             Filter::ReplaceColor { from, to, tolerance, soft } => fx::replace_color(src, *from, *to, *tolerance, *soft),
             Filter::ColorBalance(b) => adjust::color_balance(src, b),
+            Filter::Posterize { levels } => adjust::posterize(src, *levels),
+            Filter::GradientMap { colors } => adjust::gradient_map(src, colors),
+            Filter::BlackWhite => adjust::black_white(src),
             Filter::GaussianBlur { radius } => blur::gaussian(src, *radius),
             Filter::BoxBlur { radius } => blur::box_blur(src, *radius),
             Filter::MotionBlur { angle, distance } => blur::motion(src, *angle, *distance),

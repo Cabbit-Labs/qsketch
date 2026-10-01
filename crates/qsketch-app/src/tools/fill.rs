@@ -10,6 +10,45 @@ use crate::tools::CanvasInput;
 use crate::ui::toasts::Level;
 
 /// Sample a color at a document pixel (merged or active layer).
+/// What the eyedropper reads: the active layer, the layers up to and
+/// including it, or the whole composite.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SampleScope {
+    Layer,
+    Below,
+    All,
+}
+
+pub fn eyedropper_scope(state: &AppState) -> SampleScope {
+    if state.tool_opts.eyedropper_sample_merged {
+        SampleScope::All
+    } else if state.tool_opts.eyedropper_sample_below {
+        SampleScope::Below
+    } else {
+        SampleScope::Layer
+    }
+}
+
+/// `sample_color` for a scope. "Below" composites just the tile under the
+/// pixel from the layers up to the active one, so the adjustment layers
+/// stacked above (index painting) do not color the pick.
+pub fn sample_color_scope(state: &AppState, doc_id: DocId, x: i32, y: i32, scope: SampleScope) -> Option<Rgba8> {
+    if scope != SampleScope::Below {
+        return sample_color(state, doc_id, x, y, scope == SampleScope::All);
+    }
+    let entry = state.doc(doc_id)?;
+    if x < 0 || y < 0 || x >= entry.doc.width() as i32 || y >= entry.doc.height() as i32 {
+        return None;
+    }
+    let s = entry.doc.state();
+    let tile = qsketch_core::TILE as i32;
+    let (tx, ty) = ((x / tile) as u32, (y / tile) as u32);
+    let mut buf = [[0f32; 4]; qsketch_core::TILE_PX];
+    qsketch_core::composite::composite_range(s, None, tx, ty, 0..s.active + 1, None, &mut buf);
+    let p = buf[((y % tile) as usize) * qsketch_core::TILE + (x % tile) as usize];
+    Some(Rgba8::from_f32(p))
+}
+
 pub fn sample_color(state: &AppState, doc_id: DocId, x: i32, y: i32, merged: bool) -> Option<Rgba8> {
     let entry = state.doc(doc_id)?;
     if x < 0 || y < 0 || x >= entry.doc.width() as i32 || y >= entry.doc.height() as i32 {
@@ -54,8 +93,9 @@ fn sample_into(state: &mut AppState, doc_id: DocId, inp: CanvasInput) {
         p.screen = inp.screen;
         p.doc_pos = inp.doc;
     }
-    let merged = state.tool_opts.eyedropper_sample_merged;
-    let Some(mut c) = sample_color(state, doc_id, inp.doc.x.floor() as i32, inp.doc.y.floor() as i32, merged) else {
+    let scope = eyedropper_scope(state);
+    let Some(mut c) = sample_color_scope(state, doc_id, inp.doc.x.floor() as i32, inp.doc.y.floor() as i32, scope)
+    else {
         return;
     };
     // Photoshop picks opaque colors; keep RGB, force full alpha unless fully
@@ -205,7 +245,7 @@ pub fn draw_pick_loupe(state: &AppState, doc_id: DocId, painter: &egui::Painter)
     let radius = cfg.pick_loupe_size.clamp(40.0, 260.0) / 2.0;
     let cell = (radius * 2.0) / cells as f32;
     let half = cells as i32 / 2;
-    let merged = state.tool_opts.eyedropper_sample_merged;
+    let scope = eyedropper_scope(state);
     let (px, py) = (pick.doc_pos.x.floor() as i32, pick.doc_pos.y.floor() as i32);
 
     // Sit just above the pointer, flipping below when there is no room; the
@@ -231,7 +271,7 @@ pub fn draw_pick_loupe(state: &AppState, doc_id: DocId, painter: &egui::Painter)
             if p.distance(c) > radius {
                 continue;
             }
-            let col = match sample_color(state, doc_id, px + i, py + j, merged) {
+            let col = match sample_color_scope(state, doc_id, px + i, py + j, scope) {
                 Some(s) if s.a == 255 => egui::Color32::from_rgb(s.r, s.g, s.b),
                 Some(s) if s.a > 0 => {
                     let bg = checker[(((px + i) / 4 + (py + j) / 4) & 1) as usize];

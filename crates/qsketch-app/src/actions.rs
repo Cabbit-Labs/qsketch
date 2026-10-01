@@ -141,6 +141,9 @@ actions! {
     Levels => (Image, "Levels…", ["Ctrl+L"]),
     Curves => (Image, "Curves…", ["Ctrl+M"]),
     ColorBalance => (Image, "Color Balance…", ["Ctrl+B"]),
+    Posterize => (Image, "Posterize…", []),
+    GradientMap => (Image, "Gradient Map…", []),
+    BlackWhite => (Image, "Black & White", []),
     ReplaceColor => (Image, "Replace Color…", []),
     SnapToPalette => (Image, "Snap to Palette…", []),
     IndexColors => (Image, "Index Colors…", []),
@@ -151,6 +154,14 @@ actions! {
     HueSaturation => (Image, "Hue/Saturation…", ["Ctrl+H", "Ctrl+U"]),
     // Layer
     NewLayer => (Layer, "New Layer", ["Ctrl+Shift+N"]),
+    NewShapeLayer => (Layer, "New Shape Layer", []),
+    RasterizeShape => (Layer, "Rasterize Shape Layer", []),
+    Outline => (Layer, "Outline…", ["Ctrl+Shift+O"]),
+    NewAdjPosterize => (Layer, "Posterize", []),
+    NewAdjGradientMap => (Layer, "Gradient Map", []),
+    NewAdjBlackWhite => (Layer, "Black & White", []),
+    NewDitherLayer => (Layer, "New Dither Pattern Layer", []),
+    IndexPaintingSetup => (Layer, "HD Index Painting Setup", []),
     DuplicateLayer => (Layer, "Duplicate Layer", ["Ctrl+J"]),
     DeleteLayer => (Layer, "Delete Layer", []),
     MergeDown => (Layer, "Merge Down", ["Ctrl+E"]),
@@ -305,6 +316,7 @@ actions! {
     ToolHand => (Tools, "Hand", ["H"]),
     ToolSlice => (Tools, "Slice", ["Shift+C"]),
     ToolTile => (Tools, "Tile", ["Shift+T"]),
+    ToolShape => (Tools, "Shape", ["P"]),
     ToolRotateView => (Tools, "Rotate View", ["Shift+R"]),
     // Brush
     BrushSizeUp => (Brush, "Increase Brush Size", ["]"]),
@@ -394,6 +406,7 @@ impl Action {
             Action::ToolHand => ToolKind::Hand,
             Action::ToolSlice => ToolKind::Slice,
             Action::ToolTile => ToolKind::Tile,
+            Action::ToolShape => ToolKind::Shape,
             Action::ToolRotateView => ToolKind::RotateView,
             _ => return None,
         })
@@ -425,6 +438,7 @@ impl Action {
             ToolKind::Zoom => Action::ToolZoom,
             ToolKind::Hand => Action::ToolHand,
             ToolKind::Slice => Action::ToolSlice,
+            ToolKind::Shape => Action::ToolShape,
             ToolKind::Tile => Action::ToolTile,
             ToolKind::RotateView => Action::ToolRotateView,
         }

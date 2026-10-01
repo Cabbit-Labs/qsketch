@@ -2,6 +2,41 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.60.0 — 2026-10-01
+
+- Shape layers: pixel-art vector shapes. The new Shape tool (P) starts a
+  shape layer with its first click; every further click adds a point (on
+  an edge it splits that edge), dragging a point moves it, Alt+click or
+  Delete removes it, and the layer's pixels are redrawn from the points
+  every time, with no anti-aliasing: an even-odd fill through pixel
+  centers whose boundary follows the pixel-stepped edges, plus an optional
+  outline of any width. Fill and outline colors, outline width and
+  open/closed are in the options bar; Layer › Shape › Rasterize Shape
+  Layer turns one into plain pixels (whole-canvas resizes, crops, flips and
+  rotations do that on their own). Shapes are saved in `.qsk` and go to
+  Aseprite and Photoshop files as pixels.
+- HD index painting (Dan Fessler's method). Posterize, Gradient Map and
+  Black & White are new adjustments, both destructive (Image ›
+  Adjustments) and as adjustment layers (Layer › New Adjustment Layer).
+  Layer › HD Index Painting › Setup builds the whole stack over the active
+  layer in one go: a Bayer dither pattern layer at 25%, then Black &
+  White, Posterize (one level per color) and a Gradient Map seeded from the
+  document palette (or an 8-step ramp between the background and
+  foreground colors). Paint in grayscale with any brush, soft or hard,
+  smudge, gradients, opacity, and the layers above turn it into dithered
+  indexed pixel art that re-indexes itself when you change the ramp, the
+  level count or a Curves layer in between. New Dither Pattern Layer adds
+  the pattern layer alone. The eyedropper's new "Current & below" sample
+  mode picks the gray under the adjustment stack, so picking from the
+  canvas keeps you painting in values.
+- Layer › Outline… (Ctrl+Shift+O) opens the layer style on its Stroke page
+  with a 1 px outline in the foreground color switched on: the
+  non-destructive counterpart of Aseprite's Outline.
+- Symmetry: mirrored copies of a hard pixel brush now land on the mirrored
+  pixel. The copy was placed from the raw sample position, so depending on
+  where in the pixel the pointer sat the mirror image could sit one pixel
+  off its true reflection.
+
 ## 0.59.4 — 2026-10-01
 
 - Menus: every row reserves the same column for a check mark, so toggling

@@ -10,6 +10,7 @@ pub mod symmetry;
 pub mod text;
 pub mod tile;
 mod transform;
+pub mod vector;
 mod view;
 
 use std::sync::Arc;
@@ -61,10 +62,12 @@ pub enum ToolKind {
     Slice,
     /// Stamps tiles into a tilemap layer's cells.
     Tile,
+    /// Pixel-art vector shapes: points on a shape layer, redrawn crisp.
+    Shape,
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 26] = [
+    pub const ALL: [ToolKind; 27] = [
         ToolKind::Move,
         ToolKind::RectSelect,
         ToolKind::EllipseSelect,
@@ -74,6 +77,7 @@ impl ToolKind {
         ToolKind::SelectBrush,
         ToolKind::Crop,
         ToolKind::Slice,
+        ToolKind::Shape,
         ToolKind::Eyedropper,
         ToolKind::Brush,
         ToolKind::Pencil,
@@ -104,6 +108,7 @@ impl ToolKind {
             ToolKind::SelectBrush => "Selection Brush",
             ToolKind::Crop => "Crop",
             ToolKind::Slice => "Slice",
+            ToolKind::Shape => "Shape",
             ToolKind::Tile => "Tile",
             ToolKind::Eyedropper => "Eyedropper",
             ToolKind::Brush => "Brush",
@@ -141,6 +146,7 @@ impl ToolKind {
             ToolKind::SelectBrush => icons::HIGHLIGHTER,
             ToolKind::Crop => icons::CROP,
             ToolKind::Slice => icons::GRID_NINE,
+            ToolKind::Shape => icons::PENTAGON,
             ToolKind::Tile => icons::SQUARES_FOUR,
             ToolKind::Eyedropper => icons::EYEDROPPER,
             ToolKind::Brush => icons::PAINT_BRUSH,
@@ -171,7 +177,7 @@ impl ToolKind {
             | ToolKind::PolyLasso
             | ToolKind::MagicWand
             | ToolKind::SelectBrush => 1,
-            ToolKind::Crop | ToolKind::Slice | ToolKind::Eyedropper => 2,
+            ToolKind::Crop | ToolKind::Slice | ToolKind::Shape | ToolKind::Eyedropper => 2,
             ToolKind::Brush
             | ToolKind::Pencil
             | ToolKind::Eraser
@@ -311,6 +317,14 @@ pub struct ToolOptions {
     pub tile_index: u32,
     pub tile_flip_h: bool,
     pub tile_flip_v: bool,
+    /// Shape tool: what a new shape layer starts with.
+    pub shape_fill: bool,
+    pub shape_stroke: bool,
+    pub shape_stroke_width: u32,
+    pub shape_closed: bool,
+    /// Eyedropper: sample the active layer and everything under it (the
+    /// index-painting pick: ignores the adjustment layers on top).
+    pub eyedropper_sample_below: bool,
 }
 
 fn default_liquify_size() -> f32 {
@@ -360,6 +374,11 @@ impl Default for ToolOptions {
             tile_index: 1,
             tile_flip_h: false,
             tile_flip_v: false,
+            shape_fill: true,
+            shape_stroke: false,
+            shape_stroke_width: 1,
+            shape_closed: true,
+            eyedropper_sample_below: false,
         }
     }
 }
@@ -457,6 +476,13 @@ pub enum ToolSession {
         drag: slice::SliceDrag,
         cur: Pt,
     },
+    /// Shape tool: dragging point `point` of the active shape layer, which
+    /// was at `orig` when grabbed on pixel `grab`.
+    ShapeDrag {
+        point: usize,
+        orig: [i32; 2],
+        grab: [i32; 2],
+    },
     /// Freehand contour path in document space.
     Contour {
         pts: Vec<Pt>,
@@ -492,6 +518,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 | ToolKind::Ellipse
                 | ToolKind::Crop
                 | ToolKind::Slice
+                | ToolKind::Shape
                 | ToolKind::Move
                 | ToolKind::Gradient
         ) {
@@ -524,6 +551,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 | ToolKind::Ellipse
                 | ToolKind::Crop
                 | ToolKind::Slice
+                | ToolKind::Shape
                 | ToolKind::Move
                 | ToolKind::Gradient
         ) {
@@ -645,6 +673,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         ToolKind::RotateView => view::handle_rotate(state, doc_id, ev),
         ToolKind::Slice => slice::handle(state, doc_id, ev),
         ToolKind::Tile => tile::handle(state, doc_id, ev),
+        ToolKind::Shape => vector::handle(state, doc_id, ev),
     }
 }
 
@@ -786,6 +815,7 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     }
     text::draw_overlay(state, doc_id, painter);
     slice::draw_overlay(state, doc_id, painter);
+    vector::draw_overlay(state, doc_id, painter);
     tile::draw_grid(state, doc_id, painter);
     fill::draw_pick_loupe(state, doc_id, painter);
 

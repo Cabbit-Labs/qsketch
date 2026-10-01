@@ -68,6 +68,25 @@ pub fn open(state: &mut AppState) {
         Some(LayerStyleDialog { doc: e.id, layer: l.props.id, original: style.clone(), style, page });
 }
 
+/// Layer › Outline: the layer style dialog on its Stroke page with the
+/// outline switched on in the foreground color, the non-destructive
+/// counterpart of Aseprite's Outline.
+pub fn open_outline(state: &mut AppState) {
+    let fg = state.fg;
+    open(state);
+    if let Some(d) = state.dialogs.layer_style.as_mut() {
+        if !d.style.stroke.enabled {
+            d.style.stroke.enabled = true;
+            d.style.stroke.color = fg;
+            d.style.stroke.size = 1.0;
+            d.style.stroke.position = qsketch_core::style::StrokePosition::Outside;
+        }
+        d.page = Page::Stroke;
+        let (doc, layer, style) = (d.doc, d.layer, d.style.clone());
+        preview(state, doc, layer, &style);
+    }
+}
+
 /// Set a layer's style in the working state (no undo step) and redraw.
 fn preview(state: &mut AppState, doc: DocId, layer: LayerId, style: &LayerStyle) -> bool {
     let Some(entry) = state.doc_mut(doc) else { return false };
