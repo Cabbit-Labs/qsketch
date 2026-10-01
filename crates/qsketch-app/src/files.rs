@@ -155,7 +155,10 @@ pub fn write_document(state: &mut AppState, doc_id: DocId, path: &Path) -> bool 
             entry.format_ack = Some(path.to_path_buf());
             state.autosave.forget(doc_id);
             state.settings.push_recent(path.to_path_buf());
-            state.toasts.push(Level::Success, format!("Saved {}", path.display()));
+            // A save is routine: a note in the status bar, not a toast that
+            // sits over a panel for seconds.
+            let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            state.status_msg = Some((format!("Saved {name}"), std::time::Instant::now()));
             true
         }
         Err(e) => {

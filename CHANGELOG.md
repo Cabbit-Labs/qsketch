@@ -2,6 +2,12 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.59.3 — 2026-10-01
+
+- Notifications no longer sit over the bottom-right panel for seconds:
+  toasts now appear top-center over the canvas and a click dismisses one.
+  A plain save reports in the status bar instead of a toast.
+
 ## 0.59.2 — 2026-10-01
 
 - Hiding or showing a layer, collapsing a group and locking the palette

@@ -1,4 +1,7 @@
-//! Lightweight, non-blocking notifications shown in the bottom-right corner.
+//! Lightweight notifications. They sit top-center over the canvas, where
+//! nothing persistent lives, rather than over a corner panel; a click on
+//! one dismisses it, and the pointer passing over one neither hides it nor
+//! keeps it.
 
 use std::time::{Duration, Instant};
 
@@ -54,13 +57,13 @@ impl Toasts {
             return;
         }
         ctx.request_repaint_after(Duration::from_millis(250));
+        let mut dismiss: Option<usize> = None;
         egui::Area::new(egui::Id::new("qsketch_toasts"))
-            .anchor(Align2::RIGHT_BOTTOM, egui::vec2(-16.0, -32.0))
+            .anchor(Align2::CENTER_TOP, egui::vec2(0.0, 92.0))
             .order(egui::Order::Foreground)
-            .interactable(false)
             .show(ctx, |ui| {
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
-                    for t in self.items.iter().rev() {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    for (i, t) in self.items.iter().enumerate().rev() {
                         let age = now.duration_since(t.created).as_secs_f32();
                         let remaining = t.ttl.as_secs_f32() - age;
                         let alpha = (remaining / 0.4).clamp(0.0, 1.0);
@@ -70,22 +73,32 @@ impl Toasts {
                             Level::Success => (Color32::from_rgb(23, 200, 160), crate::ui::icons::CHECK),
                             Level::Error => (Color32::from_rgb(235, 87, 87), crate::ui::icons::WARNING),
                         };
-                        egui::Frame::new()
+                        let r = egui::Frame::new()
                             .fill(ui.visuals().window_fill.gamma_multiply(alpha))
                             .stroke(egui::Stroke::new(1.0, bar.gamma_multiply(alpha)))
                             .corner_radius(crate::ui::theme::radius(6))
                             .inner_margin(egui::Margin::symmetric(10, 8))
                             .show(ui, |ui| {
-                                ui.set_max_width(420.0);
+                                ui.set_max_width(520.0);
                                 ui.horizontal(|ui| {
                                     ui.label(crate::ui::widgets::icon(glyph, 13.0).color(bar.gamma_multiply(alpha)));
                                     ui.label(
                                         RichText::new(&t.text).color(ui.visuals().text_color().gamma_multiply(alpha)),
                                     );
                                 });
-                            });
+                            })
+                            .response;
+                        let r = r.interact(egui::Sense::click()).on_hover_text("Click to dismiss");
+                        if r.clicked() {
+                            dismiss = Some(i);
+                        }
                     }
                 });
             });
+        if let Some(i) = dismiss {
+            if i < self.items.len() {
+                self.items.remove(i);
+            }
+        }
     }
 }
