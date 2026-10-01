@@ -2,6 +2,11 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.59.1 — 2026-10-01
+
+- Timeline: following the current frame only scrolls sideways; a tall
+  layer list no longer jumps back to the top when the frame changes.
+
 ## 0.59.0 — 2026-10-01
 
 - Animation. A document can now have any number of frames, edited in a new

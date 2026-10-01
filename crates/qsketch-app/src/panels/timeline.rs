@@ -389,7 +389,9 @@ fn grid(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
 
             // Keep the current frame in view when it moved.
             if follow {
-                let col = Rect::from_min_size(Pos2::new(col_x(cur), rect.top()), Vec2::new(col_w, 1.0));
+                // Only sideways: the column spans the visible height, so
+                // the vertical scroll position is left alone.
+                let col = Rect::from_min_max(Pos2::new(col_x(cur), vis.top()), Pos2::new(col_x(cur + 1), vis.bottom()));
                 if col.left() < vis.left() + LEFT_W || col.right() > vis.right() {
                     ui.scroll_to_rect(col.expand2(Vec2::new(LEFT_W + col_w, 0.0)), None);
                 }
