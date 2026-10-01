@@ -235,12 +235,8 @@ pub fn animation_menu(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     item(ui, state, Action::CopyCel, pixel);
     item(ui, state, Action::PasteCel, pixel);
     item(ui, state, Action::CelProperties, pixel);
-    let btn = egui::Button::new(format!(
-        "{} {}",
-        if continuous { icons::CHECK } else { " " },
-        Action::ToggleContinuous.label()
-    ))
-    .shortcut_text(state.keymap.primary_text(Action::ToggleContinuous));
+    let btn = crate::ui::menus::button(continuous, Action::ToggleContinuous.label())
+        .shortcut_text(state.keymap.primary_text(Action::ToggleContinuous));
     if ui
         .add_enabled(pixel, btn)
         .on_hover_text("New frames on this layer keep showing the previous frame's picture (linked) until unlinked")
@@ -865,8 +861,8 @@ fn grid(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
 }
 
 fn menu_item(ui: &mut Ui, state: &mut AppState, a: Action, enabled: bool) {
-    let btn = egui::Button::new(a.label()).shortcut_text(state.keymap.primary_text(a));
-    if ui.add_enabled(enabled, btn).clicked() {
+    let shortcut = state.keymap.primary_text(a);
+    if crate::ui::menus::item(ui, false, a.label(), shortcut, enabled).clicked() {
         state.pending.push(a);
         ui.close();
     }

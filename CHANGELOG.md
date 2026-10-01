@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.59.4 — 2026-10-01
+
+- Menus: every row reserves the same column for a check mark, so toggling
+  one no longer shifts its label and rows with and without checks line up;
+  the title of the open menu stays highlighted while its submenus are
+  open; and submenus open flush against the menu instead of a few points
+  away from it.
+
 ## 0.59.3 — 2026-10-01
 
 - Notifications no longer sit over the bottom-right panel for seconds:

@@ -14,6 +14,7 @@ use crate::settings::{NewDocBackground, Settings};
 use crate::state::{AppState, DocId, TempReason};
 use crate::tools::ModifyKind;
 use crate::tools::ToolKind;
+use crate::ui::menus;
 use crate::ui::toasts::Level;
 use crate::ui::{icons, theme};
 use crate::workspace::{PanelKind, Workspace};
@@ -667,8 +668,7 @@ impl QSketchApp {
 
     fn menu_item(&mut self, ui: &mut Ui, action: Action, enabled: bool) {
         let text = self.state.keymap.primary_text(action);
-        let btn = egui::Button::new(action.label()).shortcut_text(text);
-        if ui.add_enabled(enabled, btn).clicked() {
+        if menus::item(ui, false, action.label(), text, enabled).clicked() {
             self.state.pending.push(action);
             ui.close();
         }
@@ -842,7 +842,7 @@ impl QSketchApp {
             top_menu(ui, "File", |ui| {
                 self.menu_item(ui, Action::NewDocument, true);
                 self.menu_item(ui, Action::OpenDocument, true);
-                ui.menu_button("Open Recent", |ui| {
+                menus::submenu(ui, false, "Open Recent", |ui| {
                     let recent = self.state.settings.general.recent_files.clone();
                     if recent.is_empty() {
                         ui.add_enabled(false, egui::Button::new("(empty)"));
@@ -862,7 +862,7 @@ impl QSketchApp {
                 });
                 let doc_path = self.state.active().and_then(|d| d.doc.path.clone());
                 ui.add_enabled_ui(doc_path.is_some(), |ui| {
-                    ui.menu_button("Restore Previous Version", |ui| {
+                    menus::submenu(ui, false, "Restore Previous Version", |ui| {
                         let Some(orig) = doc_path.clone() else { return };
                         let backups = crate::backups::list(&orig);
                         if backups.is_empty() {
@@ -876,7 +876,7 @@ impl QSketchApp {
                             }
                         }
                     })
-                    .response
+                    .0
                     .on_hover_text(
                         "Versions of this file that were overwritten by saving; opens one as a new document",
                     );
@@ -886,7 +886,7 @@ impl QSketchApp {
                 self.menu_item(ui, Action::SaveAs, has_doc);
                 self.menu_item(ui, Action::ExportImage, has_doc);
                 self.menu_item(ui, Action::QuickExport, has_doc);
-                ui.menu_button("Export Scaled", |ui| {
+                menus::submenu(ui, false, "Export Scaled", |ui| {
                     ui.label(egui::RichText::new("Nearest-neighbor, for pixel art").weak().small());
                     for a in
                         [Action::ExportScaled2, Action::ExportScaled3, Action::ExportScaled4, Action::ExportScaled8]
@@ -896,7 +896,7 @@ impl QSketchApp {
                 });
                 self.menu_item(ui, Action::ExportTileset, has_doc);
                 self.menu_item(ui, Action::ExportAnimation, has_doc);
-                ui.menu_button("Import", |ui| {
+                menus::submenu(ui, false, "Import", |ui| {
                     self.menu_item(ui, Action::ImportFrames, true);
                     self.menu_item(ui, Action::ImportSpriteSheet, true);
                 });
@@ -907,12 +907,8 @@ impl QSketchApp {
                     .active()
                     .map(|d| (d.doc.timelapse.recording, d.doc.timelapse.frames.len(), d.doc.timelapse.bytes()))
                     .unwrap_or((false, 0, 0));
-                ui.menu_button(format!("{} Timelapse", if recording { icons::CHECK } else { " " }), |ui| {
-                    let btn = egui::Button::new(format!(
-                        "{} {}",
-                        if recording { icons::CHECK } else { " " },
-                        Action::ToggleTimelapse.label()
-                    ))
+                menus::submenu(ui, recording, "Timelapse", |ui| {
+                    let btn = menus::button(recording, Action::ToggleTimelapse.label())
                     .shortcut_text(self.state.keymap.primary_text(Action::ToggleTimelapse));
                     if ui
                         .add_enabled(has_doc, btn)
@@ -972,14 +968,14 @@ impl QSketchApp {
                 self.menu_item(ui, Action::CanvasSize, has_doc);
                 self.menu_item(ui, Action::CropToSelection, has_sel);
                 let aspect = self.state.active().map(|d| d.doc.state().pixel_aspect).unwrap_or([1, 1]);
-                ui.menu_button("Pixel Aspect Ratio", |ui| {
+                menus::submenu(ui, false, "Pixel Aspect Ratio", |ui| {
                     ui.label(egui::RichText::new("How wide each pixel shows (for pixel art made for old screens)").weak().small());
                     for (a, v, label) in [
                         (Action::PixelAspectSquare, [1u8, 1u8], "Square (1:1)"),
                         (Action::PixelAspectWide, [2, 1], "Double-wide (2:1)"),
                         (Action::PixelAspectTall, [1, 2], "Double-tall (1:2)"),
                     ] {
-                        let btn = egui::Button::new(format!("{} {label}", if aspect == v { icons::CHECK } else { " " }))
+                        let btn = menus::button(aspect == v, label)
                             .shortcut_text(self.state.keymap.primary_text(a));
                         if ui.add_enabled(has_doc, btn).clicked() {
                             self.state.pending.push(a);
@@ -988,7 +984,7 @@ impl QSketchApp {
                     }
                 });
                 ui.separator();
-                ui.menu_button("Rotate / Flip", |ui| {
+                menus::submenu(ui, false, "Rotate / Flip", |ui| {
                     self.menu_item(ui, Action::Rotate90CW, has_doc);
                     self.menu_item(ui, Action::Rotate90CCW, has_doc);
                     self.menu_item(ui, Action::Rotate180, has_doc);
@@ -997,7 +993,7 @@ impl QSketchApp {
                     self.menu_item(ui, Action::FlipVertical, has_doc);
                 });
                 ui.separator();
-                ui.menu_button("Adjustments", |ui| {
+                menus::submenu(ui, false, "Adjustments", |ui| {
                     self.menu_item(ui, Action::BrightnessContrast, has_doc);
                     self.menu_item(ui, Action::Levels, has_doc);
                     self.menu_item(ui, Action::Curves, has_doc);
@@ -1009,17 +1005,13 @@ impl QSketchApp {
                     ui.separator();
                     self.menu_item(ui, Action::ReplaceColor, has_doc);
                 });
-                ui.menu_button("Palette", |ui| {
+                menus::submenu(ui, false, "Palette", |ui| {
                     self.menu_item(ui, Action::IndexColors, has_doc);
                     self.menu_item(ui, Action::SnapToPalette, has_pal);
                     ui.separator();
                     let text = self.state.keymap.primary_text(Action::TogglePaletteLock);
-                    let label = format!(
-                        "{} {}",
-                        if pal_locked { icons::CHECK } else { " " },
-                        Action::TogglePaletteLock.label()
-                    );
-                    if ui.add_enabled(has_doc, egui::Button::new(label).shortcut_text(text)).clicked() {
+                    let btn = menus::button(pal_locked, Action::TogglePaletteLock.label()).shortcut_text(text);
+                    if ui.add_enabled(has_doc, btn).clicked() {
                         self.state.pending.push(Action::TogglePaletteLock);
                         ui.close();
                     }
@@ -1045,7 +1037,7 @@ impl QSketchApp {
                 let is_pixels = self.state.active().is_some_and(|d| {
                     d.doc.state().active_layer().props.kind == qsketch_core::layer::LayerKind::Raster
                 });
-                ui.menu_button("Tilemap", |ui| {
+                menus::submenu(ui, false, "Tilemap", |ui| {
                     self.menu_item(ui, Action::NewTilemapLayer, has_doc);
                     self.menu_item(ui, Action::ConvertToTilemap, is_pixels);
                     self.menu_item(ui, Action::ConvertToPixels, is_tilemap);
@@ -1058,7 +1050,7 @@ impl QSketchApp {
                         .small(),
                     );
                 });
-                ui.menu_button("New Adjustment Layer", |ui| {
+                menus::submenu(ui, false, "New Adjustment Layer", |ui| {
                     for (a, label) in [
                         (Action::NewAdjBrightnessContrast, "Brightness/Contrast…"),
                         (Action::NewAdjLevels, "Levels…"),
@@ -1075,7 +1067,7 @@ impl QSketchApp {
                     ui.separator();
                     self.menu_item(ui, Action::AdjustmentSettings, is_adjustment);
                 });
-                ui.menu_button("Layer Style", |ui| {
+                menus::submenu(ui, false, "Layer Style", |ui| {
                     self.menu_item(ui, Action::LayerStyle, pixel_layer);
                     self.menu_item(ui, Action::CopyLayerStyle, styled);
                     let can_paste = pixel_layer && self.state.style_clipboard.is_some();
@@ -1090,7 +1082,7 @@ impl QSketchApp {
                 self.menu_item(ui, Action::MergeVisible, layers > 1);
                 self.menu_item(ui, Action::Flatten, layers > 1);
                 ui.separator();
-                ui.menu_button("Arrange", |ui| {
+                menus::submenu(ui, false, "Arrange", |ui| {
                     self.menu_item(ui, Action::LayerToTop, has_doc);
                     self.menu_item(ui, Action::LayerUp, has_doc);
                     self.menu_item(ui, Action::LayerDown, has_doc);
@@ -1115,7 +1107,7 @@ impl QSketchApp {
                         (l.mask.is_some(), l.props.mask_enabled)
                     })
                     .unwrap_or((false, true));
-                ui.menu_button("Layer Mask", |ui| {
+                menus::submenu(ui, false, "Layer Mask", |ui| {
                     self.menu_item(ui, Action::MaskRevealAll, has_doc && !has_mask);
                     self.menu_item(ui, Action::MaskHideAll, has_doc && !has_mask);
                     self.menu_item(ui, Action::MaskFromSelection, has_doc && !has_mask && has_sel);
@@ -1141,7 +1133,7 @@ impl QSketchApp {
                 }
                 ui.separator();
                 let open = self.workspace.is_panel_open(&PanelKind::Timeline);
-                let btn = egui::Button::new(format!("{} Timeline", if open { icons::CHECK } else { " " }))
+                let btn = menus::button(open, "Timeline")
                     .shortcut_text(self.state.keymap.primary_text(Action::ShowTimeline));
                 if ui.add(btn).clicked() {
                     self.state.pending.push(Action::ShowTimeline);
@@ -1155,7 +1147,7 @@ impl QSketchApp {
                 self.menu_item(ui, Action::InvertSelection, has_doc);
                 self.menu_item(ui, Action::SelectLayerContent, sel_or_content);
                 ui.separator();
-                ui.menu_button("Modify", |ui| {
+                menus::submenu(ui, false, "Modify", |ui| {
                     self.menu_item(ui, Action::BorderSelection, has_sel);
                     self.menu_item(ui, Action::SmoothSelection, has_sel);
                     self.menu_item(ui, Action::ExpandSelection, has_sel);
@@ -1179,7 +1171,7 @@ impl QSketchApp {
                 self.menu_item(ui, Action::ResetView, has_doc);
                 ui.separator();
                 let grid = self.state.settings.canvas.show_pixel_grid;
-                let btn = egui::Button::new(format!("{} Pixel Grid", if grid { icons::CHECK } else { " " }))
+                let btn = menus::button(grid, "Pixel Grid")
                     .shortcut_text(self.state.keymap.primary_text(Action::TogglePixelGrid));
                 if ui.add(btn).clicked() {
                     self.state.pending.push(Action::TogglePixelGrid);
@@ -1187,8 +1179,8 @@ impl QSketchApp {
                 }
                 // Tile grid: on/off plus its size, Aseprite style.
                 let c = &mut self.state.settings.canvas;
-                ui.menu_button(format!("{} Grid", if c.show_grid { icons::CHECK } else { " " }), |ui| {
-                    let btn = egui::Button::new(format!("{} Show Grid", if c.show_grid { icons::CHECK } else { " " }))
+                menus::submenu(ui, c.show_grid, "Grid", |ui| {
+                    let btn = menus::button(c.show_grid, "Show Grid")
                         .shortcut_text(self.state.keymap.primary_text(Action::ToggleGrid));
                     if ui.add(btn).clicked() {
                         c.show_grid = !c.show_grid;
@@ -1203,6 +1195,7 @@ impl QSketchApp {
                         }
                     }
                     ui.horizontal(|ui| {
+                        menus::indent(ui);
                         let custom = ![4, 8, 16, 32, 64].contains(&c.grid_size);
                         let _ = ui.radio(custom, "Custom");
                         if ui.add(egui::DragValue::new(&mut c.grid_size).range(1..=4096).suffix(" px")).changed() {
@@ -1210,11 +1203,7 @@ impl QSketchApp {
                         }
                     });
                     ui.separator();
-                    let btn = egui::Button::new(format!(
-                        "{} {}",
-                        if c.snap_to_grid { icons::CHECK } else { " " },
-                        Action::ToggleSnapToGrid.label()
-                    ))
+                    let btn = menus::button(c.snap_to_grid, Action::ToggleSnapToGrid.label())
                     .shortcut_text(self.state.keymap.primary_text(Action::ToggleSnapToGrid));
                     if ui
                         .add(btn)
@@ -1229,7 +1218,7 @@ impl QSketchApp {
                 let has_guides = self.state.active().is_some_and(|d| !d.doc.guides.is_empty());
                 let c = &self.state.settings.canvas;
                 let rg_on = c.show_rulers || (c.show_guides && has_guides);
-                ui.menu_button(format!("{} Rulers & Guides", if rg_on { icons::CHECK } else { " " }), |ui| {
+                menus::submenu(ui, rg_on, "Rulers & Guides", |ui| {
                     ui.label(
                         egui::RichText::new(
                             "Drag from a ruler to add a guide; drag one back onto the ruler to remove it. The Move tool (or Ctrl with any tool) moves guides.",
@@ -1245,7 +1234,7 @@ impl QSketchApp {
                         (Action::ToggleLockGuides, c.lock_guides, true),
                         (Action::ToggleShowSlices, c.show_slices, true),
                     ] {
-                        let btn = egui::Button::new(format!("{} {}", if on { icons::CHECK } else { " " }, a.label()))
+                        let btn = menus::button(on, a.label())
                             .shortcut_text(self.state.keymap.primary_text(a));
                         if ui.add_enabled(enabled, btn).clicked() {
                             self.state.pending.push(a);
@@ -1256,7 +1245,7 @@ impl QSketchApp {
                     self.menu_item(ui, Action::ClearGuides, has_guides);
                 });
                 let tiled = self.state.settings.canvas.tiled;
-                ui.menu_button(format!("{} Tiled Mode", if tiled > 0 { icons::CHECK } else { " " }), |ui| {
+                menus::submenu(ui, tiled > 0, "Tiled Mode", |ui| {
                     ui.label(
                         egui::RichText::new("Repeat the document around itself to check seamless tiles").weak().small(),
                     );
@@ -1264,7 +1253,7 @@ impl QSketchApp {
                         [(Action::TiledOff, 0u8), (Action::TiledX, 1), (Action::TiledY, 2), (Action::TiledBoth, 3)]
                     {
                         let btn =
-                            egui::Button::new(format!("{} {}", if tiled == v { icons::CHECK } else { " " }, a.label()))
+                            menus::button(tiled == v, a.label())
                                 .shortcut_text(self.state.keymap.primary_text(a));
                         if ui.add(btn).clicked() {
                             self.state.pending.push(a);
@@ -1273,13 +1262,13 @@ impl QSketchApp {
                     }
                 });
                 ui.separator();
-                ui.menu_button("Symmetry", |ui| {
+                menus::submenu(ui, false, "Symmetry", |ui| {
                     let sym = self.state.symmetry;
                     for (a, on) in [
                         (Action::ToggleSymmetryHorizontal, sym.horizontal),
                         (Action::ToggleSymmetryVertical, sym.vertical),
                     ] {
-                        let btn = egui::Button::new(format!("{} {}", if on { icons::CHECK } else { " " }, a.label()))
+                        let btn = menus::button(on, a.label())
                             .shortcut_text(self.state.keymap.primary_text(a));
                         if ui.add(btn).clicked() {
                             self.state.pending.push(a);
@@ -1287,6 +1276,7 @@ impl QSketchApp {
                         }
                     }
                     ui.horizontal(|ui| {
+                        menus::indent(ui);
                         ui.label("Radial copies");
                         let mut n = self.state.symmetry.radial.max(1);
                         if ui.add(egui::DragValue::new(&mut n).range(1..=64)).changed() {
@@ -1298,7 +1288,7 @@ impl QSketchApp {
                     self.menu_item(ui, Action::SymmetryResetCenter, true);
                     let g = self.state.symmetry.show_guides;
                     if ui
-                        .add(egui::Button::new(format!("{} Show Guides", if g { icons::CHECK } else { " " })))
+                        .add(menus::button(g, "Show Guides"))
                         .clicked()
                     {
                         self.state.symmetry.show_guides = !g;
@@ -1328,7 +1318,7 @@ impl QSketchApp {
                     (Action::ShowTimeline, PanelKind::Timeline),
                 ] {
                     let open = self.workspace.is_panel_open(&k);
-                    let btn = egui::Button::new(format!("{} {}", if open { icons::CHECK } else { " " }, a.label()))
+                    let btn = menus::button(open, a.label())
                         .shortcut_text(self.state.keymap.primary_text(a));
                     if ui.add(btn).clicked() {
                         self.state.pending.push(a);
@@ -1339,7 +1329,7 @@ impl QSketchApp {
                 self.menu_item(ui, Action::ResetLayout, true);
                 ui.separator();
                 let several = self.state.docs.len() > 1;
-                ui.menu_button("Arrange", |ui| {
+                menus::submenu(ui, false, "Arrange", |ui| {
                     self.menu_item(ui, Action::ArrangeSideBySide, several);
                     self.menu_item(ui, Action::ArrangeStacked, several);
                     self.menu_item(ui, Action::ArrangeGrid, several);
@@ -1353,7 +1343,7 @@ impl QSketchApp {
                 for (id, title) in docs {
                     let active = self.state.active_doc == Some(id);
                     if ui
-                        .add(egui::Button::new(format!("{} {}", if active { icons::CHECK } else { " " }, title)))
+                        .add(menus::button(active, title))
                         .clicked()
                     {
                         self.state.active_doc = Some(id);
@@ -1440,14 +1430,14 @@ impl QSketchApp {
             ("Other", &[Action::FilterHighPass, Action::FilterMaximum, Action::FilterMinimum, Action::FilterOffset]),
         ];
         for (name, actions) in groups {
-            ui.menu_button(name, |ui| {
+            menus::submenu(ui, false, name, |ui| {
                 for &a in actions {
                     self.menu_item(ui, a, has_doc);
                 }
             });
         }
         ui.separator();
-        ui.menu_button("Experimental", |ui| {
+        menus::submenu(ui, false, "Experimental", |ui| {
             for a in [
                 Action::FilterOutline,
                 Action::FilterGlow,
@@ -2766,8 +2756,16 @@ fn menu_bar_right_id() -> egui::Id {
 /// bar menu open, hovering another title opens that one instead (egui 0.36's
 /// `MenuBar` only switches on click).
 fn top_menu<R>(ui: &mut Ui, label: &str, contents: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
-    let r = ui.menu_button(label, contents);
     let ctx = ui.ctx().clone();
+    // The title of the open menu reads as pressed, like a submenu row does
+    // (egui's bar button only highlights under the pointer).
+    let open_now = egui::Popup::is_id_open(&ctx, ui.next_auto_id().with("popup"));
+    let inactive = ui.style().visuals.widgets.inactive;
+    if open_now {
+        ui.style_mut().visuals.widgets.inactive = ui.style().visuals.widgets.open;
+    }
+    let r = ui.menu_button(label, contents);
+    ui.style_mut().visuals.widgets.inactive = inactive;
     let right = r.response.rect.right();
     ctx.data_mut(|d| {
         let v: &mut f32 = d.get_temp_mut_or_default(menu_bar_right_id());

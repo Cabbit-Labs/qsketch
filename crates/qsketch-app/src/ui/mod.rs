@@ -2,6 +2,7 @@
 
 pub mod chrome;
 pub mod iconset;
+pub mod menus;
 pub mod phosphor;
 pub mod splash;
 pub mod theme;
