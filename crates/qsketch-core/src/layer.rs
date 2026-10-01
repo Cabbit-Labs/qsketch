@@ -50,6 +50,17 @@ pub struct LayerProps {
     /// Tilemap layers only: which tile each cell shows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tilemap: Option<crate::tilemap::Tilemap>,
+    /// Animation: a new frame's cel on this layer links to the frame
+    /// before instead of starting empty (or as a copy), so the picture
+    /// carries on until it is deliberately unlinked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub continuous: bool,
+    /// A label color for the layer row (Aseprite's layer user data).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<[u8; 4]>,
+    /// Free-form notes (Aseprite's layer user data text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub notes: String,
 }
 
 fn default_true() -> bool {
@@ -77,6 +88,11 @@ pub struct Layer {
     /// 255 = shown, 0 = hidden. `None` = no mask. Shared like tiles so an
     /// undo snapshot costs a pointer.
     pub mask: Option<Arc<Mask>>,
+    /// Animation: one picture per frame (see [`crate::anim`]). `raster` is
+    /// the current frame's; this list is brought up to date from it at every
+    /// commit. Empty for static layers and for layers of a one-frame
+    /// document.
+    pub cels: Vec<crate::anim::Cel>,
 }
 
 impl Layer {
@@ -98,9 +114,13 @@ impl Layer {
                 style: Default::default(),
                 adjustment: None,
                 tilemap: None,
+                continuous: false,
+                color: None,
+                notes: String::new(),
             },
             raster: Raster::new(width, height),
             mask: None,
+            cels: Vec::new(),
         }
     }
 

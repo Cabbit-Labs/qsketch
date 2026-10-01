@@ -328,6 +328,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 // row's tint is close to the panel color.
                 let bar = egui::Rect::from_min_size(row_rect.min, egui::vec2(3.0, row_rect.height()));
                 ui.painter().rect_filled(bar, 0.0, accent_fill);
+            } else if let Some(c) = s.layers[i].props.color {
+                // The layer's label color (Layer Properties), Aseprite style.
+                let bar = egui::Rect::from_min_size(row_rect.min, egui::vec2(3.0, row_rect.height()));
+                ui.painter().rect_filled(bar, 0.0, Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]));
             }
             let indent = depth as f32 * INDENT;
 

@@ -1,5 +1,6 @@
 //! File formats: the native `.qsk` container and flat image import/export.
 
+pub mod anim_io;
 pub mod ase;
 pub mod brush_formats;
 pub mod image_io;
@@ -187,6 +188,11 @@ pub fn open_full(path: &Path) -> anyhow::Result<(crate::document::DocState, crat
         let (doc, warnings) = ase::load_with_warnings(path)?;
         Ok((doc, fresh(), warnings))
     } else {
+        if anim_io::might_be_animated(path) {
+            if let Some(doc) = anim_io::import_animated(path)? {
+                return Ok((doc, fresh(), Vec::new()));
+            }
+        }
         let raster = image_io::import(path)?;
         let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Background").to_string();
         Ok((crate::document::DocState::from_raster(name, raster), fresh(), Vec::new()))

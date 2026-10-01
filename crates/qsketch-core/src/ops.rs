@@ -13,6 +13,7 @@ use crate::color::{Hsv, Rgba8};
 use crate::composite::Composite;
 use crate::document::DocState;
 use crate::geom::{IRect, Pt};
+use crate::layer::Layer;
 use crate::mask::Mask;
 use crate::raster::{Raster, ResizeFilter};
 
@@ -62,14 +63,36 @@ impl Anchor {
     }
 }
 
+/// Apply a whole-canvas transform to a layer's picture in every frame:
+/// `raster` (the current frame) and each owned cel of the other frames.
+/// The document's cels must be in sync (`DocState::sync_cels`) first.
+fn transform_frames(l: &mut Layer, frames: usize, current: usize, f: impl Fn(&Raster) -> Raster) {
+    l.raster = f(&l.raster);
+    if !l.animated() || l.cels.len() != frames {
+        return;
+    }
+    let owner = l.cel_owner(current);
+    for (i, c) in l.cels.iter_mut().enumerate() {
+        if i == owner {
+            c.image = l.raster.clone();
+        } else if c.link.is_none() {
+            c.image = f(&c.image);
+        } else {
+            c.image = Raster::new(l.raster.width(), l.raster.height());
+        }
+    }
+}
+
 pub fn resize_canvas(doc: &mut DocState, new_w: u32, new_h: u32, anchor: Anchor) {
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
     let new_w = new_w.max(1);
     let new_h = new_h.max(1);
     let (ox, oy) = anchor.offset(doc.width, doc.height, new_w, new_h);
+    doc.sync_cels();
+    let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {
-        l.raster = l.raster.with_canvas_size(new_w, new_h, ox, oy);
+        transform_frames(l, nf, cur, |r| r.with_canvas_size(new_w, new_h, ox, oy));
         if let Some(m) = &l.mask {
             l.mask = Some(Arc::new(m.with_canvas_size(new_w, new_h, ox, oy)));
         }
@@ -85,8 +108,10 @@ pub fn resize_image(doc: &mut DocState, new_w: u32, new_h: u32, filter: ResizeFi
     crate::tilemap::detach_all(doc);
     let new_w = new_w.max(1);
     let new_h = new_h.max(1);
+    doc.sync_cels();
+    let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {
-        l.raster = l.raster.resized(new_w, new_h, filter);
+        transform_frames(l, nf, cur, |r| r.resized(new_w, new_h, filter));
         if let Some(m) = &l.mask {
             l.mask = Some(Arc::new(m.resized(new_w, new_h)));
         }
@@ -105,8 +130,10 @@ pub fn crop(doc: &mut DocState, rect: IRect) {
     if r.is_empty() {
         return;
     }
+    doc.sync_cels();
+    let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {
-        l.raster = l.raster.crop(r);
+        transform_frames(l, nf, cur, |x| x.crop(r));
         if let Some(m) = &l.mask {
             l.mask = Some(Arc::new(m.with_canvas_size(r.w as u32, r.h as u32, -r.x, -r.y)));
         }
@@ -120,8 +147,10 @@ pub fn crop(doc: &mut DocState, rect: IRect) {
 pub fn flip_horizontal(doc: &mut DocState) {
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
+    doc.sync_cels();
+    let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {
-        l.raster = l.raster.flipped_h();
+        transform_frames(l, nf, cur, |r| r.flipped_h());
         if let Some(m) = &l.mask {
             l.mask = Some(Arc::new(m.flipped_h()));
         }
@@ -134,8 +163,10 @@ pub fn flip_horizontal(doc: &mut DocState) {
 pub fn flip_vertical(doc: &mut DocState) {
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
+    doc.sync_cels();
+    let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {
-        l.raster = l.raster.flipped_v();
+        transform_frames(l, nf, cur, |r| r.flipped_v());
         if let Some(m) = &l.mask {
             l.mask = Some(Arc::new(m.flipped_v()));
         }
@@ -149,8 +180,10 @@ pub fn flip_vertical(doc: &mut DocState) {
 pub fn rotate_canvas(doc: &mut DocState, times: u32) {
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
+    doc.sync_cels();
+    let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {
-        l.raster = l.raster.rotated(times);
+        transform_frames(l, nf, cur, |r| r.rotated(times));
         if let Some(m) = &l.mask {
             l.mask = Some(Arc::new(m.rotated(times)));
         }

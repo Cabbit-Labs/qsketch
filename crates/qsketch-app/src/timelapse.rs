@@ -67,7 +67,17 @@ pub fn tick(state: &mut AppState, ctx: &egui::Context) {
             continue;
         }
         d.doc.timelapse.last_edits = Some(edits);
-        let (w, h, rgba) = timelapse::snapshot(&d.doc.composite, max_side);
+        // Onion skins are a view aid, not part of the picture: with them on,
+        // snapshot a clean render of the current frame instead.
+        let (w, h, rgba) = if d.doc.composite.onion.is_empty() {
+            timelapse::snapshot(&d.doc.composite, max_side)
+        } else {
+            let mut comp = qsketch_core::Composite::new(d.doc.width(), d.doc.height());
+            let mut all = qsketch_core::TileSet::for_size(d.doc.width(), d.doc.height());
+            all.insert_all();
+            comp.update(d.doc.state(), &all);
+            timelapse::snapshot(&comp, max_side)
+        };
         if let Some(tx) = recorder.sender(ctx) {
             let _ = tx.send(Job { doc: d.id, w, h, rgba });
         }

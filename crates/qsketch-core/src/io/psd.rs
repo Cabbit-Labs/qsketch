@@ -202,9 +202,12 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
                     style: Default::default(),
                     adjustment: None,
                     tilemap: None,
+                    continuous: false,
+                    color: None,
+                    notes: String::new(),
                 };
                 next_id += 1;
-                layers.push(Layer { props, raster, mask: mask.map(std::sync::Arc::new) });
+                layers.push(Layer { props, raster, mask: mask.map(std::sync::Arc::new), cels: Vec::new() });
             }
             c.p = li_end;
         }
@@ -230,6 +233,9 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         pixel_aspect: [1, 1],
         slices: Vec::new(),
         tilesets: Vec::new(),
+        frames: vec![crate::anim::Frame::default()],
+        frame: 0,
+        tags: Vec::new(),
     })
 }
 

@@ -30,8 +30,11 @@ obvious room to help. Nothing here is a promise of a delivery date.
   single mip level; `shader.wgsl` linear-filters when zoomed below 100%
   (`view.zoom < 1.0`), which can alias/shimmer at large zoom-out ratios
   (e.g. viewing a 4K canvas at 10%) compared to a proper mip chain.
-- **Animation / frames.** qsketch edits a single static raster document;
-  there's no timeline, frame stack, onion-skinning or export-as-animation.
+- **Animation extras.** Frames, cels, tags, onion skins and the Timeline
+  shipped in 0.59; still missing against Aseprite: per-frame slice keys,
+  animated tilemap layers (they import as pixel layers), diagonally flipped
+  tiles, cel z-index drawing order (the value is kept for round trips),
+  and frame thumbnails in the timeline header.
 - **Plugins / scripting.** There's no extension API — adding a tool, filter
   or export format currently means a source change and a rebuild (see
   [`CONTRIBUTING.md`](../CONTRIBUTING.md)).

@@ -40,6 +40,13 @@ pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> anyhow::Result<Vec<u8
 
 /// Export the flattened document. Formats without alpha are composited over white.
 pub fn export(path: &Path, doc: &DocState) -> anyhow::Result<()> {
+    // An animation exported as a GIF is an animated GIF.
+    let gif = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("gif"));
+    if gif && doc.is_animated() {
+        let done = std::sync::atomic::AtomicUsize::new(0);
+        let frames = super::anim_io::render(doc, &super::anim_io::frame_list(doc, None), 1, &done)?;
+        return super::anim_io::write_gif(&frames, path, true, &done);
+    }
     let flat = flatten(doc);
     export_raster(path, &flat)
 }

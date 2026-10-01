@@ -27,11 +27,12 @@ pub enum PanelKind {
     Info,
     Reference,
     Tileset,
+    Timeline,
 }
 
 impl PanelKind {
     #[allow(dead_code)]
-    pub const PANELS: [PanelKind; 12] = [
+    pub const PANELS: [PanelKind; 13] = [
         PanelKind::Tools,
         PanelKind::Layers,
         PanelKind::History,
@@ -44,6 +45,7 @@ impl PanelKind {
         PanelKind::Info,
         PanelKind::Reference,
         PanelKind::Tileset,
+        PanelKind::Timeline,
     ];
 
     pub fn static_title(&self) -> &'static str {
@@ -62,6 +64,7 @@ impl PanelKind {
             PanelKind::Info => "Info",
             PanelKind::Reference => "Reference",
             PanelKind::Tileset => "Tileset",
+            PanelKind::Timeline => "Timeline",
         }
     }
 
@@ -70,7 +73,7 @@ impl PanelKind {
         match self {
             PanelKind::Home | PanelKind::Document(_) => None,
             PanelKind::Tools => Some(Section::Tools),
-            PanelKind::Layers | PanelKind::History => Some(Section::Layers),
+            PanelKind::Layers | PanelKind::History | PanelKind::Timeline => Some(Section::Layers),
             PanelKind::Color | PanelKind::Swatches | PanelKind::Palette | PanelKind::Tileset => Some(Section::Color),
             PanelKind::Navigator | PanelKind::Info | PanelKind::Reference => Some(Section::View),
             PanelKind::Brushes | PanelKind::BrushSettings => Some(Section::Brush),
@@ -93,6 +96,7 @@ impl PanelKind {
             PanelKind::Info => icons::INFO,
             PanelKind::Reference => icons::IMAGES,
             PanelKind::Tileset => icons::SQUARES_FOUR,
+            PanelKind::Timeline => icons::FILM_STRIP,
         }
     }
 }
@@ -303,6 +307,20 @@ impl Workspace {
             let _ = self.dock.set_active_tab(path);
             return;
         }
+        // The Timeline runs under the canvas, Aseprite style.
+        if kind == PanelKind::Timeline {
+            let anchor = self
+                .dock
+                .iter_all_tabs()
+                .find(|(_, t)| matches!(t, PanelKind::Document(_)))
+                .or_else(|| self.dock.iter_all_tabs().find(|(_, t)| **t == PanelKind::Home))
+                .map(|(p, _)| NodePath { surface: p.surface, node: p.node });
+            if let Some(np) = anchor {
+                let [_, below] = self.dock[np.surface].split_below(np.node, 0.72, vec![kind]);
+                self.dock.set_focused_node_and_surface(NodePath { surface: np.surface, node: below });
+                return;
+            }
+        }
         let neighbour = match kind {
             PanelKind::Layers => PanelKind::History,
             PanelKind::History => PanelKind::Layers,
@@ -338,6 +356,14 @@ impl Workspace {
 
     /// Close a panel only when it lives on a floating window; a docked tab is
     /// part of the layout and stays put.
+    /// Close a panel wherever it is docked.
+    pub fn close_panel(&mut self, kind: &PanelKind) {
+        if let Some(path) = self.find(kind) {
+            self.dock.remove_tab(path);
+            prune_empty_surfaces(&mut self.dock);
+        }
+    }
+
     pub fn close_if_floating(&mut self, kind: &PanelKind) {
         if let Some(path) = self.find(kind) {
             if !path.surface.is_main() {
@@ -569,6 +595,7 @@ impl TabViewer for Viewer<'_> {
             PanelKind::Info => panels::info::ui(ui, self.state),
             PanelKind::Reference => panels::reference::ui(ui, self.state),
             PanelKind::Tileset => panels::tileset::ui(ui, self.state),
+            PanelKind::Timeline => panels::timeline::ui(ui, self.state),
         }
     }
 

@@ -895,6 +895,11 @@ impl QSketchApp {
                     }
                 });
                 self.menu_item(ui, Action::ExportTileset, has_doc);
+                self.menu_item(ui, Action::ExportAnimation, has_doc);
+                ui.menu_button("Import", |ui| {
+                    self.menu_item(ui, Action::ImportFrames, true);
+                    self.menu_item(ui, Action::ImportSpriteSheet, true);
+                });
                 let has_slices = self.state.active().is_some_and(|d| !d.doc.state().slices.is_empty());
                 self.menu_item(ui, Action::ExportSlices, has_slices);
                 let (recording, frames, bytes) = self
@@ -1125,6 +1130,24 @@ impl QSketchApp {
                     self.menu_item(ui, Action::MaskDelete, has_mask);
                 });
             });
+            top_menu(ui, "Animation", |ui| {
+                if let Some(id) = self.state.active_doc {
+                    crate::panels::timeline::animation_menu(ui, &mut self.state, id);
+                } else {
+                    ui.add_enabled(false, egui::Button::new("Open a document first"));
+                    ui.separator();
+                    self.menu_item(ui, Action::ImportFrames, true);
+                    self.menu_item(ui, Action::ImportSpriteSheet, true);
+                }
+                ui.separator();
+                let open = self.workspace.is_panel_open(&PanelKind::Timeline);
+                let btn = egui::Button::new(format!("{} Timeline", if open { icons::CHECK } else { " " }))
+                    .shortcut_text(self.state.keymap.primary_text(Action::ShowTimeline));
+                if ui.add(btn).clicked() {
+                    self.state.pending.push(Action::ShowTimeline);
+                    ui.close();
+                }
+            });
             top_menu(ui, "Select", |ui| {
                 self.menu_item(ui, Action::SelectAll, has_doc);
                 self.menu_item(ui, Action::Deselect, has_sel);
@@ -1302,6 +1325,7 @@ impl QSketchApp {
                     (Action::ShowInfo, PanelKind::Info),
                     (Action::ShowReference, PanelKind::Reference),
                     (Action::ShowTileset, PanelKind::Tileset),
+                    (Action::ShowTimeline, PanelKind::Timeline),
                 ] {
                     let open = self.workspace.is_panel_open(&k);
                     let btn = egui::Button::new(format!("{} {}", if open { icons::CHECK } else { " " }, a.label()))
@@ -2263,6 +2287,73 @@ impl QSketchApp {
             Action::ShowInfo => self.state.show_panel_requests.push(PanelKind::Info),
             Action::ShowReference => self.state.show_panel_requests.push(PanelKind::Reference),
             Action::ShowTileset => self.state.show_panel_requests.push(PanelKind::Tileset),
+            Action::ShowTimeline => {
+                if self.workspace.is_panel_open(&PanelKind::Timeline) {
+                    self.workspace.close_panel(&PanelKind::Timeline);
+                } else {
+                    self.state.show_panel_requests.push(PanelKind::Timeline);
+                }
+            }
+            Action::ExportAnimation => {
+                if let Some(id) = active {
+                    dialogs::anim::open_export(&mut self.state, id);
+                }
+            }
+            Action::ImportFrames => crate::anim::import_frames(&mut self.state),
+            Action::ImportSpriteSheet => crate::anim::import_sheet(&mut self.state),
+            Action::ToggleOnionSkin => {
+                let o = &mut self.state.settings.anim.onion;
+                o.enabled = !o.enabled;
+            }
+            Action::ToggleLoopTag => self.state.settings.anim.loop_tag = !self.state.settings.anim.loop_tag,
+            Action::NewFrame
+            | Action::NewEmptyFrame
+            | Action::DuplicateFrames
+            | Action::DeleteFrames
+            | Action::FrameProperties
+            | Action::ReverseFrames
+            | Action::PlayAnimation
+            | Action::FirstFrame
+            | Action::PrevFrame
+            | Action::NextFrame
+            | Action::LastFrame
+            | Action::NewTag
+            | Action::TagProperties
+            | Action::DeleteTag
+            | Action::ClearCel
+            | Action::LinkCels
+            | Action::UnlinkCel
+            | Action::CopyCel
+            | Action::PasteCel
+            | Action::CelProperties
+            | Action::ToggleContinuous => {
+                let Some(id) = active else { return };
+                let st = &mut self.state;
+                match action {
+                    Action::NewFrame => crate::anim::new_frame(st, id, false),
+                    Action::NewEmptyFrame => crate::anim::new_frame(st, id, true),
+                    Action::DuplicateFrames => crate::anim::duplicate_frames(st, id),
+                    Action::DeleteFrames => crate::anim::delete_frames(st, id),
+                    Action::FrameProperties => crate::anim::frame_properties(st, id),
+                    Action::ReverseFrames => crate::anim::reverse_frames(st, id),
+                    Action::PlayAnimation => crate::anim::toggle_play(st, id),
+                    Action::FirstFrame => crate::anim::first_frame(st, id),
+                    Action::PrevFrame => crate::anim::step(st, id, -1),
+                    Action::NextFrame => crate::anim::step(st, id, 1),
+                    Action::LastFrame => crate::anim::last_frame(st, id),
+                    Action::NewTag => crate::anim::new_tag(st, id),
+                    Action::TagProperties => crate::anim::tag_properties(st, id, None),
+                    Action::DeleteTag => crate::anim::delete_tag(st, id, None),
+                    Action::ClearCel => crate::anim::clear_cel(st, id),
+                    Action::LinkCels => crate::anim::link_cels(st, id),
+                    Action::UnlinkCel => crate::anim::unlink_cel(st, id),
+                    Action::CopyCel => crate::anim::copy_cel(st, id),
+                    Action::PasteCel => crate::anim::paste_cel(st, id),
+                    Action::CelProperties => crate::anim::cel_properties(st, id),
+                    Action::ToggleContinuous => crate::anim::toggle_continuous(st, id),
+                    _ => {}
+                }
+            }
             Action::NewTilemapLayer | Action::ConvertToTilemap => {
                 let size = self.state.settings.canvas.grid_size.clamp(2, 256);
                 self.state.settle();
@@ -2501,6 +2592,7 @@ impl eframe::App for QSketchApp {
         }
         self.handle_dropped_files(&ctx);
         self.handle_keyboard(&ctx);
+        crate::anim::tick(&mut self.state, &ctx);
         self.tick_work_time(&ctx);
         self.enforce_fullscreen(&ctx);
         self.state.autosave.tick(&self.state.docs, &self.state.settings.general, self.state.session.is_some(), &ctx);

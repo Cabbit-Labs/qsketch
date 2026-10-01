@@ -40,7 +40,8 @@ graph TD
         Composite["composite.rs (TileSet, Composite)"]
         Mask["mask.rs (selections)"]
         Ops["ops.rs (resize/flip/fill/adjust/...)"]
-        Io["io/qsk.rs, io/image_io.rs"]
+        Anim["anim.rs (frames, cels, tags, onion)"]
+        Io["io/qsk.rs, io/ase.rs, io/anim_io.rs, io/image_io.rs"]
     end
     Tools --> Document
     Tools --> Brush
@@ -54,6 +55,8 @@ graph TD
     Settings --> Actions
     Document --> Raster
     Document --> Composite
+    Document --> Anim
+    Anim --> Composite
     Composite --> Raster
     Brush --> Raster
     Ops --> Raster
@@ -269,11 +272,54 @@ to avoid a torn write; `Settings::sanitize()` clamps out-of-range values
 after loading (e.g. a hand-edited or older-version file) instead of failing
 to start.
 
+## Animation: frames, cels and onion skins
+
+[`anim.rs`](../crates/qsketch-core/src/anim.rs) adds frames without
+touching the hundreds of places that work on `Layer::raster`. A
+`DocState` has `frames` (durations), the current `frame` and `tags`; every
+pixel layer has one `Cel` per frame, which either owns a `Raster` or links
+to the cel of another frame (the owner) so several frames show, and edit,
+one picture. `Layer::raster` is always the *current* frame's picture: the
+brush engine, filters, selections, layer styles and the compositor keep
+reading and writing it as before. `DocState::sync_cels` copies `raster`
+into the current frame's owner cel (a vector of shared tile pointers, so it
+costs nothing) and runs at every `Document::commit` and before a frame
+change; `load_cels` then swaps the new frame's picture into `raster`.
+Groups, adjustment and tilemap layers are static (no cels), and a
+one-frame document keeps the cel lists empty. Whole-canvas operations in
+`ops.rs` go through `transform_frames`, which maps every owned cel, not
+just the visible one. Undo and redo restore a snapshot that carries every
+frame and then re-select the frame the user was on, as they re-select the
+active layer; `dirty_between` treats a frame change as a full redraw.
+
+Onion skins are composited rather than overlaid: `Document::refresh_onion`
+(called by the canvas before `update_composite`, never during playback)
+renders the nearby frames with `anim::render_onion_frame` — a clone of the
+state with the static layers and the cels shared with the current frame
+hidden, flattened in parallel — caches them per frame against the history
+id, a view revision bumped by visibility toggles and the set of layers
+shown, and hands `Composite::onion` a list of tinted, faded pictures that
+`Composite::update` blends under (or over) the layers of each dirty tile.
+Exports and timelapse snapshots render frames without them.
+
+In the app, [`anim.rs`](../crates/qsketch-app/src/anim.rs) owns playback
+(a `Playback` advanced once per UI frame by real elapsed time, honoring
+tag directions and repeat counts, which stops when a stroke starts), the
+frame / cel / tag commands behind the Animation menu, and the import and
+export jobs, which render on a background thread with a progress bar.
+[`panels/timeline.rs`](../crates/qsketch-app/src/panels/timeline.rs) paints
+its grid by hand inside a `ScrollArea` with the frame header and the layer
+column drawn at the viewport's edges (so they stay put while the cells
+scroll) and resolves pointer positions to frames, tags, layers and cels
+itself; the work a click asks for is queued as closures and run after the
+painter is released.
+
 ## The dock workspace
 
 [`Workspace`](../crates/qsketch-app/src/workspace.rs) wraps `egui_dock`'s
 `DockState<PanelKind>`. `PanelKind` distinguishes the singleton panels
-(Tools, Layers, History, Color, Swatches, Palette, Navigator, Brushes, Info, Home)
+(Tools, Layers, History, Color, Swatches, Palette, Navigator, Brushes, Info,
+Reference, Tileset, Timeline, Home)
 from `PanelKind::Document(DocId)`, one tab per open document. The
 `TabViewer` impl (`workspace.rs::Viewer`) dispatches each tab's `ui()` to the
 matching module under `panels/` (or `canvas::show()` for documents), routes

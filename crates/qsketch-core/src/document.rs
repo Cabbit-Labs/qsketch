@@ -40,6 +40,12 @@ pub struct DocState {
     pub slices: Vec<crate::slice::Slice>,
     /// Tilesets of the tilemap layers (see `crate::tilemap`).
     pub tilesets: Vec<crate::tilemap::Tileset>,
+    /// Animation frames (always at least one) and the one being shown; see
+    /// `crate::anim`.
+    pub frames: Vec<crate::anim::Frame>,
+    pub frame: usize,
+    /// Named frame ranges.
+    pub tags: Vec<crate::anim::Tag>,
 }
 
 impl DocState {
@@ -82,6 +88,9 @@ impl DocState {
             pixel_aspect: [1, 1],
             slices: Vec::new(),
             tilesets: Vec::new(),
+            frames: vec![crate::anim::Frame::default()],
+            frame: 0,
+            tags: Vec::new(),
         }
     }
 
@@ -99,6 +108,9 @@ impl DocState {
             pixel_aspect: [1, 1],
             slices: Vec::new(),
             tilesets: Vec::new(),
+            frames: vec![crate::anim::Frame::default()],
+            frame: 0,
+            tags: Vec::new(),
         }
     }
 
@@ -255,6 +267,7 @@ impl DocState {
             idx
         };
         let top = self.layers[idx].clone();
+        let top_opacity = top.props.opacity * top.cel_opacity(self.frame);
         let below = &mut self.layers[idx - 1];
         if top.is_adjustment() {
             // Merging an adjustment layer bakes the adjustment into the
@@ -266,7 +279,7 @@ impl DocState {
         } else if top.props.visible {
             // Merging bakes both masks in: the result has none.
             below.apply_mask();
-            merge_raster(&mut below.raster, &top.masked_raster(), top.props.blend, top.props.opacity);
+            merge_raster(&mut below.raster, &top.masked_raster(), top.props.blend, top_opacity);
         }
         self.layers.remove(idx);
         self.active = idx - 1;
@@ -337,12 +350,12 @@ pub fn merge_raster(dst: &mut Raster, src: &Raster, mode: crate::blend::BlendMod
 /// recompositing after undo/redo. Any structural change dirties everything.
 pub fn dirty_between(a: &DocState, b: &DocState) -> TileSet {
     let mut set = TileSet::for_size(b.width, b.height);
-    if a.width != b.width || a.height != b.height || a.layers.len() != b.layers.len() {
+    if a.width != b.width || a.height != b.height || a.layers.len() != b.layers.len() || a.frame != b.frame {
         set.insert_all();
         return set;
     }
     for (la, lb) in a.layers.iter().zip(&b.layers) {
-        if la.props != lb.props {
+        if la.props != lb.props || la.cel_opacity(a.frame) != lb.cel_opacity(b.frame) {
             set.insert_all();
             return set;
         }
@@ -475,6 +488,18 @@ pub struct Document {
     snapshot_rev: u64,
     pub composite: Composite,
     dirty: TileSet,
+    /// Rendered onion-skin frames, keyed by frame (see `refresh_onion`).
+    onion_cache: std::collections::HashMap<usize, OnionEntry>,
+    /// Bumped by view-only changes (layer visibility) that the onion cache
+    /// must notice without a history step.
+    view_rev: u64,
+}
+
+struct OnionEntry {
+    history_id: u64,
+    view_rev: u64,
+    key: Vec<bool>,
+    image: Arc<Raster>,
 }
 
 impl Document {
@@ -482,7 +507,9 @@ impl Document {
         Self::from_state(DocState::new(width, height, bg), title, None, "New")
     }
 
-    pub fn from_state(state: DocState, title: impl Into<String>, path: Option<PathBuf>, label: &str) -> Self {
+    pub fn from_state(mut state: DocState, title: impl Into<String>, path: Option<PathBuf>, label: &str) -> Self {
+        state.repair_animation();
+        state.sync_cels();
         let (w, h) = (state.width, state.height);
         let mut dirty = TileSet::for_size(w, h);
         dirty.insert_all();
@@ -499,9 +526,77 @@ impl Document {
             saved_at: Some(0),
             composite: Composite::new(w, h),
             dirty,
+            onion_cache: Default::default(),
+            view_rev: 0,
         };
         doc.update_composite();
         doc
+    }
+
+    // --- animation -------------------------------------------------------
+
+    /// Show another frame (no undo step: like the active layer, the frame
+    /// is where the user is, not an edit). Returns whether it changed.
+    pub fn set_frame(&mut self, frame: usize) -> bool {
+        if !self.working.set_frame(frame) {
+            return false;
+        }
+        self.dirty.insert_all();
+        true
+    }
+
+    pub fn frame(&self) -> usize {
+        self.working.frame
+    }
+
+    /// Bring the compositor's onion skins in line with `settings` and the
+    /// current frame, rendering frames whose picture changed. Call before
+    /// `update_composite`. With `None` (or onion skin off) none are shown.
+    pub fn refresh_onion(&mut self, settings: Option<&crate::anim::OnionSettings>) {
+        let wanted: Vec<crate::anim::OnionImage> = match settings {
+            Some(s) if s.enabled && self.working.is_animated() => {
+                let hid = self.history.current_id();
+                let mut out = Vec::new();
+                for (f, k, before) in s.frames_around(&self.working, self.working.frame) {
+                    let key = crate::anim::onion_key(&self.working, f, s.active_layer_only);
+                    if !key.iter().any(|v| *v) {
+                        continue;
+                    }
+                    let fresh = self
+                        .onion_cache
+                        .get(&f)
+                        .is_some_and(|e| e.history_id == hid && e.view_rev == self.view_rev && e.key == key);
+                    if !fresh {
+                        let image = Arc::new(crate::anim::render_onion_frame(&self.working, f, s.active_layer_only));
+                        self.onion_cache.insert(f, OnionEntry { history_id: hid, view_rev: self.view_rev, key, image });
+                    }
+                    let image = self.onion_cache[&f].image.clone();
+                    let tint = if before { s.tint_prev } else { s.tint_next };
+                    out.push(crate::anim::OnionImage {
+                        frame: f,
+                        image,
+                        tint: [tint[0] as f32 / 255.0, tint[1] as f32 / 255.0, tint[2] as f32 / 255.0],
+                        tint_amount: if s.tint { s.tint_amount.clamp(0.0, 1.0) } else { 0.0 },
+                        opacity: s.opacity_at(k),
+                        behind: s.behind,
+                    });
+                }
+                // Farthest first, so nearer frames draw over them.
+                out.reverse();
+                out
+            }
+            _ => Vec::new(),
+        };
+        if wanted.is_empty() {
+            self.onion_cache.clear();
+        } else {
+            let keep: Vec<usize> = wanted.iter().map(|o| o.frame).collect();
+            self.onion_cache.retain(|f, _| keep.contains(f));
+        }
+        if self.composite.onion != wanted {
+            self.composite.onion = wanted;
+            self.dirty.insert_all();
+        }
     }
 
     pub fn state(&self) -> &DocState {
@@ -552,6 +647,7 @@ impl Document {
         };
         set(&mut self.working);
         self.history.for_each_state_mut(set);
+        self.view_rev += 1;
         self.dirty.insert_all();
     }
 
@@ -567,6 +663,8 @@ impl Document {
     /// to the palette first, so every edit lands on palette colors.
     pub fn commit(&mut self, label: impl Into<String>) {
         self.enforce_palette();
+        // The current frame's cel takes the edit (shared tiles: cheap).
+        self.working.sync_cels();
         // Painted tilemap cells update their tiles, and every other use of
         // those tiles follows.
         if self.working.layers.iter().any(|l| l.props.tilemap.is_some()) {
@@ -639,12 +737,18 @@ impl Document {
         // when the snapshot was taken: stay on the current layer as long as
         // it still exists in the restored state.
         let keep = self.working.active_layer().props.id;
+        // Likewise stay on the current frame while it exists; the restored
+        // state carries every frame's picture, so this is only a swap.
+        let keep_frame = self.working.frame;
         self.working = state;
         if let Some(i) = self.working.index_of(keep) {
             self.working.active = i;
         }
+        let frame_moved = self.working.set_frame(keep_frame) || keep_frame != self.working.frame;
         if resized {
             self.resized();
+        } else if frame_moved {
+            self.dirty.insert_all();
         } else {
             self.dirty.union_with(&d);
         }

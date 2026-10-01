@@ -2,6 +2,57 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.59.0 — 2026-10-01
+
+- Animation. A document can now have any number of frames, edited in a new
+  Timeline panel (Window ▸ Timeline, F10) modeled on Aseprite's: a tag row,
+  a frame header and one row per layer with a marker per cel. Click a cel
+  to go there, drag across the header to scrub and select a run of frames,
+  drag a selected run (or Alt+drag) to move it, Ctrl+wheel to change the
+  column width, double-click for properties, right-click for everything
+  else. Every pixel layer keeps one picture per frame (a cel); cels can be
+  linked so several frames share and edit one picture, given their own
+  opacity, cleared, copied and pasted, and a layer marked Continuous links
+  each new frame's cel to the previous one. New Frame (Alt+N) copies the
+  current frame, New Empty Frame (Alt+B) starts blank, Alt+C deletes,
+  Shift+P sets durations (with fps presets), and frames can be duplicated,
+  reversed and dragged into a new order. Tags name a range of frames with
+  a color, a direction (forward, reverse, ping-pong) and a repeat count;
+  with Loop Tag on, playback, stepping and onion skins stay inside the
+  tag under the current frame. Play with Enter (or the transport buttons),
+  step with , and . and jump with Home / End. Onion skin (F3) shows the
+  frames before and after, tinted red and blue, under (or over) the
+  artwork, with the counts, opacity, fade, tints and an active-layer-only
+  mode in the panel's gear popup. Every existing tool, filter, layer style
+  and adjustment works per frame; whole-canvas resizes, crops, flips and
+  rotations apply to every frame; undo and redo stay on the frame you are
+  looking at. The timeline opens by itself when an animation is opened or
+  a second frame is added.
+- Aseprite files round-trip: `.ase` / `.aseprite` now open with every
+  frame, frame durations, linked cels, per-cel opacity and z-index, tags
+  (name, range, direction, repeat, color), continuous ("prefer linked
+  cels") layers, layer colors and notes, tileset chunks with tilemap cels
+  (as tilemap layers), slices, the palette and the pixel aspect ratio, and
+  save back the same way, so a sprite made in Aseprite survives a trip
+  through qsketch. Verified against sprites written by Aseprite itself.
+  Layer Properties gained the color and notes fields (the color shows as a
+  stripe on the row in Layers and the Timeline).
+- Export Animation (File menu, Ctrl+Alt+Shift+A): animated GIF (an exact
+  palette when the frames use at most 255 colors, so pixel art is not
+  requantized), animated PNG, a numbered PNG sequence, a sprite sheet
+  (strip or grid, with spacing) plus Aseprite-style JSON that game engines
+  already read (frames with durations, tags, layers and slices), or MP4 /
+  WebM video through ffmpeg when it is installed. Any of them at 1–16×
+  nearest-neighbor scale, for all frames, the selected frames or one tag.
+  Export Image to `.gif` writes an animated GIF for an animation.
+- Import: animated GIFs and APNGs open as animations with their frame
+  timings; File ▸ Import ▸ Frames from Files adds one frame per picture
+  (into the active layer, or as a new document); Import Sprite Sheet cuts a
+  sheet into frames with a live preview of the cut.
+- `.qsk` stores the frames, tags and cels (frame 0 stays in `layers/NNN.png`,
+  so older versions open the first frame). Timelapse snapshots never
+  include onion skins.
+
 ## 0.58.0 — 2026-09-30
 
 - Large brushes keep up with the pen: the stroke engine now fills big dabs

@@ -624,7 +624,7 @@ fn apply_remote(entry: &mut DocEntry, undo_limit: usize, op: RemoteOp) {
                             .find(|l| l.props.id == props.id)
                             .map(|l| l.raster.clone())
                             .unwrap_or_else(|| Raster::new(s.width, s.height));
-                        Layer { props: props.clone(), raster, mask: None }
+                        Layer { props: props.clone(), raster, mask: None, cels: Vec::new() }
                     })
                     .collect();
                 s.layers = layers;

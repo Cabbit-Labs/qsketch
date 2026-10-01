@@ -20,9 +20,11 @@ reachable from its menu until you assign one.
 | Open… | `Ctrl+O` |
 | Save | `Ctrl+S` |
 | Save As… | `Ctrl+Shift+S` |
-| Export Image… | `Ctrl+Shift+E` |
+| Export Image… | `Ctrl+Alt+Shift+S` |
 | Export at 2× / 3× / 4× / 8×… | — |
 | Export Tileset… | — |
+| Export Animation… (GIF, APNG, PNG sequence, sprite sheet + JSON, MP4 / WebM via ffmpeg) | `Ctrl+Alt+Shift+A` |
+| Import ▸ Frames from Files… / Sprite Sheet… | — |
 | Share via Leyline… | — |
 | Stop Sharing | — |
 | Quick Export (re-export to the last export path, no dialog) | `Ctrl+Alt+E` |
@@ -102,6 +104,32 @@ reachable from its menu until you assign one.
 | Flip Layer Horizontal | — |
 | Flip Layer Vertical | — |
 | Clear Layer | — |
+
+## Animation
+
+| Command | Default shortcut |
+| --- | --- |
+| New Frame (a copy of the current one, after it) | `Alt+N` |
+| New Empty Frame | `Alt+B` |
+| Duplicate Frames (the selected run) | — |
+| Delete Frame(s) | `Alt+C` |
+| Frame Properties… (duration, with fps presets) | `Shift+P` |
+| Reverse Frames (the selected run) | — |
+| Play / Stop | `Enter` |
+| First / Previous / Next / Last Frame | `Home` / `,` / `.` / `End` |
+| Loop Tag (playback, stepping and onion skins stay inside the current tag) | — |
+| New Tag… (over the selected frames) | `Alt+T` |
+| Tag Properties… / Delete Tag (the tag under the current frame) | — |
+| Clear Cel / Link Cels / Unlink Cel / Copy Cel / Paste Cel / Cel Properties… | — |
+| Continuous Layer (new frames link to the previous frame's cel) | — |
+| Onion Skin | `F3` |
+
+In the Timeline panel: click a cel to select its layer and frame; drag
+across the frame header to scrub and select a run of frames (`Shift`+click
+extends it); drag a selected run, or `Alt`+drag a frame, to move it;
+`Ctrl`+wheel changes the column width; double-click a frame, tag, cel or
+layer for its properties; right-click for the rest. The gear next to the
+onion-skin toggle sets how many frames show, their opacity, fade and tints.
 
 ## Select
 
@@ -197,7 +225,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Command | Default shortcut |
 | --- | --- |
 | Move Tool | `A` |
-| Rectangular Marquee | `M` |
+| Rectangular Marquee | `G` or `M` |
 | Elliptical Marquee | `Shift+M` |
 | Lasso | `L` |
 | Polygonal Lasso | `Shift+L` |
@@ -212,7 +240,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Eraser | `E` |
 | Smudge | — |
 | Clone Stamp | `S` |
-| Paint Bucket | `G` |
+| Paint Bucket | `F` |
 | Gradient | `Shift+G` |
 | Line | `U` |
 | Rectangle | `R` |
@@ -290,6 +318,9 @@ included.
 | Navigator | — |
 | Brushes | `F5` |
 | Info | `F8` |
+| Brush Settings | `F9` |
+| Reference / Palette / Tileset | — |
+| Timeline (toggles the panel) | `F10` |
 | Reset Workspace | — |
 
 ## Help

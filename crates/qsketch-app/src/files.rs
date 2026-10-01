@@ -46,7 +46,11 @@ pub fn open_path(state: &mut AppState, path: &Path) -> Option<DocId> {
             let title = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Untitled".into());
             let mut doc = Document::from_state(doc_state, title, Some(path.to_path_buf()), "Open");
             doc.apply_meta(meta);
+            let animated = doc.state().is_animated();
             let id = state.add_document(doc);
+            if animated {
+                state.show_panel_requests.push(crate::workspace::PanelKind::Timeline);
+            }
             state.settings.push_recent(path.to_path_buf());
             for w in warnings {
                 state.toasts.push(Level::Info, w);

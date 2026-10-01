@@ -55,6 +55,39 @@ struct Manifest {
     /// Timelapse (0.51+): frames live in `timelapse/NNNNNN.png`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     timelapse: Option<TimelapseInfo>,
+    /// Animation (0.59+): frame durations, the frame being shown and tags.
+    /// Absent = a single frame; a layer's `file` is then its only picture.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    frames: Vec<crate::anim::Frame>,
+    #[serde(default)]
+    frame: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tags: Vec<crate::anim::Tag>,
+}
+
+/// One cel of a layer in a `.qsk` with several frames.
+#[derive(Serialize, Deserialize)]
+struct CelEntry {
+    /// `layers/NNN/fFFFF.png`; absent for an empty or linked cel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    file: Option<String>,
+    /// Frame whose cel this one shares.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    link: Option<usize>,
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    opacity: f32,
+    #[serde(default, skip_serializing_if = "is_zero_i16")]
+    z_index: i16,
+}
+
+fn one() -> f32 {
+    1.0
+}
+fn is_one(v: &f32) -> bool {
+    (*v - 1.0).abs() < 1e-6
+}
+fn is_zero_i16(v: &i16) -> bool {
+    *v == 0
 }
 
 #[derive(Serialize, Deserialize)]
@@ -86,6 +119,10 @@ struct LayerEntry {
     /// Grayscale PNG of the layer mask, when the layer has one.
     #[serde(default)]
     mask: Option<String>,
+    /// Animation: one entry per frame (0.59+). `file` above is frame 0's
+    /// picture, so older versions still open the first frame.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    cels: Vec<CelEntry>,
 }
 
 fn gray_png(w: u32, h: u32, gray: &[u8]) -> anyhow::Result<Vec<u8>> {
@@ -109,6 +146,11 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
 /// Save with what the document keeps beside its layers: statistics, ruler
 /// guides and the timelapse (see [`DocMeta`]).
 pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow::Result<()> {
+    // Cels up to date with the current frame's picture (shared tiles: cheap).
+    let mut synced = doc.clone();
+    synced.sync_cels();
+    let doc = &synced;
+    let nframes = doc.frame_count();
     let tmp = path.with_extension("qsk.tmp");
     {
         let file = File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
@@ -119,10 +161,27 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
         let mut entries = Vec::with_capacity(doc.layers.len());
         for (i, layer) in doc.layers.iter().enumerate() {
             let file = format!("layers/{i:03}.png");
-            let png = super::image_io::encode_png(doc.width, doc.height, &layer.raster.to_rgba())?;
+            let first = doc.cel_image(i, 0).cloned().unwrap_or_else(|| Raster::new(doc.width, doc.height));
+            let png = super::image_io::encode_png(doc.width, doc.height, &first.to_rgba())?;
             // PNG is already compressed; store it.
             zip.start_file(&file, stored)?;
             zip.write_all(&png)?;
+            // Other frames' cels: one PNG per owned picture.
+            let mut cels = Vec::new();
+            if nframes > 1 && layer.animated() && layer.cels.len() == nframes {
+                for (f, c) in layer.cels.iter().enumerate() {
+                    let mut entry = CelEntry { file: None, link: c.link, opacity: c.opacity, z_index: c.z_index };
+                    if c.link.is_none() && f > 0 && !c.image.is_empty() {
+                        let name = format!("layers/{i:03}/f{f:04}.png");
+                        zip.start_file(&name, stored)?;
+                        zip.write_all(&super::image_io::encode_png(doc.width, doc.height, &c.image.to_rgba())?)?;
+                        entry.file = Some(name);
+                    } else if c.link.is_none() && f == 0 {
+                        entry.file = Some(file.clone());
+                    }
+                    cels.push(entry);
+                }
+            }
             let mask = match &layer.mask {
                 Some(m) => {
                     let name = format!("layers/{i:03}.mask.png");
@@ -132,7 +191,7 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
                 }
                 None => None,
             };
-            entries.push(LayerEntry { props: layer.props.clone(), file, mask });
+            entries.push(LayerEntry { props: layer.props.clone(), file, mask, cels });
         }
         let selection = match &doc.selection {
             Some(m) if !m.is_empty() => {
@@ -184,6 +243,9 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
                 recording: t.recording,
                 every: t.every,
             }),
+            frames: if nframes > 1 { doc.frames.clone() } else { Vec::new() },
+            frame: doc.frame,
+            tags: doc.tags.clone(),
         };
         if let Some(t) = meta.timelapse {
             for (i, frame) in t.frames.iter().enumerate() {
@@ -193,8 +255,8 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
         }
         zip.start_file("manifest.json", deflated)?;
         zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
-        // Flattened preview for thumbnails / quick look.
-        let flat = crate::composite::flatten(doc);
+        // Flattened preview for thumbnails / quick look (the first frame).
+        let flat = crate::anim::render_frame(doc, 0);
         let preview = super::image_io::encode_png(doc.width, doc.height, &flat.to_rgba())?;
         zip.start_file("preview.png", stored)?;
         zip.write_all(&preview)?;
@@ -226,15 +288,39 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
         return Err(anyhow!("file was saved by a newer qsketch (format v{})", manifest.version));
     }
     let (w, h) = (manifest.width, manifest.height);
+    let nframes = manifest.frames.len().max(1);
     let mut layers = Vec::with_capacity(manifest.layers.len());
-    for entry in manifest.layers {
+    let read_raster = |zip: &mut ZipArchive<BufReader<File>>, name: &str| -> anyhow::Result<Raster> {
         let mut bytes = Vec::new();
-        zip.by_name(&entry.file).with_context(|| format!("missing {}", entry.file))?.read_to_end(&mut bytes)?;
+        zip.by_name(name).with_context(|| format!("missing {name}"))?.read_to_end(&mut bytes)?;
         let raster = super::image_io::decode_bytes(&bytes)?;
-        let raster =
-            if raster.width() != w || raster.height() != h { raster.with_canvas_size(w, h, 0, 0) } else { raster };
+        Ok(if raster.width() != w || raster.height() != h { raster.with_canvas_size(w, h, 0, 0) } else { raster })
+    };
+    for entry in manifest.layers {
+        let raster = read_raster(&mut zip, &entry.file)?;
         let mask = entry.mask.as_deref().and_then(|name| read_gray(&mut zip, name, w, h)).map(Arc::new);
-        layers.push(Layer { props: entry.props, raster, mask });
+        let mut cels = Vec::new();
+        if nframes > 1 && entry.props.kind == crate::layer::LayerKind::Raster {
+            for f in 0..nframes {
+                let c = match entry.cels.get(f) {
+                    Some(c) if c.link.is_some() => crate::anim::Cel::linked(c.link.unwrap_or(0), w, h),
+                    Some(c) => {
+                        let image = match (f, &c.file) {
+                            (0, _) => raster.clone(),
+                            (_, Some(name)) => read_raster(&mut zip, name).unwrap_or_else(|_| Raster::new(w, h)),
+                            (_, None) => Raster::new(w, h),
+                        };
+                        crate::anim::Cel { image, link: None, opacity: c.opacity, z_index: c.z_index }
+                    }
+                    // A layer saved without cels (never animated): its one
+                    // picture in frame 0, nothing elsewhere.
+                    None if f == 0 => crate::anim::Cel::own(raster.clone()),
+                    None => crate::anim::Cel::empty(w, h),
+                };
+                cels.push(c);
+            }
+        }
+        layers.push(Layer { props: entry.props, raster, mask, cels });
     }
     if layers.is_empty() {
         layers.push(Layer::new(1, "Background", w, h));
@@ -279,8 +365,13 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
         pixel_aspect: manifest.pixel_aspect.unwrap_or([1, 1]),
         slices: manifest.slices,
         tilesets,
+        frames: if manifest.frames.is_empty() { vec![crate::anim::Frame::default()] } else { manifest.frames },
+        frame: manifest.frame,
+        tags: manifest.tags,
     };
     doc.repair_groups();
+    doc.repair_animation();
+    doc.load_cels();
     let mut timelapse = crate::timelapse::Timelapse::default();
     if let Some(info) = manifest.timelapse {
         timelapse.recording = info.recording;
@@ -333,6 +424,37 @@ mod tests {
         assert_eq!(back.tilesets[0].tiles.len(), 2);
         assert_eq!(back.tilesets[0].tiles[1].get_pixel(2, 2), crate::color::Rgba8::new(255, 0, 0, 255));
         assert_eq!(back.layers[0].props.tilemap, Some(tm));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn animation_round_trips() {
+        use crate::anim::NewFrame;
+        let red = Rgba8::new(255, 0, 0, 255);
+        let mut doc = DocState::new(8, 8, None);
+        doc.layers[0].raster.set_pixel(0, 0, red);
+        doc.insert_frame(1, NewFrame::Duplicate(0));
+        doc.link_cels(0, &[0, 1]);
+        doc.insert_frame(2, NewFrame::Empty);
+        doc.layers[0].raster.set_pixel(2, 2, red);
+        doc.layers[0].cels[2].opacity = 0.25;
+        doc.frames[2].duration_ms = 40;
+        doc.add_tag("t", 1, 2);
+        doc.set_frame(1);
+        let dir = std::env::temp_dir().join(format!("qsk-anim-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.qsk");
+        save(&path, &doc).unwrap();
+        let back = load(&path).unwrap();
+        assert_eq!(back.frame_count(), 3);
+        assert_eq!(back.frame, 1);
+        assert_eq!(back.frames[2].duration_ms, 40);
+        assert_eq!(back.tags[0].name, "t");
+        assert_eq!(back.layers[0].cels[1].link, Some(0));
+        assert_eq!(back.layers[0].raster.get_pixel(0, 0), red, "frame 1 shows frame 0's picture");
+        assert_eq!(back.cel_image(0, 2).unwrap().get_pixel(2, 2), red);
+        assert_eq!(back.cel_image(0, 2).unwrap().get_pixel(0, 0).a, 0);
+        assert!((back.layers[0].cels[2].opacity - 0.25).abs() < 1e-6);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

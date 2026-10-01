@@ -444,7 +444,11 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         && (!tint_tools || tool.is_selection() || tool == ToolKind::SelectBrush || tool == ToolKind::Move);
     let tint = (settings.selection_tint_color, settings.selection_tint_opacity);
     let render_state = state.render_state.clone();
+    let onion = state.settings.anim.onion.clone();
+    let playing = state.playback.as_ref().is_some_and(|p| p.doc == doc_id);
     let Some(entry) = state.doc_mut(doc_id) else { return };
+    // Onion skins ride along in the composite (never during playback).
+    entry.doc.refresh_onion((!playing).then_some(&onion));
     let dirty = entry.doc.update_composite();
     if !dirty.is_empty() {
         entry.generation += 1;

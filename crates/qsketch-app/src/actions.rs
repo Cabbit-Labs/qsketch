@@ -14,6 +14,7 @@ pub enum Category {
     Edit,
     Image,
     Layer,
+    Animation,
     Select,
     View,
     Filter,
@@ -24,11 +25,12 @@ pub enum Category {
 }
 
 impl Category {
-    pub const ALL: [Category; 11] = [
+    pub const ALL: [Category; 12] = [
         Category::File,
         Category::Edit,
         Category::Image,
         Category::Layer,
+        Category::Animation,
         Category::Select,
         Category::View,
         Category::Filter,
@@ -43,6 +45,7 @@ impl Category {
             Category::Edit => "Edit",
             Category::Image => "Image",
             Category::Layer => "Layer",
+            Category::Animation => "Animation",
             Category::Select => "Select",
             Category::View => "View",
             Category::Filter => "Filter",
@@ -97,6 +100,9 @@ actions! {
     ExportScaled4 => (File, "Export at 4×…", []),
     ExportScaled8 => (File, "Export at 8×…", []),
     ExportTileset => (File, "Export Tileset…", []),
+    ExportAnimation => (File, "Export Animation…", ["Ctrl+Alt+Shift+A"]),
+    ImportFrames => (File, "Import Frames from Files…", []),
+    ImportSpriteSheet => (File, "Import Sprite Sheet…", []),
     ExportSlices => (File, "Export Slices…", []),
     QuickExport => (File, "Quick Export", ["Ctrl+Alt+E"]),
     ToggleTimelapse => (File, "Record Timelapse", []),
@@ -312,8 +318,33 @@ actions! {
     SymmetrySetCenter => (Brush, "Set Symmetry Center…", []),
     SymmetryResetCenter => (Brush, "Reset Symmetry Center", []),
     DefaultColors => (Brush, "Default Colors", ["D"]),
+    // Animation
+    NewFrame => (Animation, "New Frame", ["Alt+N"]),
+    NewEmptyFrame => (Animation, "New Empty Frame", ["Alt+B"]),
+    DuplicateFrames => (Animation, "Duplicate Frames", []),
+    DeleteFrames => (Animation, "Delete Frame", ["Alt+C"]),
+    FrameProperties => (Animation, "Frame Properties…", ["Shift+P"]),
+    ReverseFrames => (Animation, "Reverse Frames", []),
+    PlayAnimation => (Animation, "Play / Stop", ["Enter"]),
+    FirstFrame => (Animation, "First Frame", ["Home"]),
+    PrevFrame => (Animation, "Previous Frame", [","]),
+    NextFrame => (Animation, "Next Frame", ["."]),
+    LastFrame => (Animation, "Last Frame", ["End"]),
+    ToggleLoopTag => (Animation, "Loop Tag", []),
+    NewTag => (Animation, "New Tag…", ["Alt+T"]),
+    TagProperties => (Animation, "Tag Properties…", []),
+    DeleteTag => (Animation, "Delete Tag", []),
+    ClearCel => (Animation, "Clear Cel", []),
+    LinkCels => (Animation, "Link Cels", []),
+    UnlinkCel => (Animation, "Unlink Cel", []),
+    CopyCel => (Animation, "Copy Cel", []),
+    PasteCel => (Animation, "Paste Cel", []),
+    CelProperties => (Animation, "Cel Properties…", []),
+    ToggleContinuous => (Animation, "Continuous Layer", []),
+    ToggleOnionSkin => (Animation, "Onion Skin", ["F3"]),
     // Window
     ShowTools => (Window, "Tools", []),
+    ShowTimeline => (Window, "Timeline", ["F10"]),
     ShowLayers => (Window, "Layers", ["F7"]),
     ShowHistory => (Window, "History", []),
     ShowColor => (Window, "Color", ["F6"]),
@@ -784,7 +815,7 @@ mod tests {
         assert_eq!(km.lookup(Key::Z, Modifiers::COMMAND), Some(Action::Undo));
         assert_eq!(km.lookup(Key::Z, Modifiers::COMMAND | Modifiers::SHIFT), Some(Action::Redo));
         assert_eq!(km.lookup(Key::B, Modifiers::NONE), Some(Action::ToolBrush));
-        assert_eq!(km.lookup(Key::B, Modifiers::ALT), None);
+        assert_eq!(km.lookup(Key::J, Modifiers::ALT), None);
         assert_eq!(km.lookup(Key::G, Modifiers::NONE), Some(Action::ToolRectSelect));
         assert_eq!(km.lookup(Key::R, Modifiers::COMMAND), Some(Action::Rotate90CW));
         assert_eq!(km.lookup(Key::X, Modifiers::SHIFT), Some(Action::FlipHorizontal));

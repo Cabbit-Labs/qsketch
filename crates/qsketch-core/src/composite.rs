@@ -117,6 +117,9 @@ impl TileSet {
 pub struct Composite {
     /// Styled copies of the layers that have layer effects.
     pub styles: crate::style::StyleCache,
+    /// Onion-skin pictures of nearby frames, blended under (or over) the
+    /// layers; see `crate::anim`.
+    pub onion: Vec<crate::anim::OnionImage>,
     width: u32,
     height: u32,
     tiles_x: u32,
@@ -133,7 +136,7 @@ impl Composite {
         for _ in 0..n {
             tiles.push(zeroed_box());
         }
-        Self { styles: Default::default(), width, height, tiles_x, tiles_y, tiles }
+        Self { styles: Default::default(), onion: Vec::new(), width, height, tiles_x, tiles_y, tiles }
     }
 
     pub fn width(&self) -> u32 {
@@ -170,11 +173,22 @@ impl Composite {
         debug_assert_eq!(doc.height, self.height);
         let tiles_x = self.tiles_x;
         let styles = &self.styles;
+        let onion = &self.onion;
         self.tiles.par_iter_mut().enumerate().filter(|(i, _)| dirty.contains_index(*i)).for_each(|(i, out)| {
             let tx = i as u32 % tiles_x;
             let ty = i as u32 / tiles_x;
             let mut buf = [[0f32; 4]; TILE_PX];
-            composite_tile_straight(doc, Some(styles), tx, ty, &mut buf);
+            if onion.is_empty() {
+                composite_tile_straight(doc, Some(styles), tx, ty, &mut buf);
+            } else {
+                for o in onion.iter().filter(|o| o.behind) {
+                    blend_onion(o, tx, ty, &mut buf);
+                }
+                composite_range(doc, Some(styles), tx, ty, 0..doc.layers.len(), None, &mut buf);
+                for o in onion.iter().filter(|o| !o.behind) {
+                    blend_onion(o, tx, ty, &mut buf);
+                }
+            }
             for (p, o) in buf.iter().zip(out.px.chunks_exact_mut(4)) {
                 let a = p[3].clamp(0.0, 1.0);
                 o[0] = (p[0].clamp(0.0, 1.0) * a * 255.0 + 0.5) as u8;
@@ -238,6 +252,29 @@ impl Composite {
     }
 }
 
+/// Draw one onion-skin picture's tile onto `out`: tinted toward its color
+/// and faded by its opacity.
+fn blend_onion(o: &crate::anim::OnionImage, tx: u32, ty: u32, out: &mut [[f32; 4]; TILE_PX]) {
+    if tx >= o.image.tiles_x() || ty >= o.image.tiles_y() {
+        return;
+    }
+    let Some(tile) = o.image.tile(tx, ty) else { return };
+    let k = o.tint_amount;
+    for (i, p) in out.iter_mut().enumerate() {
+        let s = &tile.px[i * 4..i * 4 + 4];
+        if s[3] == 0 {
+            continue;
+        }
+        let mut src = [s[0] as f32 / 255.0, s[1] as f32 / 255.0, s[2] as f32 / 255.0, s[3] as f32 / 255.0];
+        if k > 0.0 {
+            for (v, t) in src.iter_mut().zip(o.tint) {
+                *v += (t - *v) * k;
+            }
+        }
+        *p = composite_pixel(BlendMode::Normal, *p, src, o.opacity);
+    }
+}
+
 fn zeroed_box() -> Box<Tile> {
     let layout = std::alloc::Layout::new::<Tile>();
     // SAFETY: Tile is a plain byte array, zero is valid.
@@ -294,7 +331,7 @@ pub fn composite_range(
         if !layer.props.clipped && !layer.is_adjustment() {
             base = Some(li);
         }
-        let opacity = layer.props.opacity;
+        let opacity = layer.props.opacity * layer.cel_opacity(doc.frame);
         if opacity <= 0.0 {
             continue;
         }
@@ -419,6 +456,43 @@ pub fn adjusted(mode: BlendMode, c: [f32; 3], adj: [f32; 3]) -> [f32; 3] {
 /// Flatten all visible layers into a single straight-alpha raster.
 pub fn flatten(doc: &DocState) -> Raster {
     flatten_range(doc, 0..doc.layers.len(), None)
+}
+
+/// [`flatten`] with the tiles rendered in parallel (for whole frames of an
+/// animation, where many are rendered at once).
+pub fn flatten_par(doc: &DocState) -> Raster {
+    use rayon::prelude::*;
+    let fx = crate::style::StyleCache::build(doc);
+    let mut out = Raster::new(doc.width, doc.height);
+    let (tiles_x, tiles_y) = (out.tiles_x(), out.tiles_y());
+    let n = (tiles_x * tiles_y) as usize;
+    let range = 0..doc.layers.len();
+    let tiles: Vec<Option<std::sync::Arc<Tile>>> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let (tx, ty) = (i as u32 % tiles_x, i as u32 / tiles_x);
+            let mut buf = [[0f32; 4]; TILE_PX];
+            composite_range(doc, Some(&fx), tx, ty, range.clone(), None, &mut buf);
+            if buf.iter().all(|p| p[3] <= 0.0) {
+                return None;
+            }
+            let mut t = Tile::zeroed();
+            let bytes = &mut std::sync::Arc::make_mut(&mut t).px;
+            for (p, o) in buf.iter().zip(bytes.chunks_exact_mut(4)) {
+                o[0] = (p[0].clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+                o[1] = (p[1].clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+                o[2] = (p[2].clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+                o[3] = (p[3].clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            }
+            Some(t)
+        })
+        .collect();
+    for (i, t) in tiles.into_iter().enumerate() {
+        if t.is_some() {
+            out.set_tile(i as u32 % tiles_x, i as u32 / tiles_x, t);
+        }
+    }
+    out
 }
 
 /// Flatten the direct children of `parent` within `range` (a group's

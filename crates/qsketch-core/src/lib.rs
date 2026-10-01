@@ -16,6 +16,7 @@
 //! * Pixel math inside the brush engine and compositor is done in `f32` on the
 //!   affected pixels only.
 
+pub mod anim;
 pub mod blend;
 pub mod brush;
 pub mod clipboard;
@@ -41,6 +42,7 @@ pub mod timelapse;
 pub mod tip;
 pub mod warp;
 
+pub use anim::{Cel, Frame, NewFrame, OnionSettings, Tag, TagDirection};
 pub use blend::BlendMode;
 pub use brush::{AngleControl, BrushSettings, PaintMode, StabilizerMode, StrokeEngine, StrokeSample, TextureMode};
 pub use clipboard::ClipImage;

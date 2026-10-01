@@ -1137,6 +1137,33 @@ pub fn default_swatches() -> Vec<Rgba8> {
     hex.iter().filter_map(|h| Rgba8::from_hex(h)).collect()
 }
 
+/// Animation preferences (Timeline panel, onion skin, Export Animation).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AnimSettings {
+    pub onion: qsketch_core::OnionSettings,
+    /// Playback, stepping and onion skins stay inside the tag under the
+    /// current frame.
+    pub loop_tag: bool,
+    /// Duration of new frames made from imported stills.
+    pub default_duration_ms: u32,
+    /// Width of a frame column in the Timeline (Ctrl+wheel there).
+    pub timeline_col_w: f32,
+    pub export: crate::dialogs::anim::ExportPrefs,
+}
+
+impl Default for AnimSettings {
+    fn default() -> Self {
+        Self {
+            onion: Default::default(),
+            loop_tag: true,
+            default_duration_ms: 100,
+            timeline_col_w: 18.0,
+            export: Default::default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Settings {
@@ -1147,6 +1174,8 @@ pub struct Settings {
     pub tablet: TabletSettings,
     pub update: UpdateSettings,
     pub paint: PaintSettings,
+    /// Animation: onion skin, playback and export preferences.
+    pub anim: AnimSettings,
     /// Keymap overrides: action id → shortcuts.
     pub shortcuts: HashMap<String, Vec<String>>,
     /// Serialized egui_dock layout.

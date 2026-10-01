@@ -13,5 +13,6 @@ pub mod reference;
 pub mod swatches;
 pub mod thumbs;
 pub mod tileset;
+pub mod timeline;
 pub mod tool_options;
 pub mod tools_panel;

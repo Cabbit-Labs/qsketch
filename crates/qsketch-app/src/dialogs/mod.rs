@@ -2,6 +2,7 @@
 //! layer properties, unsaved-changes confirmation, about, and preferences.
 
 pub mod adjustment;
+pub mod anim;
 pub mod filter;
 pub mod layer_style;
 pub mod liquify;
@@ -67,6 +68,12 @@ pub struct LayerPropsDialog {
     /// under it, and an index would then name a different layer.
     pub layer: qsketch_core::layer::LayerId,
     pub name: String,
+    /// Label color (Aseprite's layer user data).
+    pub color: Option<[u8; 4]>,
+    pub notes: String,
+    /// Animation: new frames link to the previous frame's cel.
+    pub continuous: bool,
+    pub animated: bool,
 }
 
 /// Slice ▸ Properties: edit one slice.
@@ -214,6 +221,11 @@ pub struct Dialogs {
     pub layer_style: Option<layer_style::LayerStyleDialog>,
     pub slice_props: Option<SlicePropsDialog>,
     pub adjustment: Option<adjustment::AdjustmentDialog>,
+    pub frame_props: Option<anim::FramePropsDialog>,
+    pub tag_props: Option<anim::TagPropsDialog>,
+    pub cel_props: Option<anim::CelPropsDialog>,
+    pub import_sheet: Option<anim::ImportSheetDialog>,
+    pub export_anim: Option<anim::ExportAnimDialog>,
     pub about: bool,
     /// Autosave snapshots found at startup, offered for recovery.
     pub recover: Option<Vec<crate::autosave::Recoverable>>,
@@ -229,6 +241,11 @@ impl Dialogs {
             || self.layer_style.is_some()
             || self.slice_props.is_some()
             || self.adjustment.is_some()
+            || self.frame_props.is_some()
+            || self.tag_props.is_some()
+            || self.cel_props.is_some()
+            || self.import_sheet.is_some()
+            || self.export_anim.is_some()
             || self.layer_props.is_some()
             || self.close_confirm.is_some()
             || self.save_confirm.is_some()
@@ -284,6 +301,7 @@ pub fn show_all(ctx: &Context, state: &mut AppState) {
     liquify::show(ctx, state);
     layer_style::show(ctx, state);
     adjustment::show(ctx, state);
+    anim::show(ctx, state);
     show_about(ctx, state);
     show_update(ctx, state);
     show_recover(ctx, state);
@@ -890,18 +908,59 @@ pub fn open_layer_props(state: &mut AppState) {
     state.settle();
     if let Some(e) = state.active() {
         let l = e.doc.state().active_layer();
-        state.dialogs.layer_props = Some(LayerPropsDialog { doc: e.id, layer: l.props.id, name: l.props.name.clone() });
+        state.dialogs.layer_props = Some(LayerPropsDialog {
+            doc: e.id,
+            layer: l.props.id,
+            name: l.props.name.clone(),
+            color: l.props.color,
+            notes: l.props.notes.clone(),
+            continuous: l.props.continuous,
+            animated: l.animated(),
+        });
     }
 }
 
 fn show_layer_props(ctx: &Context, state: &mut AppState) {
     let Some(d) = state.dialogs.layer_props.as_mut() else { return };
     let mut apply = false;
-    let (_, closed) = modal(ctx, "layer_props", "Layer Properties", 300.0, |ui| {
-        ui.horizontal(|ui| {
+    let (_, closed) = modal(ctx, "layer_props", "Layer Properties", 340.0, |ui| {
+        egui::Grid::new("layer_props_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label("Name");
             let r = ui.text_edit_singleline(&mut d.name);
-            r.request_focus();
+            if !r.has_focus() && ui.data(|m| m.get_temp::<bool>(ui.id().with("focused"))).is_none() {
+                r.request_focus();
+                ui.data_mut(|m| m.insert_temp(ui.id().with("focused"), true));
+            }
+            ui.end_row();
+            ui.label("Color");
+            ui.horizontal(|ui| {
+                let mut on = d.color.is_some();
+                if ui
+                    .checkbox(&mut on, "")
+                    .on_hover_text("A label color for the layer row (kept in Aseprite files)")
+                    .changed()
+                {
+                    d.color = on.then_some([90, 140, 255, 255]);
+                }
+                if let Some(c) = d.color.as_mut() {
+                    let mut c32 = egui::Color32::from_rgb(c[0], c[1], c[2]);
+                    if egui::color_picker::color_edit_button_srgba(ui, &mut c32, egui::color_picker::Alpha::Opaque)
+                        .changed()
+                    {
+                        *c = [c32.r(), c32.g(), c32.b(), 255];
+                    }
+                }
+            });
+            ui.end_row();
+            if d.animated {
+                ui.label("Animation");
+                ui.checkbox(&mut d.continuous, "Continuous layer")
+                    .on_hover_text("New frames keep showing the previous frame's picture (linked cels) until unlinked");
+                ui.end_row();
+            }
+            ui.label("Notes");
+            ui.add(egui::TextEdit::multiline(&mut d.notes).desired_rows(2).desired_width(220.0));
+            ui.end_row();
         });
         ui.add_space(10.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -921,6 +980,9 @@ fn show_layer_props(ctx: &Context, state: &mut AppState) {
                 if !d.name.trim().is_empty() {
                     l.props.name = d.name.trim().to_string();
                 }
+                l.props.color = d.color;
+                l.props.notes = d.notes.trim().to_string();
+                l.props.continuous = d.continuous;
             }
             entry.doc.commit("Layer Properties");
         }

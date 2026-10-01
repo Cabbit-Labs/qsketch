@@ -17,6 +17,9 @@ mydrawing.qsk  (a ZIP file)
 │   ├── 000.png           # bottom layer, straight-alpha RGBA8 PNG
 │   ├── 000.mask.png      # optional: that layer's mask, 8-bit grayscale
 │   ├── 001.png
+│   ├── 001/
+│   │   ├── f0001.png     # optional (0.59+): that layer's own picture in frame 2
+│   │   └── ...            # one per frame whose cel owns a non-empty picture
 │   └── ...                # one file per layer, bottom to top
 ├── selection.png         # optional: 8-bit grayscale selection coverage
 └── preview.png            # flattened straight-alpha RGBA8 PNG, for thumbnails
@@ -33,6 +36,11 @@ mydrawing.qsk  (a ZIP file)
   have one, named in the layer's manifest entry under `mask`. 8-bit
   grayscale the size of the document: `255` = shown, `0` = hidden. The
   entry's `mask_enabled` flag (default `true`) records a disabled mask.
+- **Cels** (`layers/NNN/fFFFF.png`, 0.59+) hold a layer's pictures in frames
+  other than the first, for documents with more than one frame.
+  `layers/NNN.png` is always frame 0's picture, so a reader that knows
+  nothing about frames still opens the first frame. Linked and empty cels
+  write no file.
 - **`selection.png`** is written only when there is a non-empty selection.
   It's an 8-bit grayscale image the same size as the document, one byte of
   coverage per pixel (`0` = unselected, `255` = fully selected,
@@ -168,6 +176,17 @@ Field notes:
     into that tileset plus `0x80000000` (flipped horizontally) and
     `0x40000000` (flipped vertically). The layer PNG holds the rendered
     tiles, so readers that ignore tilemaps still see the right pixels.
+  - `continuous` (0.59+) — animation: a new frame's cel on this layer links
+    to the previous frame's instead of starting empty or as a copy
+    (Aseprite's "prefer linked cels"). Omitted when `false`.
+  - `color` (0.59+) — an optional `[r, g, b, a]` label color for the layer
+    row; `notes` (0.59+) — free text. Both are Aseprite's layer user data.
+  - `cels` (0.59+) — present on pixel layers of a document with several
+    frames: one entry per frame, in frame order, `{ "file": "layers/001/f0003.png" }`
+    for a cel with its own picture (`"layers/001.png"` for frame 0, absent
+    when the picture is empty), `{ "link": 2 }` for a cel showing frame 2's
+    picture, plus optional `opacity` (`0.0..=1.0`, default `1`) and
+    `z_index` (default `0`; kept for Aseprite, not drawn).
   - `kind` — `Raster` (default), `Group`, `Tilemap` (0.57+), or (0.53+) `Adjustment`: a
     layer that owns no pixels and applies its `adjustment` (a filter such as
     `{"Levels": {...}}`, `{"Curves": {...}}`, `{"HueSaturation": {...}}`,
@@ -185,6 +204,12 @@ Field notes:
 - **`selection`** is the filename of the selection PNG (currently always
   `"selection.png"` when present) or absent/`null` when there is no active
   selection.
+- **`frames`** (0.59+) — `[{ "duration_ms": 100 }, ...]`, one per frame, in
+  order; absent for a single-frame document. **`frame`** is the frame that
+  was showing when the file was saved. **`tags`** —
+  `[{ "name": "walk", "from": 0, "to": 5, "direction": "Forward" | "Reverse" |
+  "PingPong" | "PingPongReverse", "repeat": 0, "color": {...} }]`; frame
+  indices are zero-based and inclusive, `repeat` `0` means forever.
 
 ## Saving
 
@@ -206,10 +231,17 @@ qsketch itself refuses to load it.
 ## Other formats
 
 `io::save_any` routes by extension: `.qsk` (native, lossless), `.ase` /
-`.aseprite` (`io::ase`, single-frame RGBA with groups and compressed cels),
-`.psd` (`io::psd`), and the flat image formats in `io::EXPORT_EXTENSIONS`
-(flattened through `composite::flatten`). `io::compat_warnings(path, doc)`
+`.aseprite` (`io::ase`: 32-bit RGBA with every frame, linked cels and
+their opacity, tags with colors as user data, groups, continuous layers,
+layer colors and notes, tilesets and tilemap cels, slices, the palette and
+the pixel aspect ratio), `.psd` (`io::psd`), and the flat image formats in
+`io::EXPORT_EXTENSIONS` (flattened through `composite::flatten`; a `.gif`
+of an animation is an animated GIF). `io::compat_warnings(path, doc)`
 lists what a given target would lose, and the app shows that list before
-writing. `io::ase::parse` keeps every frame, cel, tag and duration of a
-sprite in `AseSprite`; `AseSprite::to_doc(frame)` builds a document from one
-frame.
+writing. `io::ase::parse` keeps every frame, cel, tag, tileset and user
+data chunk of a sprite in `AseSprite`; `AseSprite::to_doc()` builds the
+document with all of its frames (an animated tilemap layer becomes a pixel
+layer, since qsketch tilemaps are static). `io::anim_io` writes animated
+GIF (exact palette up to 255 colors), APNG, PNG sequences, sprite sheets
+with Aseprite-style JSON and ffmpeg video, and reads animated GIF / APNG
+and sprite sheets back into frames.

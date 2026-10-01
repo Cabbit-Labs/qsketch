@@ -177,7 +177,7 @@ pub fn decode_snapshot(bytes: &[u8]) -> Result<(DocState, String)> {
             }
             Raster::from_rgba(h.w, h.h, &rgba)
         };
-        layers.push(Layer { props: props.clone(), raster, mask: None });
+        layers.push(Layer { props: props.clone(), raster, mask: None, cels: Vec::new() });
     }
     if layers.is_empty() {
         bail!("snapshot has no layers");
@@ -205,6 +205,9 @@ pub fn decode_snapshot(bytes: &[u8]) -> Result<(DocState, String)> {
             pixel_aspect: [1, 1],
             slices: Vec::new(),
             tilesets: Vec::new(),
+            frames: vec![qsketch_core::Frame::default()],
+            frame: 0,
+            tags: Vec::new(),
         },
         h.title,
     ))

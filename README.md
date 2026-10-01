@@ -55,9 +55,19 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
 - **Photoshop `.psd` open and save** (8/16-bit RGB or grayscale; layer names,
   visibility, opacity, blend modes and clipping round-trip; groups flatten
   into the layer list on open).
-- **Aseprite `.ase`/`.aseprite` open and save** (RGBA, grayscale and indexed
-  sprites; layers, groups, visibility, lock, opacity and blend modes
-  round-trip; multi-frame sprites open on their first frame for now).
+- **Animation.** Any document can have frames, edited in an Aseprite-style
+  Timeline panel: cels per layer and frame (linkable, with their own
+  opacity), continuous layers, tags with direction and repeat, frame
+  durations, drag-to-reorder, playback with Enter, onion skins tinted red
+  and blue (F3), and import from GIFs, APNGs, image sequences and sprite
+  sheets. Export as an animated GIF with an exact palette, APNG, a PNG
+  sequence, a sprite sheet with Aseprite-style JSON, or MP4 / WebM video
+  through ffmpeg.
+- **Aseprite `.ase`/`.aseprite` open and save** with full fidelity: RGBA,
+  grayscale and indexed sprites; every frame with durations, linked cels,
+  cel opacity, tags, continuous layers, layer colors and notes, tilesets
+  and tilemap layers, slices, the palette and the pixel aspect ratio all
+  round-trip.
 - **Save As any image format** (PNG, JPEG, WebP, BMP, TGA, TIFF) straight
   from Save As, with a heads-up listing what that format drops (layers,
   transparency, selection) before it writes.
@@ -123,7 +133,7 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   eraser-tip detection.
 - **A dockable, modern UI** (`egui_dock`): drag, split, float and re-arrange
   the Tools, Layers, History, Color, Swatches, Palette, Navigator, Brushes,
-  Brush Settings and Info panels however you like; the layout is remembered
+  Brush Settings, Info, Reference, Tileset and Timeline panels however you like; the layout is remembered
   between sessions. Two open documents can sit side by side, and the
   panels always follow the one you are drawing on. Four monochrome themes
   (Ink, Graphite, Light, Sepia) plus a custom palette, a rounded or angular

@@ -58,6 +58,9 @@ pub struct DocEntry {
     pub file_size: Option<u64>,
     /// Where Export Image last wrote this document, for Quick Export.
     pub last_export: Option<std::path::PathBuf>,
+    /// Frames selected in the Timeline as (anchor, end), inclusive and in
+    /// either order; `None` = just the current frame.
+    pub frame_sel: Option<(usize, usize)>,
 }
 
 impl DocEntry {
@@ -81,6 +84,7 @@ impl DocEntry {
             layer_flash: None,
             file_size: None,
             last_export: None,
+            frame_sel: None,
         }
     }
 
@@ -316,6 +320,12 @@ pub struct AppState {
     pub jobs: Vec<BackgroundJob>,
     /// Layer ▸ Copy Layer Style.
     pub style_clipboard: Option<qsketch_core::LayerStyle>,
+    /// A running animation playback (see `crate::anim`).
+    pub playback: Option<crate::anim::Playback>,
+    /// Animation › Copy Cel: a picture and its cel opacity.
+    pub cel_clipboard: Option<(qsketch_core::Raster, f32)>,
+    /// Timeline panel interaction state.
+    pub timeline: crate::anim::TimelineUi,
     pub updater: crate::update::Updater,
     /// Crash-recovery snapshots of unsaved documents.
     pub autosave: crate::autosave::Autosave,
@@ -398,6 +408,9 @@ impl AppState {
             recorder: Default::default(),
             jobs: Vec::new(),
             style_clipboard: None,
+            playback: None,
+            cel_clipboard: None,
+            timeline: Default::default(),
             updater: Default::default(),
             autosave: Default::default(),
             library: crate::brush_library::BrushLibrary::load(),
