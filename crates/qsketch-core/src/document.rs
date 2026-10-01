@@ -467,6 +467,24 @@ pub struct LoadedMeta {
     pub timelapse: crate::timelapse::Timelapse,
 }
 
+/// What a document looks like beyond its undoable content: the per-layer
+/// visibility and expansion flags and the palette lock (see
+/// [`Document::view_state`]).
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct ViewState {
+    layers: Vec<(LayerId, bool, bool)>,
+    palette_lock: bool,
+}
+
+impl ViewState {
+    fn of(s: &DocState) -> Self {
+        Self {
+            layers: s.layers.iter().map(|l| (l.props.id, l.props.visible, l.props.expanded)).collect(),
+            palette_lock: s.palette_lock,
+        }
+    }
+}
+
 pub struct Document {
     pub history: History,
     working: DocState,
@@ -480,6 +498,11 @@ pub struct Document {
     pub timelapse: crate::timelapse::Timelapse,
     /// `History` id of the state on disk; `None` when never saved.
     saved_at: Option<u64>,
+    /// The view toggles (layer visibility, group expansion, palette lock)
+    /// as they were saved. They are applied to every history state rather
+    /// than recorded as undo steps, yet the file carries them, so a change
+    /// counts as unsaved until the next save.
+    saved_view: ViewState,
     /// Photoshop's snapshot row: the document as it was opened (or last
     /// saved), kept outside the undo limit so there is always a way back to
     /// it however long the history grows.
@@ -513,10 +536,12 @@ impl Document {
         let (w, h) = (state.width, state.height);
         let mut dirty = TileSet::for_size(w, h);
         dirty.insert_all();
+        let saved_view = ViewState::of(&state);
         let mut doc = Self {
             history: History::new(state.clone(), label),
             snapshot: (label.to_string(), state.clone()),
             snapshot_rev: 1,
+            saved_view,
             working: state,
             path,
             title: title.into(),
@@ -812,8 +837,16 @@ impl Document {
         !self.dirty.is_empty()
     }
 
+    /// Unsaved changes: an undo step since the save, or a view toggle
+    /// (visibility, group expansion, palette lock) that the file would
+    /// record differently.
     pub fn is_modified(&self) -> bool {
-        self.saved_at != Some(self.history.current_id())
+        self.saved_at != Some(self.history.current_id()) || self.view_state() != self.saved_view
+    }
+
+    /// The view toggles as they stand now (see [`ViewState`]).
+    pub fn view_state(&self) -> ViewState {
+        ViewState::of(&self.working)
     }
 
     /// Everything besides the layers that a `.qsk` save should carry.
@@ -835,6 +868,7 @@ impl Document {
 
     pub fn mark_saved(&mut self) {
         self.saved_at = Some(self.history.current_id());
+        self.saved_view = self.view_state();
         self.snapshot = ("Saved".to_string(), self.working.clone());
         self.snapshot_rev += 1;
     }
@@ -963,6 +997,27 @@ mod tests {
         assert!(s.merge_down(1));
         assert_eq!(s.layers.len(), 1);
         assert!(s.remove_layer(0).is_none());
+    }
+
+    /// Hiding a layer is not an undo step, but the file would open with the
+    /// layer hidden, so the document counts as unsaved until it is saved
+    /// (or the toggle is put back).
+    #[test]
+    fn view_toggles_mark_the_document_unsaved() {
+        let mut d = Document::new(8, 8, None, "t");
+        assert!(!d.is_modified());
+        let id = d.state().layers[0].props.id;
+        d.set_layer_visible(id, false);
+        assert!(d.is_modified());
+        assert_eq!(d.history.len(), 1, "no history step");
+        d.set_layer_visible(id, true);
+        assert!(!d.is_modified(), "back to how it was saved");
+        d.set_palette_lock(true);
+        assert!(d.is_modified());
+        d.mark_saved();
+        assert!(!d.is_modified());
+        d.set_layer_visible(id, false);
+        assert!(d.is_modified());
     }
 
     #[test]

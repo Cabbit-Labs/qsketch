@@ -2,6 +2,12 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.59.2 — 2026-10-01
+
+- Hiding or showing a layer, collapsing a group and locking the palette
+  now mark the document as unsaved (the file would open that way), while
+  still not adding an undo step; putting the toggle back clears the mark.
+
 ## 0.59.1 — 2026-10-01
 
 - Timeline: following the current frame only scrolls sideways; a tall
