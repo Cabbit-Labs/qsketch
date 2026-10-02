@@ -2,6 +2,17 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.61.1 — 2026-10-01
+
+- Warp transform reworked. The lattice is now a smooth bicubic spline
+  surface instead of independent projective cells, so bending one node
+  eases into its neighbors: no more kinked or broken strokes where cells
+  met, even on a 3×3 grid. The on-canvas grid draws the same curves the
+  pixels follow. Resampling changed too: Smooth takes one filtered sample
+  per pixel (no extra blur inside the picture) and anti-aliases the outline
+  with 4×4 coverage, while Pixel takes one unfiltered sample per pixel for
+  whole-pixel edges, so the two modes now look clearly different.
+
 ## 0.61.0 — 2026-10-01
 
 - Editable text layers. The Text tool now starts a text layer (named after

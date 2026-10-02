@@ -1119,14 +1119,19 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     ));
     if fp.mode == Mode::Warp {
         let thin = Stroke::new(1.0, Color32::from_rgba_unmultiplied(23, 227, 180, 150));
+        // The grid follows the smooth surface the pixels are rendered
+        // through, so what you see is the bend you get.
         let m = &fp.mesh;
+        const STEPS: u32 = 8;
         for j in 0..=m.rows {
-            let line: Vec<Pos2> = (0..=m.cols).map(|i| to_s(m.point(i, j))).collect();
+            let line: Vec<Pos2> =
+                (0..=m.cols * STEPS).map(|k| to_s(m.surface(k as f32 / STEPS as f32, j as f32))).collect();
             painter.add(egui::Shape::line(line.clone(), shadow));
             painter.add(egui::Shape::line(line, thin));
         }
         for i in 0..=m.cols {
-            let line: Vec<Pos2> = (0..=m.rows).map(|j| to_s(m.point(i, j))).collect();
+            let line: Vec<Pos2> =
+                (0..=m.rows * STEPS).map(|k| to_s(m.surface(i as f32, k as f32 / STEPS as f32))).collect();
             painter.add(egui::Shape::line(line.clone(), shadow));
             painter.add(egui::Shape::line(line, thin));
         }

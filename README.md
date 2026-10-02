@@ -53,8 +53,10 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
 - **Free Transform.** Move, scale, rotate, deform (corner pull) and warp
-  (mesh) a floating selection or layer with on-canvas handles before it is
-  committed.
+  a floating selection or layer with on-canvas handles before it is
+  committed. The warp grid is a smooth spline surface, so pulling one node
+  eases into its neighbors with no seams; Smooth mode anti-aliases the
+  outline and Pixel mode keeps whole pixels.
 - **Retouching brushes.** Smudge drags colors along under the stroke; the
   Clone Stamp copies from an Alt+clicked source point (aligned or not, from
   one layer or all), both through the full brush engine.
