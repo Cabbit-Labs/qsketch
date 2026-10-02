@@ -669,9 +669,11 @@ fn symmetry_options(ui: &mut Ui, state: &mut AppState) {
         sym.radial = if sym.radial >= 2 { 0 } else { 6 };
     }
     if sym.radial >= 2 {
-        let mut n = sym.radial;
-        if ui.add(egui::DragValue::new(&mut n).range(2..=64).suffix("×")).on_hover_text("Radial copies").changed() {
-            sym.radial = n.max(2);
+        let mut n = sym.radial as f32;
+        let mut r = ui.add(egui::DragValue::new(&mut n).range(2..=64).suffix("×")).on_hover_text("Radial copies");
+        crate::ui::widgets::wheel_adjust(ui, &mut r, &mut n, 1.0, 2.0..=64.0);
+        if r.changed() {
+            sym.radial = (n.round() as u32).max(2);
         }
     }
     if sym.active() {
@@ -743,7 +745,7 @@ fn text_options(ui: &mut Ui, state: &mut AppState) {
             state.fonts.reload();
         }
         let t = &mut state.tool_opts.text;
-        ui.add(
+        let mut r = ui.add(
             egui::DragValue::new(&mut t.size)
                 .range(1.0..=2000.0)
                 .speed(1.0)
@@ -751,6 +753,7 @@ fn text_options(ui: &mut Ui, state: &mut AppState) {
                 .suffix(" px")
                 .fixed_decimals(0),
         );
+        crate::ui::widgets::wheel_adjust(ui, &mut r, &mut t.size, 1.0, 1.0..=2000.0);
     });
     chip(ui, col, tint, |ui| {
         let fam = state.tool_opts.text_family.clone();
@@ -778,22 +781,31 @@ fn text_options(ui: &mut Ui, state: &mut AppState) {
             t.antialias = !t.antialias;
         }
         if !compact {
-            ui.add(
-                egui::DragValue::new(&mut t.line_height).prefix("Line ").range(0.5..=4.0).speed(0.01).fixed_decimals(2),
-            )
-            .on_hover_text("Line height");
-            ui.add(
-                egui::DragValue::new(&mut t.letter_spacing)
-                    .prefix("Track ")
-                    .range(-50.0..=200.0)
-                    .speed(0.1)
-                    .suffix(" px")
-                    .fixed_decimals(1),
-            )
-            .on_hover_text("Letter spacing");
+            let mut r = ui
+                .add(
+                    egui::DragValue::new(&mut t.line_height)
+                        .prefix("Line ")
+                        .range(0.5..=4.0)
+                        .speed(0.01)
+                        .fixed_decimals(2),
+                )
+                .on_hover_text("Line height");
+            crate::ui::widgets::wheel_adjust(ui, &mut r, &mut t.line_height, 0.05, 0.5..=4.0);
+            let mut r = ui
+                .add(
+                    egui::DragValue::new(&mut t.letter_spacing)
+                        .prefix("Track ")
+                        .range(-50.0..=200.0)
+                        .speed(0.1)
+                        .suffix(" px")
+                        .fixed_decimals(1),
+                )
+                .on_hover_text("Letter spacing");
+            crate::ui::widgets::wheel_adjust(ui, &mut r, &mut t.letter_spacing, 0.5, -50.0..=200.0);
         }
         t.clamp();
     });
+    let on_text = state.active().is_some_and(|d| d.doc.state().active_layer().is_text());
     if editing {
         chip(ui, col, tint, |ui| {
             if ui.button(format!("{} Apply", icons::CHECK)).on_hover_text("Enter").clicked() {
@@ -803,8 +815,30 @@ fn text_options(ui: &mut Ui, state: &mut AppState) {
                 crate::tools::text::cancel(state);
             }
         });
+        hint(ui, "The text layer stays editable after Apply.");
+    } else if on_text {
+        chip(ui, col, tint, |ui| {
+            if ui
+                .button("Edit Text")
+                .on_hover_text("Reopen the active text layer (or click it on the canvas)")
+                .clicked()
+            {
+                state.pending.push(crate::actions::Action::EditText);
+            }
+            if ui
+                .button("Rasterize")
+                .on_hover_text("Turn the text into plain pixels (Layer › Text › Rasterize Text Layer)")
+                .clicked()
+            {
+                state.pending.push(crate::actions::Action::RasterizeText);
+            }
+        });
+        hint(ui, "Click a text layer to edit it, or click elsewhere to start new text.");
     } else {
-        hint(ui, "Click the canvas to place text. Drag the preview to move it.");
+        hint(
+            ui,
+            "Click the canvas to start a text layer. Drag the preview to move it; click the text later to edit it.",
+        );
     }
 }
 

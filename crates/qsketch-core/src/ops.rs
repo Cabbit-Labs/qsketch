@@ -87,6 +87,7 @@ pub fn resize_canvas(doc: &mut DocState, new_w: u32, new_h: u32, anchor: Anchor)
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
     crate::vector::detach_all(doc);
+    crate::text::detach_all(doc);
     let new_w = new_w.max(1);
     let new_h = new_h.max(1);
     let (ox, oy) = anchor.offset(doc.width, doc.height, new_w, new_h);
@@ -108,6 +109,7 @@ pub fn resize_image(doc: &mut DocState, new_w: u32, new_h: u32, filter: ResizeFi
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
     crate::vector::detach_all(doc);
+    crate::text::detach_all(doc);
     let new_w = new_w.max(1);
     let new_h = new_h.max(1);
     doc.sync_cels();
@@ -129,6 +131,7 @@ pub fn crop(doc: &mut DocState, rect: IRect) {
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
     crate::vector::detach_all(doc);
+    crate::text::detach_all(doc);
     let r = rect.intersect(&doc.rect());
     if r.is_empty() {
         return;
@@ -151,6 +154,7 @@ pub fn flip_horizontal(doc: &mut DocState) {
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
     crate::vector::detach_all(doc);
+    crate::text::detach_all(doc);
     doc.sync_cels();
     let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {
@@ -168,6 +172,7 @@ pub fn flip_vertical(doc: &mut DocState) {
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
     crate::vector::detach_all(doc);
+    crate::text::detach_all(doc);
     doc.sync_cels();
     let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {
@@ -186,6 +191,7 @@ pub fn rotate_canvas(doc: &mut DocState, times: u32) {
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
     crate::vector::detach_all(doc);
+    crate::text::detach_all(doc);
     doc.sync_cels();
     let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {
@@ -215,6 +221,7 @@ pub fn rotate_canvas(doc: &mut DocState, times: u32) {
 /// Flip / rotate a single layer in place (content only).
 pub fn flip_layer_horizontal(doc: &mut DocState, idx: usize) {
     crate::vector::rasterize(doc, idx);
+    crate::text::rasterize(doc, idx);
     if let Some(l) = doc.layers.get_mut(idx) {
         l.raster = l.raster.flipped_h();
         if let Some(m) = &l.mask {
@@ -224,6 +231,7 @@ pub fn flip_layer_horizontal(doc: &mut DocState, idx: usize) {
 }
 pub fn flip_layer_vertical(doc: &mut DocState, idx: usize) {
     crate::vector::rasterize(doc, idx);
+    crate::text::rasterize(doc, idx);
     if let Some(l) = doc.layers.get_mut(idx) {
         l.raster = l.raster.flipped_v();
         if let Some(m) = &l.mask {

@@ -59,6 +59,7 @@ pub use palette::Palette;
 pub use raster::{Raster, Tile, TILE, TILE_BYTES, TILE_PX};
 pub use slice::Slice;
 pub use style::LayerStyle;
+pub use text::TextLayer;
 pub use text::{TextAlign, TextImage, TextStyle};
 pub use timelapse::Timelapse;
 pub use tip::TipImage;

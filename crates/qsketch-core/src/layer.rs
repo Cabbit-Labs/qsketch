@@ -53,6 +53,9 @@ pub struct LayerProps {
     /// Shape layers only: the polygon the pixels are drawn from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shape: Option<crate::vector::ShapePath>,
+    /// Text layers only: the editable text the pixels are drawn from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<crate::text::TextLayer>,
     /// Animation: a new frame's cel on this layer links to the frame
     /// before instead of starting empty (or as a copy), so the picture
     /// carries on until it is deliberately unlinked.
@@ -84,6 +87,9 @@ pub enum LayerKind {
     /// Pixels drawn from an editable vector shape (`LayerProps::shape`):
     /// the Shape tool moves its points and the layer is redrawn, crisp.
     Shape,
+    /// Pixels drawn from editable text (`LayerProps::text`): the Text tool
+    /// reopens it for editing and the layer is redrawn.
+    Text,
 }
 
 #[derive(Clone)]
@@ -121,6 +127,7 @@ impl Layer {
                 adjustment: None,
                 tilemap: None,
                 shape: None,
+                text: None,
                 continuous: false,
                 color: None,
                 notes: String::new(),
@@ -218,12 +225,17 @@ impl Layer {
     /// A plain raster layer: the only kind whose pixels filters, transforms
     /// and the like work on.
     pub fn owns_pixels(&self) -> bool {
-        matches!(self.props.kind, LayerKind::Raster | LayerKind::Tilemap | LayerKind::Shape)
+        matches!(self.props.kind, LayerKind::Raster | LayerKind::Tilemap | LayerKind::Shape | LayerKind::Text)
     }
 
     /// A vector shape layer (see [`LayerKind::Shape`]).
     pub fn is_shape(&self) -> bool {
         self.props.kind == LayerKind::Shape && self.props.shape.is_some()
+    }
+
+    /// An editable text layer (see [`LayerKind::Text`]).
+    pub fn is_text(&self) -> bool {
+        self.props.kind == LayerKind::Text && self.props.text.is_some()
     }
 
     /// Apply this adjustment layer to `raster` (straight RGBA) the way the
@@ -271,6 +283,7 @@ impl Layer {
         self.props.visible
             && !self.props.locked
             && !self.is_shape()
+            && !self.is_text()
             && (self.owns_pixels() || (self.is_adjustment() && self.mask.is_some()))
     }
 }

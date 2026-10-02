@@ -805,6 +805,7 @@ impl AseSprite {
                 adjustment: None,
                 tilemap: None,
                 shape: None,
+                text: None,
                 continuous: al.flags & LAYER_PREFER_LINKED != 0,
                 color: al.user.color.filter(|c| c[3] > 0),
                 notes: al.user.text.clone(),
@@ -1083,6 +1084,10 @@ pub fn compat_warnings(doc: &DocState) -> Vec<String> {
     let shapes: Vec<&str> = doc.layers.iter().filter(|l| l.is_shape()).map(|l| l.props.name.as_str()).collect();
     if !shapes.is_empty() {
         w.push(format!("Shape layers are saved as pixels; {} will lose the editable points.", list(&shapes)));
+    }
+    let texts: Vec<&str> = doc.layers.iter().filter(|l| l.is_text()).map(|l| l.props.name.as_str()).collect();
+    if !texts.is_empty() {
+        w.push(format!("Text layers are saved as pixels; {} will lose the editable text.", list(&texts)));
     }
     let adjustment: Vec<&str> =
         doc.layers.iter().filter(|l| l.is_adjustment()).map(|l| l.props.name.as_str()).collect();

@@ -267,10 +267,9 @@ impl ModifyKind {
 }
 
 /// Select ▸ Modify: replace the selection with a reshaped version of itself.
-pub fn modify_selection(state: &mut AppState, doc_id: DocId, kind: ModifyKind, amount: f32) {
-    let Some(entry) = state.doc_mut(doc_id) else { return };
-    let Some(sel) = entry.doc.state().selection.clone() else { return };
-    let m = match kind {
+/// The selection `sel` after a modify command.
+pub fn modified(sel: &qsketch_core::Mask, kind: ModifyKind, amount: f32) -> qsketch_core::Mask {
+    match kind {
         ModifyKind::Feather => sel.feathered(amount),
         ModifyKind::Expand => sel.expanded(amount),
         ModifyKind::Contract => sel.contracted(amount),
@@ -278,7 +277,13 @@ pub fn modify_selection(state: &mut AppState, doc_id: DocId, kind: ModifyKind, a
         ModifyKind::Smooth => sel.smoothed(amount.max(0.0) as u32),
         ModifyKind::Sharpen => sel.sharpened(),
         ModifyKind::RemoveHoles => sel.without_holes(),
-    };
+    }
+}
+
+pub fn modify_selection(state: &mut AppState, doc_id: DocId, kind: ModifyKind, amount: f32) {
+    let Some(entry) = state.doc_mut(doc_id) else { return };
+    let Some(sel) = entry.doc.state().selection.clone() else { return };
+    let m = modified(&sel, kind, amount);
     let empty = m.is_empty();
     let s = entry.doc.state_mut();
     if empty {

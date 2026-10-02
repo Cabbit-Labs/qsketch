@@ -236,6 +236,13 @@ pub(super) fn begin_engine_with(
             );
             return None;
         }
+        if s.layers[li].is_text() {
+            state.toasts.push(
+                Level::Info,
+                "This is a text layer: edit it with the Text tool, or Layer › Text › Rasterize Text Layer to paint on it.",
+            );
+            return None;
+        }
         let why = if !s.effectively_visible(li) { "hidden" } else { "locked" };
         state.toasts.push(Level::Info, format!("The active layer is {why}."));
         return None;

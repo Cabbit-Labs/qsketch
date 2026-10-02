@@ -60,6 +60,57 @@ impl TextStyle {
     }
 }
 
+/// An editable text layer (`LayerKind::Text`): everything needed to redraw
+/// the layer's pixels. Fonts live in the app, so the app re-renders a text
+/// layer after each edit; the pixels are saved with the layer like any other.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TextLayer {
+    pub text: String,
+    pub style: TextStyle,
+    /// Font family name as the app's font library knows it.
+    pub family: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub color: Rgba8,
+    /// Top of the first line, document pixels (alignment pivots on its x).
+    pub anchor: (i32, i32),
+}
+
+impl Default for TextLayer {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            style: TextStyle::default(),
+            family: String::new(),
+            bold: false,
+            italic: false,
+            color: Rgba8::BLACK,
+            anchor: (0, 0),
+        }
+    }
+}
+
+/// Turn a text layer into a plain pixel layer, keeping its pixels.
+pub fn rasterize(doc: &mut crate::document::DocState, li: usize) -> bool {
+    match doc.layers.get_mut(li) {
+        Some(l) if l.props.text.is_some() => {
+            l.props.text = None;
+            l.props.kind = crate::layer::LayerKind::Raster;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Turn every text layer into pixels (before a whole-canvas change the
+/// text could not follow).
+pub fn detach_all(doc: &mut crate::document::DocState) {
+    for li in 0..doc.layers.len() {
+        rasterize(doc, li);
+    }
+}
+
 /// Rendered text: the pixels plus where their top-left sits relative to the
 /// anchor point the text was laid out at.
 #[derive(Clone)]
@@ -227,6 +278,21 @@ mod tests {
         // from the app crate if present, otherwise skip.
         let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fonts/Phosphor.ttf");
         FontArc::try_from_vec(std::fs::read(p).expect("test font")).expect("parse")
+    }
+
+    #[test]
+    fn text_layer_rasterizes_to_a_plain_layer() {
+        let mut doc = crate::document::DocState::new(8, 8, None);
+        doc.layers[0].props.kind = crate::layer::LayerKind::Text;
+        doc.layers[0].props.text = Some(TextLayer { text: "hi".into(), ..Default::default() });
+        assert!(doc.layers[0].is_text());
+        assert!(!doc.layers[0].editable(), "text layers are edited with the Text tool, not painted");
+        let json = serde_json::to_string(&doc.layers[0].props).unwrap();
+        let back: crate::layer::LayerProps = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.text.as_ref().map(|t| t.text.as_str()), Some("hi"));
+        assert!(rasterize(&mut doc, 0));
+        assert!(!doc.layers[0].is_text() && doc.layers[0].editable());
+        assert!(!rasterize(&mut doc, 0));
     }
 
     #[test]

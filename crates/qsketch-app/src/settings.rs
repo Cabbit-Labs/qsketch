@@ -1270,6 +1270,9 @@ impl Settings {
         self.general.autosave_interval_secs = self.general.autosave_interval_secs.clamp(15, 3600);
         self.paint.recent_colors.truncate(crate::state::COLOR_HISTORY_LEN);
         self.paint.symmetry.radial = self.paint.symmetry.radial.min(64);
+        if !self.paint.symmetry.angle.is_finite() {
+            self.paint.symmetry.angle = 0.0;
+        }
         self.paint.brush.clamp();
         self.paint.pencil.clamp();
         self.paint.eraser.clamp();

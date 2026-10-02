@@ -2,6 +2,33 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.61.0 — 2026-10-01
+
+- Editable text layers. The Text tool now starts a text layer (named after
+  its first line) instead of stamping pixels onto the active layer; after
+  Apply the layer stays editable. Click a text layer with the Text tool, or
+  use Layer › Text › Edit Text, to reopen it with its words, font, size,
+  style, alignment, spacing and color; changing the foreground color while
+  editing recolors the text; drag the preview to move it. Layer › Text ›
+  Rasterize Text Layer (or the Rasterize button in the tool options) turns
+  it into plain pixels, as do whole-canvas operations that pixels can't
+  follow. Painting on a text layer explains how to edit or rasterize it;
+  the Layers panel marks text layers with a T badge. Saved in .qsk; other
+  formats save the pixels and warn about the editable text.
+- The Text tool's Size, Line and Track values (and the radial symmetry
+  count) respond to the mouse wheel while hovered.
+- Symmetry guides are live handles: drag the center to move the whole set,
+  drag a mirror line to slide it across the canvas, drag a radial line (or
+  Alt+drag any line) to rotate the axes, with Shift snapping to 15°. The
+  guide under the pointer lights up, and Reset Symmetry Center also resets
+  the rotation. Mirroring now works about rotated axes.
+- Shift+B with a selection tool active opens Border Selection instead of
+  switching to the Brush.
+- The selection modifier dialogs (Feather, Expand, Contract, Border,
+  Smooth) no longer dim the app: they float at the side and the canvas
+  previews the modified marching ants live while the amount changes (the
+  wheel nudges it); Cancel or Esc puts the selection back.
+
 ## 0.60.0 — 2026-10-01
 
 - Shape layers: pixel-art vector shapes. The new Shape tool (P) starts a

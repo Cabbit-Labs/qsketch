@@ -113,9 +113,13 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   Kaleidoscope, Chromatic Aberration, Scanlines, Pixel Sort, Glitch). They
   respect the selection and alpha lock, run in premultiplied color so
   transparent edges stay clean, and `Ctrl+F` repeats the last one.
+- **Editable text layers.** The Text tool starts a text layer that stays
+  editable: click it again to change the words, font, size, style or color,
+  drag it to move it, and rasterize it only when you want pixels.
 - **Symmetry painting and stroke stabilizers.** Mirror strokes horizontally,
   vertically or radially (up to 64 copies) around a movable center with
-  on-canvas guides, and steady shaky lines with a rope ("lazy brush") or
+  on-canvas guides you can drag (the center moves the set, a line slides or
+  rotates it), and steady shaky lines with a rope ("lazy brush") or
   moving-average stabilizer per brush.
 - **Timelapse.** Record a document as you paint (File ▸ Timelapse); the
   frames are saved in the `.qsk` and export as a looping GIF or as

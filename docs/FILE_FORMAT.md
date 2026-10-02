@@ -176,6 +176,11 @@ Field notes:
     into that tileset plus `0x80000000` (flipped horizontally) and
     `0x40000000` (flipped vertically). The layer PNG holds the rendered
     tiles, so readers that ignore tilemaps still see the right pixels.
+  - `text` (0.61+, `kind` `Text`) — `{ "text": "Hello", "style": {...},
+    "family": "Ubuntu", "bold": false, "italic": false, "color": [r,g,b,a],
+    "anchor": [x, y] }`: the editable text the layer is drawn from. The
+    layer PNG holds the rendered glyphs, so readers that ignore text layers
+    still see the right pixels.
   - `continuous` (0.59+) — animation: a new frame's cel on this layer links
     to the previous frame's instead of starting empty or as a copy
     (Aseprite's "prefer linked cels"). Omitted when `false`.
@@ -187,7 +192,7 @@ Field notes:
     when the picture is empty), `{ "link": 2 }` for a cel showing frame 2's
     picture, plus optional `opacity` (`0.0..=1.0`, default `1`) and
     `z_index` (default `0`; kept for Aseprite, not drawn).
-  - `kind` — `Raster` (default), `Group`, `Tilemap` (0.57+), or (0.53+) `Adjustment`: a
+  - `kind` — `Raster` (default), `Group`, `Tilemap` (0.57+), `Shape` (0.60+), `Text` (0.61+), or (0.53+) `Adjustment`: a
     layer that owns no pixels and applies its `adjustment` (a filter such as
     `{"Levels": {...}}`, `{"Curves": {...}}`, `{"HueSaturation": {...}}`,
     `{"BrightnessContrast": {...}}` or `{"ColorBalance": {...}}`) to

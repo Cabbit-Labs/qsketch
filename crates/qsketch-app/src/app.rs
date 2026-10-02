@@ -556,6 +556,18 @@ impl QSketchApp {
                     }
                 }
             }
+            // Shift+B with a selection tool up opens Border Selection instead
+            // of switching to the Brush: the marquee stays the active tool.
+            if key == egui::Key::B
+                && modifiers.shift
+                && !modifiers.command
+                && !modifiers.alt
+                && self.state.effective_tool().is_selection()
+                && !repeat
+            {
+                self.perform(Action::BorderSelection, ctx);
+                continue;
+            }
             if let Some(action) = self.state.keymap.lookup(key, modifiers) {
                 if repeat && !action.repeatable() {
                     continue;
@@ -1029,6 +1041,17 @@ impl QSketchApp {
                 self.menu_item(ui, Action::DeleteLayer, layers > 1);
                 self.menu_item(ui, Action::LayerProperties, has_doc);
                 let is_shape = self.state.active().is_some_and(|d| d.doc.state().active_layer().is_shape());
+                let is_text = self.state.active().is_some_and(|d| d.doc.state().active_layer().is_text());
+                menus::submenu(ui, false, "Text", |ui| {
+                    self.menu_item(ui, Action::NewTextLayer, has_doc);
+                    self.menu_item(ui, Action::EditText, is_text);
+                    self.menu_item(ui, Action::RasterizeText, is_text);
+                    ui.label(
+                        egui::RichText::new("Text layers stay editable: click one with the Text tool (T) to change it")
+                            .weak()
+                            .small(),
+                    );
+                });
                 menus::submenu(ui, false, "Shape", |ui| {
                     self.menu_item(ui, Action::NewShapeLayer, has_doc);
                     self.menu_item(ui, Action::RasterizeShape, is_shape);
@@ -2153,6 +2176,36 @@ impl QSketchApp {
                 }
                 self.state.toasts.push(Level::Info, "Click the canvas with the Shape tool to add points.");
             }
+            Action::NewTextLayer => {
+                self.state.settle();
+                self.state.set_tool(ToolKind::Text);
+                if let Some(id) = self.state.active_doc {
+                    let (w, h) = self.state.doc(id).map(|d| (d.doc.width(), d.doc.height())).unwrap_or((0, 0));
+                    let anchor = qsketch_core::Pt::new((w / 4) as f32, (h / 3) as f32);
+                    crate::tools::text::begin(&mut self.state, id, anchor, false);
+                }
+            }
+            Action::EditText => {
+                self.state.settle();
+                self.state.set_tool(ToolKind::Text);
+                if let Some(id) = self.state.active_doc {
+                    if !crate::tools::text::begin(&mut self.state, id, qsketch_core::Pt::new(0.0, 0.0), true) {
+                        self.state.toasts.push(Level::Info, "The active layer isn't a text layer.");
+                    }
+                }
+            }
+            Action::RasterizeText => {
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let li = s.active;
+                    if qsketch_core::text::rasterize(s, li) {
+                        d.doc.commit("Rasterize Text");
+                    } else {
+                        self.state.toasts.push(Level::Info, "The active layer isn't a text layer.");
+                    }
+                }
+            }
             Action::RasterizeShape => {
                 self.state.settle();
                 if let Some(d) = self.state.active_mut() {
@@ -2347,7 +2400,10 @@ impl QSketchApp {
                 self.state.symmetry_pick_center = true;
                 self.state.toasts.push(Level::Info, "Click the canvas to place the symmetry center.");
             }
-            Action::SymmetryResetCenter => self.state.symmetry.center = None,
+            Action::SymmetryResetCenter => {
+                self.state.symmetry.center = None;
+                self.state.symmetry.angle = 0.0;
+            }
             Action::BrushSizeUp | Action::BrushSizeDown => {
                 // The tool the user picked, not a held-modifier stand-in: with
                 // Alt down the eyedropper is in hand, but Alt+wheel means the

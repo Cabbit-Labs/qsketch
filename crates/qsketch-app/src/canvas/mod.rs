@@ -399,6 +399,14 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             // Drawn as a corner-rotate glyph at the pointer (see
             // `draw_rotate_cursor`): a drag here rotates, not deselects.
             egui::CursorIcon::None
+        } else if matches!(state.session, Some(tools::ToolSession::SymmetryDrag { .. })) {
+            egui::CursorIcon::Grabbing
+        } else if tools::symmetry::guides_shown(state)
+            && hover_pos.is_some_and(|p| {
+                tools::symmetry::hit_at(state, doc_id, state.doc(doc_id).unwrap().view.screen_to_doc(p)).is_some()
+            })
+        {
+            egui::CursorIcon::Grab
         } else if let Some(c) = tools::floating::cursor(state, doc_id, hover_pos)
             .filter(|_| !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView))
         {

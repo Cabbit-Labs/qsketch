@@ -488,6 +488,13 @@ pub enum ToolSession {
         pts: Vec<Pt>,
     },
     Picking,
+    /// Dragging a symmetry guide (or its center) seen on the canvas.
+    SymmetryDrag {
+        hit: symmetry::GuideHit,
+        start: Pt,
+        center0: Pt,
+        angle0: f32,
+    },
 }
 
 /// Route a canvas event to the active tool.
@@ -578,7 +585,10 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     // editing underneath would bake that preview into the next undo step and
     // the following parameter change would then filter an already-filtered
     // image. Navigation stays live so the preview can be inspected.
-    if (state.dialogs.filter.is_some() || state.dialogs.layer_style.is_some() || state.dialogs.adjustment.is_some())
+    if (state.dialogs.filter.is_some()
+        || state.dialogs.layer_style.is_some()
+        || state.dialogs.adjustment.is_some()
+        || state.dialogs.modify.is_some())
         && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)
     {
         return;
@@ -600,6 +610,29 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 state.symmetry_pick_center = false;
             }
             _ => return,
+        }
+    }
+    // Symmetry guides are live handles: a press on one drags it instead of
+    // painting (the center moves the set, a mirror line slides, a radial
+    // line or Alt rotates).
+    if let Some(ToolSession::SymmetryDrag { hit, start, center0, angle0 }) = state.session {
+        match ev {
+            CanvasEvent::Drag(inp) => symmetry::drag(state, doc_id, hit, start, center0, angle0, inp),
+            CanvasEvent::Release(_) => {
+                state.session = None;
+                state.session_doc = None;
+            }
+            _ => {}
+        }
+        return;
+    }
+    if let CanvasEvent::Press(inp) = ev {
+        if inp.button == PointerButton::Primary && state.session.is_none() && symmetry::guides_shown(state) {
+            if let Some((hit, center, angle)) = symmetry::hit_at(state, doc_id, inp.doc) {
+                state.session = Some(ToolSession::SymmetryDrag { hit, start: inp.doc, center0: center, angle0: angle });
+                state.session_doc = Some(doc_id);
+                return;
+            }
         }
     }
     // A selection tool pressing well clear of the transform box drops it and
@@ -856,15 +889,12 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     }
 }
 
-/// Symmetry axes through the center while a painting tool is active.
+/// Symmetry axes through the center while a painting tool is active. The
+/// guide under the pointer (or being dragged) is drawn brighter.
 fn draw_symmetry_guides(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     let sym = &state.symmetry;
     let picking = state.symmetry_pick_center;
-    if !(picking || (sym.active() && sym.show_guides)) {
-        return;
-    }
-    let tool = state.tool;
-    if !(tool.uses_brush() || tool == ToolKind::Contour || picking) {
+    if !(picking || symmetry::guides_shown(state)) {
         return;
     }
     let Some(entry) = state.doc(doc_id) else { return };
@@ -873,17 +903,56 @@ fn draw_symmetry_guides(state: &AppState, doc_id: DocId, painter: &egui::Painter
     let c = sym.center_for(entry.doc.width(), entry.doc.height());
     let reach = w + h;
     let col = egui::Color32::from_rgba_unmultiplied(120, 200, 255, 180);
+    let hot = egui::Color32::from_rgb(255, 210, 90);
     let stroke = egui::Stroke::new(1.0, col);
     let shadow = egui::Stroke::new(3.0, egui::Color32::from_black_alpha(90));
-    for (dx, dy) in sym.guide_directions() {
+    let active = match state.session {
+        Some(ToolSession::SymmetryDrag { hit, .. }) if state.session_doc == Some(doc_id) => Some(hit),
+        _ => painter
+            .ctx()
+            .pointer_hover_pos()
+            .filter(|p| view.viewport.contains(*p))
+            .and_then(|p| symmetry::hit_at(state, doc_id, view.screen_to_doc(p)))
+            .map(|(h, _, _)| h),
+    };
+    for (i, (dx, dy)) in sym.guide_directions().into_iter().enumerate() {
         let a = view.doc_to_screen(Pt::new(c.x - dx * reach, c.y - dy * reach));
         let b = view.doc_to_screen(Pt::new(c.x + dx * reach, c.y + dy * reach));
         painter.line_segment([a, b], shadow);
-        painter.line_segment([a, b], stroke);
+        let hit = matches!(active, Some(symmetry::GuideHit::Line { index, .. }) if index == i);
+        painter.line_segment([a, b], if hit { egui::Stroke::new(2.0, hot) } else { stroke });
     }
     let sc = view.doc_to_screen(c);
+    let center_hot = active == Some(symmetry::GuideHit::Center);
     painter.circle_stroke(sc, 5.0, egui::Stroke::new(2.0, egui::Color32::from_black_alpha(120)));
-    painter.circle_stroke(sc, 5.0, stroke);
+    painter.circle_stroke(sc, 5.0, if center_hot { egui::Stroke::new(2.0, hot) } else { stroke });
+    if let Some(ToolSession::SymmetryDrag { hit, .. }) = state.session {
+        let deg = sym.angle.to_degrees().rem_euclid(360.0);
+        let txt = match hit {
+            symmetry::GuideHit::Center => format!("{:.1}, {:.1}", c.x, c.y),
+            symmetry::GuideHit::Line { .. } => format!("{deg:.1}°"),
+        };
+        painter.text(
+            sc + egui::vec2(10.0, -10.0),
+            egui::Align2::LEFT_BOTTOM,
+            txt,
+            egui::FontId::proportional(12.0),
+            egui::Color32::WHITE,
+        );
+    } else if active.is_some() && !picking {
+        let tip = match active {
+            Some(symmetry::GuideHit::Center) => "Drag to move the symmetry center",
+            Some(symmetry::GuideHit::Line { radial: true, .. }) => "Drag to rotate (Shift snaps to 15°)",
+            _ => "Drag to slide the axis · Alt+drag rotates",
+        };
+        painter.text(
+            sc + egui::vec2(10.0, -10.0),
+            egui::Align2::LEFT_BOTTOM,
+            tip,
+            egui::FontId::proportional(12.0),
+            egui::Color32::from_white_alpha(200),
+        );
+    }
     if picking {
         painter.text(
             sc + egui::vec2(10.0, -10.0),

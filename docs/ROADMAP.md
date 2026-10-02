@@ -8,8 +8,6 @@ obvious room to help. Nothing here is a promise of a delivery date.
 
 ## Not yet implemented
 
-- **Editable text layers.** The Text tool (`tools/text.rs`) rasterizes on
-  commit; there is no text layer to re-open and re-edit later.
 - **Layer groups.** The layer stack (`DocState::layers`) is a flat
   `Vec<Layer>`; there's no folder/group concept, so there's no way to
   collapse, move or apply opacity/blend to a set of layers as a unit.

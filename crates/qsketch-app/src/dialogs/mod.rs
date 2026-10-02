@@ -50,6 +50,10 @@ pub struct ModifyDialog {
     pub doc: DocId,
     pub kind: crate::tools::ModifyKind,
     pub amount: f32,
+    /// The selection before the dialog opened (restored on Cancel).
+    pub base: std::sync::Arc<qsketch_core::Mask>,
+    /// The amount the canvas currently previews.
+    pub previewed: Option<f32>,
 }
 
 pub struct ImageSizeDialog {
@@ -780,10 +784,40 @@ pub fn open_modify(state: &mut AppState, kind: crate::tools::ModifyKind) {
         return;
     }
     let amount = state.tool_opts.modify_last(kind);
-    state.dialogs.modify = Some(ModifyDialog { doc, kind, amount });
+    let Some(base) = e.doc.state().selection.clone() else { return };
+    state.dialogs.modify = Some(ModifyDialog { doc, kind, amount, base, previewed: None });
+}
+
+/// Preview the modified selection in the working state (uncommitted).
+fn preview_modify(state: &mut AppState) {
+    let Some(d) = state.dialogs.modify.as_mut() else { return };
+    if d.previewed == Some(d.amount) {
+        return;
+    }
+    d.previewed = Some(d.amount);
+    let m = crate::tools::select::modified(&d.base, d.kind, d.amount);
+    let doc = d.doc;
+    if let Some(e) = state.doc_mut(doc) {
+        e.doc.state_mut().selection = (!m.is_empty()).then(|| std::sync::Arc::new(m));
+        e.sel_outline = None;
+    }
+}
+
+/// Put the original selection back and drop the preview.
+fn cancel_modify(state: &mut AppState) {
+    let Some(d) = state.dialogs.modify.take() else { return };
+    if let Some(e) = state.doc_mut(d.doc) {
+        e.doc.state_mut().selection = Some(d.base);
+        e.doc.revert_working();
+        e.sel_outline = None;
+    }
 }
 
 fn show_modify(ctx: &Context, state: &mut AppState) {
+    if state.dialogs.modify.is_none() {
+        return;
+    }
+    preview_modify(state);
     let Some(d) = state.dialogs.modify.as_mut() else { return };
     let kind = d.kind;
     let (title, unit) = match kind {
@@ -795,35 +829,60 @@ fn show_modify(ctx: &Context, state: &mut AppState) {
         _ => ("Modify Selection", "Amount"),
     };
     let whole = kind == crate::tools::ModifyKind::Smooth;
-    let mut apply = false;
-    let (_, closed) = modal(ctx, "modify_selection", title, 320.0, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(unit);
-            let drag = if whole {
-                egui::DragValue::new(&mut d.amount).range(1.0..=100.0).speed(0.2).suffix(" px").fixed_decimals(0)
-            } else {
-                egui::DragValue::new(&mut d.amount).range(0.1..=500.0).speed(0.2).suffix(" px").fixed_decimals(1)
-            };
-            ui.add(drag);
-        });
-        ui.add_space(4.0);
-        ui.label(RichText::new(kind.describe()).weak());
-        ui.add_space(10.0);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                apply = true;
+    let (mut apply, mut cancel, mut open) = (false, false, true);
+    let screen = ctx.content_rect();
+    let palette = state.settings.ui.palette();
+    // A floating window at the side, not a modal: the canvas behind shows
+    // the modified selection live and stays usable for panning and zooming.
+    egui::Window::new(title)
+        .id(egui::Id::new("modify_selection"))
+        .open(&mut open)
+        .title_bar(false)
+        .collapsible(false)
+        .resizable(false)
+        .auto_sized()
+        .default_pos(egui::pos2(screen.right() - 332.0, screen.top() + 80.0))
+        .show(ctx, |ui| {
+            ui.set_width(280.0);
+            if crate::ui::chrome::window_header(ui, &palette, title) {
+                cancel = true;
             }
-            if ui.button("Cancel").clicked() {
-                ui.close();
-            }
+            ui.horizontal(|ui| {
+                ui.label(unit);
+                let (lo, hi) = if whole { (1.0, 100.0) } else { (0.1, 500.0) };
+                let drag = egui::DragValue::new(&mut d.amount)
+                    .range(lo..=hi)
+                    .speed(0.2)
+                    .suffix(" px")
+                    .fixed_decimals(if whole { 0 } else { 1 });
+                let mut r = ui.add(drag);
+                crate::ui::widgets::wheel_adjust(ui, &mut r, &mut d.amount, 1.0, lo..=hi);
+            });
+            ui.add_space(4.0);
+            ui.label(RichText::new(kind.describe()).weak());
+            ui.label(RichText::new("Previewed on the canvas.").weak().small());
+            ui.add_space(10.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    apply = true;
+                }
+                if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    cancel = true;
+                }
+            });
         });
-    });
     if apply {
         let d = state.dialogs.modify.take().unwrap();
         state.tool_opts.set_modify_last(d.kind, d.amount);
+        if let Some(e) = state.doc_mut(d.doc) {
+            // The preview already sits in the working state; undo it into
+            // the base so the step records base → modified.
+            e.doc.state_mut().selection = Some(d.base.clone());
+            e.doc.revert_working();
+        }
         crate::tools::modify_selection(state, d.doc, d.kind, d.amount);
-    } else if closed {
-        state.dialogs.modify = None;
+    } else if cancel || !open {
+        cancel_modify(state);
     }
 }
 

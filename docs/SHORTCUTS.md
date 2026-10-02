@@ -99,6 +99,7 @@ reachable from its menu until you assign one.
 | Lock Layer | — |
 | Layer Properties… | — |
 | Outline… (layer style Stroke page, switched on) | `Ctrl+Shift+O` |
+| Text ▸ New Text Layer / Edit Text / Rasterize Text Layer | — |
 | Shape ▸ New Shape Layer / Rasterize Shape Layer | — |
 | HD Index Painting ▸ Setup / New Dither Pattern Layer | — |
 | Layer Style ▸ Layer Style… / Copy / Paste / Clear Layer Style | — |
@@ -146,7 +147,7 @@ onion-skin toggle sets how many frames show, their opacity, fade and tints.
 | Feather… | `Shift+F6` |
 | Expand… | — |
 | Contract… | — |
-| Border… | — |
+| Border… | `Shift+B` (while a selection tool is active) |
 | Smooth… | — |
 | Sharpen | — |
 | Remove Holes | — |
@@ -251,7 +252,7 @@ be given a shortcut from Preferences ▸ Keyboard Shortcuts.
 | Rectangle | `R` |
 | Ellipse | `C` |
 | Contour | `V` |
-| Text | `T` |
+| Text (click to start a text layer, click a text layer to edit it, drag to move) | `T` |
 | Zoom | `Z` |
 | Hand | `H` |
 | Rotate View | `Shift+R` |
@@ -308,7 +309,8 @@ included.
 | Mirror Vertical | `Shift+V` |
 | Symmetry Off | — |
 | Set Symmetry Center… | — |
-| Reset Symmetry Center | — |
+| Reset Symmetry Center (also resets the axis rotation) | — |
+| Drag a symmetry guide: center moves the set, a mirror line slides, a radial line (or Alt) rotates, Shift snaps | mouse |
 
 ## Window
 

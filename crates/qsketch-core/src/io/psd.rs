@@ -203,6 +203,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
                     adjustment: None,
                     tilemap: None,
                     shape: None,
+                    text: None,
                     continuous: false,
                     color: None,
                     notes: String::new(),

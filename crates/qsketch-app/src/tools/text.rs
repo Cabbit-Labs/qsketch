@@ -1,29 +1,36 @@
-//! Text tool: click to anchor a text box, type in the floating editor, and the
-//! canvas shows the rasterized result live (rendered into the working layer,
-//! like a floating paste). Enter commits one "Text" history step, Esc discards,
-//! dragging the preview moves the anchor. Same shape as Leyline's sketchpad
-//! text tool, with fonts, styles and alignment on top.
+//! Text tool: click to start a text layer, type in the floating editor, and
+//! the layer shows the rasterized result live. Enter keeps it as an editable
+//! text layer (`LayerKind::Text`): clicking it again with the Text tool, or
+//! Layer › Text › Edit Text, reopens it with its text, font and style. Esc
+//! discards, dragging the preview moves the anchor, and Rasterize turns the
+//! layer into plain pixels.
 
 use ab_glyph::FontArc;
 use egui::{Color32, Pos2, Stroke};
 use qsketch_core::ops::{drop_floating, Floating};
-use qsketch_core::text::{render, TextStyle};
-use qsketch_core::{IRect, Pt, Raster, Rgba8};
+use qsketch_core::text::{render, TextLayer, TextStyle};
+use qsketch_core::{IRect, LayerKind, Pt, Raster, Rgba8};
 
 use super::CanvasEvent;
 use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
 
-/// An in-progress text placement.
+/// An in-progress edit of a text layer. The layer is redrawn live from the
+/// editor's text and the tool options; Enter keeps it (as an editable text
+/// layer), Esc puts the layer back the way it was.
 pub struct TextEdit {
     pub doc: DocId,
+    /// Index of the text layer being edited.
     pub layer: usize,
     /// Top-left of the first line (alignment pivots on its x), document pixels.
     pub anchor: Pt,
     pub text: String,
-    /// The layer before the preview was drawn.
-    base: Raster,
-    last_dirty: IRect,
+    /// The text's color: the layer's own, following the foreground color
+    /// whenever that is changed during the edit.
+    pub color: Rgba8,
+    fg0: Rgba8,
+    /// The layer was created by this edit (named after its first line).
+    is_new: bool,
     /// Placement of the last rendered preview, if any glyphs were drawn.
     pub bounds: Option<IRect>,
     /// What the current preview was rendered from; re-render when it changes.
@@ -74,30 +81,98 @@ fn current_font(state: &mut AppState) -> Option<FontArc> {
     state.fonts.font(&fam, b, i)
 }
 
-/// Start editing at `anchor` on the active layer. Any previous edit is committed first.
-pub fn begin(state: &mut AppState, doc_id: DocId, anchor: Pt) -> bool {
+/// A name for a new text layer: its first line, like Photoshop.
+fn layer_name(text: &str) -> String {
+    let line: String = text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("Text").chars().take(24).collect();
+    line
+}
+
+/// The topmost visible text layer whose pixels sit under `p`, for a click
+/// that should reopen existing text instead of starting new text.
+fn text_layer_at(state: &AppState, doc_id: DocId, p: Pt) -> Option<usize> {
+    let e = state.doc(doc_id)?;
+    let s = e.doc.state();
+    let (x, y) = (p.x.floor() as i32, p.y.floor() as i32);
+    let hit = |li: usize| {
+        let l = &s.layers[li];
+        l.is_text() && s.effectively_visible(li) && l.raster.bounds().is_some_and(|b| b.expand(2).contains(x, y))
+    };
+    if hit(s.active) {
+        return Some(s.active);
+    }
+    (0..s.layers.len()).rev().find(|&li| hit(li))
+}
+
+/// Start editing: reopen the text layer under `anchor` (or the active text
+/// layer when `reopen_active`), else make a new text layer above the active
+/// layer. Any previous edit is committed first.
+pub fn begin(state: &mut AppState, doc_id: DocId, anchor: Pt, reopen_active: bool) -> bool {
     commit(state);
     state.cancel_session();
     super::floating::commit(state);
     state.fonts.ensure_loaded();
+    let existing = if reopen_active {
+        state
+            .doc(doc_id)
+            .map(|e| e.doc.state().active)
+            .filter(|&li| state.doc(doc_id).is_some_and(|e| e.doc.state().layers.get(li).is_some_and(|l| l.is_text())))
+    } else {
+        text_layer_at(state, doc_id, anchor)
+    };
+    let fg = state.fg;
+    if let Some(li) = existing {
+        let Some(entry) = state.doc_mut(doc_id) else { return false };
+        let s = entry.doc.state_mut();
+        if s.layers[li].props.locked || !s.effectively_visible(li) {
+            state.toasts.push(Level::Info, "That text layer is locked or hidden.");
+            return false;
+        }
+        s.active = li;
+        let Some(t) = s.layers[li].props.text.clone() else { return false };
+        entry.selected.clear();
+        state.tool_opts.text = t.style.clone();
+        state.tool_opts.text.faux_bold = 0.0;
+        state.tool_opts.text.faux_italic = 0.0;
+        state.tool_opts.text_family = t.family.clone();
+        state.tool_opts.text_bold = t.bold;
+        state.tool_opts.text_italic = t.italic;
+        if !state.fonts.has_family(&state.tool_opts.text_family) {
+            state.tool_opts.text_family = crate::fonts::DEFAULT_FAMILY.to_string();
+        }
+        state.text_edit = Some(TextEdit {
+            doc: doc_id,
+            layer: li,
+            anchor: Pt::new(t.anchor.0 as f32, t.anchor.1 as f32),
+            text: t.text,
+            color: t.color,
+            fg0: fg,
+            is_new: false,
+            bounds: None,
+            rendered: None,
+            focus: true,
+            drag: None,
+        });
+        return true;
+    }
     if !state.fonts.has_family(&state.tool_opts.text_family) {
         state.tool_opts.text_family = crate::fonts::DEFAULT_FAMILY.to_string();
     }
     let Some(entry) = state.doc_mut(doc_id) else { return false };
-    let s = entry.doc.state();
-    let li = s.active;
-    if !s.layer_editable(li) {
-        state.toasts.push(Level::Info, "The active layer is locked or hidden.");
-        return false;
-    }
-    let base = s.layers[li].raster.clone();
+    let s = entry.doc.state_mut();
+    let name = s.unique_layer_name("Text");
+    let id = s.add_layer(name, None);
+    let Some(li) = s.index_of(id) else { return false };
+    s.layers[li].props.kind = LayerKind::Text;
+    s.layers[li].props.text = Some(TextLayer::default());
+    entry.selected.clear();
     state.text_edit = Some(TextEdit {
         doc: doc_id,
         layer: li,
         anchor: Pt::new(anchor.x.round(), anchor.y.round()),
         text: String::new(),
-        base,
-        last_dirty: IRect::EMPTY,
+        color: fg,
+        fg0: fg,
+        is_new: true,
         bounds: None,
         rendered: None,
         focus: true,
@@ -106,16 +181,24 @@ pub fn begin(state: &mut AppState, doc_id: DocId, anchor: Pt) -> bool {
     true
 }
 
-/// Re-render the preview into the working layer if anything changed. Call once per frame.
+/// Re-render the layer from the edit if anything changed. Call once per frame.
 pub fn refresh(state: &mut AppState) {
-    let Some(te) = state.text_edit.as_ref() else { return };
+    let fg = state.fg;
+    let style = effective_style(state);
+    let mut raw_style = state.tool_opts.text.clone();
+    raw_style.clamp();
+    let Some(te) = state.text_edit.as_mut() else { return };
+    if te.fg0 != fg {
+        te.fg0 = fg;
+        te.color = fg;
+    }
     let key = RenderKey {
         text: te.text.clone(),
-        style: effective_style(state),
+        style,
         family: state.tool_opts.text_family.clone(),
         bold: state.tool_opts.text_bold,
         italic: state.tool_opts.text_italic,
-        color: state.fg,
+        color: te.color,
         anchor: te.anchor_i(),
     };
     if te.rendered.as_ref() == Some(&key) {
@@ -127,37 +210,47 @@ pub fn refresh(state: &mut AppState) {
     if let Some(entry) = state.doc_mut(te.doc) {
         let (ax, ay) = key.anchor;
         let s = entry.doc.state_mut();
-        let mut dirty = te.last_dirty;
-        match image {
-            Some(img) => {
-                let r = img.rect_at(ax, ay);
-                let f = Floating { raster: img.raster, origin: (r.x, r.y), mask: None };
-                if te.layer < s.layers.len() {
-                    s.layers[te.layer].raster = drop_floating(&te.base, &f, 0, 0);
-                }
-                dirty = dirty.union(&r);
-                te.bounds = Some(r);
-                te.last_dirty = r;
+        let (w, h) = (s.width, s.height);
+        if te.layer < s.layers.len() {
+            let l = &mut s.layers[te.layer];
+            let mut dirty = l.raster.bounds().unwrap_or(IRect::EMPTY);
+            l.props.text = Some(TextLayer {
+                text: key.text.clone(),
+                style: raw_style,
+                family: key.family.clone(),
+                bold: key.bold,
+                italic: key.italic,
+                color: key.color,
+                anchor: key.anchor,
+            });
+            if te.is_new {
+                l.props.name = layer_name(&key.text);
             }
-            None => {
-                if te.layer < s.layers.len() {
-                    s.layers[te.layer].raster = te.base.clone();
+            match image {
+                Some(img) => {
+                    let r = img.rect_at(ax, ay);
+                    let f = Floating { raster: img.raster, origin: (r.x, r.y), mask: None };
+                    l.raster = drop_floating(&Raster::new(w, h), &f, 0, 0);
+                    dirty = dirty.union(&r);
+                    te.bounds = Some(r);
                 }
-                te.bounds = None;
-                te.last_dirty = IRect::EMPTY;
+                None => {
+                    l.raster = Raster::new(w, h);
+                    te.bounds = None;
+                }
             }
-        }
-        let doc_rect = entry.doc.state().rect();
-        let dirty = dirty.intersect(&doc_rect);
-        if !dirty.is_empty() {
-            entry.doc.mark_dirty_rect(dirty);
+            let dirty = dirty.intersect(&IRect::new(0, 0, w as i32, h as i32));
+            if !dirty.is_empty() {
+                entry.doc.mark_dirty_rect(dirty);
+            }
         }
     }
     te.rendered = Some(key);
     state.text_edit = Some(te);
 }
 
-/// Commit the text as a history step. Blank text is discarded. Returns true if an edit was open.
+/// Keep the edit as a history step. Blank text is discarded (a new layer
+/// vanishes, existing text goes back). Returns true if an edit was open.
 pub fn commit(state: &mut AppState) -> bool {
     if state.text_edit.is_none() {
         return false;
@@ -166,7 +259,7 @@ pub fn commit(state: &mut AppState) -> bool {
     let Some(te) = state.text_edit.take() else { return false };
     if let Some(entry) = state.doc_mut(te.doc) {
         if te.bounds.is_some() && !te.is_blank() {
-            entry.doc.commit("Text");
+            entry.doc.commit(if te.is_new { "Text" } else { "Edit Text" });
         } else {
             entry.doc.revert_working();
         }
@@ -175,7 +268,7 @@ pub fn commit(state: &mut AppState) -> bool {
     true
 }
 
-/// Discard the edit, restoring the layer.
+/// Discard the edit, restoring the layer (or removing a new one).
 pub fn cancel(state: &mut AppState) -> bool {
     let Some(te) = state.text_edit.take() else { return false };
     if let Some(entry) = state.doc_mut(te.doc) {
@@ -204,7 +297,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                     te.focus = true;
                 }
             } else {
-                begin(state, doc_id, inp.doc);
+                begin(state, doc_id, inp.doc, false);
             }
         }
         CanvasEvent::Drag(inp) => {
@@ -375,7 +468,11 @@ pub fn editor_ui(ui: &mut egui::Ui, state: &mut AppState, doc_id: DocId) {
                     discard = crate::ui::widgets::small_button(ui, format!("{} Cancel", crate::ui::icons::X))
                         .on_hover_text("Esc")
                         .clicked();
-                    ui.label(egui::RichText::new("Shift+Enter: new line · drag the text to move it").weak().small());
+                    ui.label(
+                        egui::RichText::new("Shift+Enter: new line · drag the text to move it · stays editable")
+                            .weak()
+                            .small(),
+                    );
                 });
             });
         },
