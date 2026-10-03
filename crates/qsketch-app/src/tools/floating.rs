@@ -1064,6 +1064,18 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) -> bool {
 }
 
 /// Cursor for the pointer position while floating.
+/// Whether a picked (not held) view tool should hand the pointer at `pos`
+/// to the transform: on a handle or warp node, or mid-drag. Held stand-ins
+/// (Space, middle drag, Q) always navigate.
+pub fn takes_from_view_tool(state: &AppState, doc_id: DocId, pos: Option<Pos2>) -> bool {
+    let Some(fp) = state.floating.as_ref().filter(|f| f.doc == doc_id) else { return false };
+    if fp.drag.is_some() {
+        return true;
+    }
+    let Some(view) = state.doc(doc_id).map(|d| &d.view) else { return false };
+    state.temp_tool.is_none() && pos.is_some_and(|p| fp.grab_at(view, p).is_some())
+}
+
 pub fn cursor(state: &AppState, doc_id: DocId, pos: Option<Pos2>) -> Option<egui::CursorIcon> {
     let fp = state.floating.as_ref()?;
     if fp.doc != doc_id {

@@ -407,9 +407,10 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             })
         {
             egui::CursorIcon::Grab
-        } else if let Some(c) = tools::floating::cursor(state, doc_id, hover_pos)
-            .filter(|_| !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView))
-        {
+        } else if let Some(c) = tools::floating::cursor(state, doc_id, hover_pos).filter(|_| {
+            !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)
+                || tools::floating::takes_from_view_tool(state, doc_id, hover_pos)
+        }) {
             c
         } else if let Some(c) = tools::floating::selection_cursor(state, doc_id, hover_pos)
             .filter(|_| tool == ToolKind::Move || tool.is_selection())

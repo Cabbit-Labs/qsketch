@@ -2,6 +2,15 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.61.3 — 2026-10-03
+
+- Transform and Warp handles work with the Zoom, Hand and Rotate View
+  tools picked. Before, those tools passed every click through to the view,
+  so warp points and box handles could not be hovered or dragged. Now a
+  press on a handle or warp point drags it, and anywhere else still zooms,
+  pans or rotates. Holding Space or the middle button still always
+  navigates.
+
 ## 0.61.2 — 2026-10-03
 
 - Lock Symmetry Guides (Alt+L, the lock button in the brush options, or

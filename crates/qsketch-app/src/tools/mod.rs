@@ -659,11 +659,16 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             return;
         }
     }
-    // A floating paste captures the pointer unless a view tool is (temporarily) active.
-    if state.floating.is_some()
-        && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)
-        && floating::handle(state, doc_id, ev)
-    {
+    // A floating paste captures the pointer unless a view tool is active; a
+    // picked view tool still yields its handles and warp nodes.
+    let view_tool = matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView);
+    let float_takes = !view_tool
+        || match ev {
+            CanvasEvent::Press(inp) => floating::takes_from_view_tool(state, doc_id, Some(inp.screen)),
+            CanvasEvent::Drag(_) | CanvasEvent::Release(_) => floating::takes_from_view_tool(state, doc_id, None),
+            _ => false,
+        };
+    if state.floating.is_some() && float_takes && floating::handle(state, doc_id, ev) {
         return;
     }
     // Grabbing the box around a selection lifts the selected pixels into a
