@@ -926,42 +926,53 @@ fn draw_symmetry_guides(state: &AppState, doc_id: DocId, painter: &egui::Painter
     let center_hot = active == Some(symmetry::GuideHit::Center);
     painter.circle_stroke(sc, 5.0, egui::Stroke::new(2.0, egui::Color32::from_black_alpha(120)));
     painter.circle_stroke(sc, 5.0, if center_hot { egui::Stroke::new(2.0, hot) } else { stroke });
+    // Hints follow the pointer (the center may be far off) on a dark pill,
+    // so they read over any artwork.
+    let at = painter.ctx().pointer_hover_pos().filter(|p| view.viewport.contains(*p)).unwrap_or(sc);
     if let Some(ToolSession::SymmetryDrag { hit, .. }) = state.session {
         let deg = sym.angle.to_degrees().rem_euclid(360.0);
         let txt = match hit {
             symmetry::GuideHit::Center => format!("{:.1}, {:.1}", c.x, c.y),
             symmetry::GuideHit::Line { .. } => format!("{deg:.1}°"),
         };
-        painter.text(
-            sc + egui::vec2(10.0, -10.0),
-            egui::Align2::LEFT_BOTTOM,
-            txt,
-            egui::FontId::proportional(12.0),
-            egui::Color32::WHITE,
-        );
-    } else if active.is_some() && !picking {
-        let tip = match active {
-            Some(symmetry::GuideHit::Center) => "Drag to move the symmetry center",
-            Some(symmetry::GuideHit::Line { radial: true, .. }) => "Drag to rotate (Shift snaps to 15°)",
-            _ => "Drag to slide the axis · Alt+drag rotates",
+        canvas_hint(painter, view.viewport, at, txt);
+    } else if picking {
+        canvas_hint(painter, view.viewport, at, "Click to place the symmetry center".into());
+    } else if let Some(hit) = active {
+        let tip = match hit {
+            symmetry::GuideHit::Center => "Drag to move the symmetry center · Alt+L locks",
+            symmetry::GuideHit::Line { radial: true, .. } => "Drag to rotate (Shift snaps to 15°) · Alt+L locks",
+            _ => "Drag to slide the axis · Alt+drag rotates · Alt+L locks",
         };
-        painter.text(
-            sc + egui::vec2(10.0, -10.0),
-            egui::Align2::LEFT_BOTTOM,
-            tip,
-            egui::FontId::proportional(12.0),
-            egui::Color32::from_white_alpha(200),
-        );
+        canvas_hint(painter, view.viewport, at, tip.into());
     }
-    if picking {
-        painter.text(
-            sc + egui::vec2(10.0, -10.0),
-            egui::Align2::LEFT_BOTTOM,
-            "Click to place the symmetry center",
-            egui::FontId::proportional(12.0),
-            egui::Color32::WHITE,
-        );
+}
+
+/// A short label beside screen point `at` on a dark rounded backing, flipped
+/// and clamped so it stays inside `bounds`.
+fn canvas_hint(painter: &egui::Painter, bounds: egui::Rect, at: egui::Pos2, text: String) {
+    let galley = painter.layout_no_wrap(text, egui::FontId::proportional(12.0), egui::Color32::WHITE);
+    let pad = egui::vec2(6.0, 3.0);
+    let size = galley.size() + pad * 2.0;
+    let gap = 14.0;
+    let mut min = at + egui::vec2(gap, -gap - size.y);
+    if min.x + size.x > bounds.max.x {
+        min.x = at.x - gap - size.x;
     }
+    if min.y < bounds.min.y {
+        min.y = at.y + gap;
+    }
+    min.x = min.x.clamp(bounds.min.x, (bounds.max.x - size.x).max(bounds.min.x));
+    min.y = min.y.clamp(bounds.min.y, (bounds.max.y - size.y).max(bounds.min.y));
+    let rect = egui::Rect::from_min_size(min, size);
+    painter.rect_filled(rect, 4.0, egui::Color32::from_black_alpha(200));
+    painter.rect_stroke(
+        rect,
+        4.0,
+        egui::Stroke::new(1.0, egui::Color32::from_white_alpha(40)),
+        egui::StrokeKind::Inside,
+    );
+    painter.galley(min + pad, galley, egui::Color32::WHITE);
 }
 
 fn draw_doc_rect(

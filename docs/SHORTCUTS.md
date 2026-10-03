@@ -311,6 +311,7 @@ included.
 | Set Symmetry Center… | — |
 | Reset Symmetry Center (also resets the axis rotation) | — |
 | Drag a symmetry guide: center moves the set, a mirror line slides, a radial line (or Alt) rotates, Shift snaps | mouse |
+| Lock Symmetry Guides (clicks on the guides paint instead of grabbing them) | Alt+L |
 
 ## Window
 

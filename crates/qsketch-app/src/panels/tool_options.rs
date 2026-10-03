@@ -687,6 +687,15 @@ fn symmetry_options(ui: &mut Ui, state: &mut AppState) {
         if r.clicked() {
             state.symmetry_pick_center = !state.symmetry_pick_center;
         }
+        let locked = state.symmetry.locked;
+        let (icon, tip) = if locked {
+            (icons::LOCK, "Guides locked: clicks on them paint (Alt+L)")
+        } else {
+            (icons::LOCK_OPEN, "Lock the guides so clicks on them paint instead of dragging (Alt+L)")
+        };
+        if icon_button(ui, icon, tip, 22.0, locked).clicked() {
+            state.symmetry.locked = !locked;
+        }
         if state.symmetry.center.is_some()
             && crate::ui::widgets::small_button(ui, "Center")
                 .on_hover_text("Reset the center to the canvas middle")

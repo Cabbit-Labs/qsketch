@@ -1347,6 +1347,12 @@ impl QSketchApp {
                         self.state.symmetry.show_guides = !g;
                         ui.close();
                     }
+                    let a = Action::ToggleSymmetryLock;
+                    let btn = menus::button(sym.locked, "Lock Guides").shortcut_text(self.state.keymap.primary_text(a));
+                    if ui.add(btn).clicked() {
+                        self.state.pending.push(a);
+                        ui.close();
+                    }
                     ui.separator();
                     self.menu_item(ui, Action::SymmetryOff, sym.active());
                 });
@@ -2403,6 +2409,16 @@ impl QSketchApp {
             Action::SymmetryResetCenter => {
                 self.state.symmetry.center = None;
                 self.state.symmetry.angle = 0.0;
+            }
+            Action::ToggleSymmetryLock => {
+                let s = &mut self.state.symmetry;
+                s.locked = !s.locked;
+                let msg = if s.locked {
+                    "Symmetry guides locked: clicks on them paint (Alt+L unlocks)."
+                } else {
+                    "Symmetry guides unlocked: drag them to move or rotate."
+                };
+                self.state.toasts.push(Level::Info, msg);
             }
             Action::BrushSizeUp | Action::BrushSizeDown => {
                 // The tool the user picked, not a held-modifier stand-in: with

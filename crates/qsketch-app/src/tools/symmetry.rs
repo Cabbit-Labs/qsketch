@@ -24,11 +24,21 @@ pub struct Symmetry {
     /// Rotation of the whole axis set around the center, radians (0 = the
     /// mirror lines are the canvas axes). Dragging a guide rotates it.
     pub angle: f32,
+    /// Guides stay put: presses on them paint instead of grabbing them.
+    pub locked: bool,
 }
 
 impl Default for Symmetry {
     fn default() -> Self {
-        Self { horizontal: false, vertical: false, radial: 0, center: None, show_guides: true, angle: 0.0 }
+        Self {
+            horizontal: false,
+            vertical: false,
+            radial: 0,
+            center: None,
+            show_guides: true,
+            angle: 0.0,
+            locked: false,
+        }
     }
 }
 
@@ -218,7 +228,11 @@ pub fn guides_shown(state: &AppState) -> bool {
 }
 
 /// The guide under document point `p`, with the current center and angle.
+/// None while the guides are locked, so the press paints.
 pub fn hit_at(state: &AppState, doc_id: DocId, p: Pt) -> Option<(GuideHit, Pt, f32)> {
+    if state.symmetry.locked {
+        return None;
+    }
     let e = state.doc(doc_id)?;
     let zoom = e.view.zoom.max(0.01);
     let (w, h) = (e.doc.width(), e.doc.height());

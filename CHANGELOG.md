@@ -2,6 +2,17 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.61.2 — 2026-10-03
+
+- Lock Symmetry Guides (Alt+L, the lock button in the brush options, or
+  View › Symmetry › Lock Guides). While locked, clicks on the axis lines
+  and the center handle paint like anywhere else, so you can work on the
+  pixels the axes run through without nudging them. The setting is
+  remembered between sessions.
+- The symmetry guide hints (drag tips, angle and center readouts) now sit
+  on a dark backing beside the pointer, so they stay readable over white
+  artwork and no longer run off the edge of the canvas.
+
 ## 0.61.1 — 2026-10-01
 
 - Warp transform reworked. The lattice is now a smooth bicubic spline

@@ -332,6 +332,7 @@ actions! {
     SymmetryOff => (Brush, "Symmetry Off", []),
     SymmetrySetCenter => (Brush, "Set Symmetry Center…", []),
     SymmetryResetCenter => (Brush, "Reset Symmetry Center", []),
+    ToggleSymmetryLock => (Brush, "Lock Symmetry Guides", ["Alt+L"]),
     DefaultColors => (Brush, "Default Colors", ["D"]),
     // Animation
     NewFrame => (Animation, "New Frame", ["Alt+N"]),
