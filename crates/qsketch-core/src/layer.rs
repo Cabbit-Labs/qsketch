@@ -173,6 +173,10 @@ impl Layer {
                 }
             }
         }
+        // Pixels kept off the canvas go through the mask's off-canvas part.
+        self.raster.for_each_outside(|x, y, c| {
+            out.set_pixel_any(x, y, c.with_alpha(((c.a as u32 * m.get_any(x, y) as u32 + 127) / 255) as u8));
+        });
         out.prune_empty_tiles();
         out
     }

@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.62.1 — 2026-10-03
+
+- Photoshop and Aseprite files keep pixels outside the canvas too. Both
+  formats can store a layer (or cel) that reaches past the canvas edge, so
+  qsketch now writes each layer's full extent and reads it back instead of
+  cropping, PSD layer masks included. Opening a PSD whose layers reach off
+  the canvas keeps that part as well. Only flat image exports (PNG, JPEG
+  and the rest) are limited to the canvas, since they are a picture of it,
+  and Save As no longer warns about off-canvas pixels.
+
 ## 0.62.0 — 2026-10-03
 
 - Move groups and several layers at once. Ctrl+drag on the canvas (with any

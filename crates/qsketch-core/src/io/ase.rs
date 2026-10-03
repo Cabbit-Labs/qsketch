@@ -651,9 +651,8 @@ impl AseSprite {
         let CelImage::Pixels { w, h, data } = &cel.image else { return None };
         let rgba = self.rgba((*w * *h) as usize, data, background);
         let img = Raster::from_rgba(*w, *h, &rgba);
-        let mut r = Raster::new(self.width, self.height);
-        r.blit(&img, cel.x, cel.y, false);
-        Some(r)
+        // A cel may reach past the sprite: that part is kept off the canvas.
+        Some(img.with_canvas_size(self.width, self.height, cel.x, cel.y))
     }
 
     /// qsketch tilesets for the sprite's, in file order; `None` entries
@@ -1419,7 +1418,15 @@ pub fn encode(doc: &DocState) -> anyhow::Result<Vec<u8>> {
                 }
                 None => picture.clone(),
             };
-            let Some(rect) = shown.bounds() else { continue };
+            // The cel's own rect, off-canvas pixels included (Aseprite keeps
+            // cels that reach past the sprite), within the format's i16 range.
+            let in_range = |r: IRect| {
+                r.x >= i16::MIN as i32
+                    && r.y >= i16::MIN as i32
+                    && r.right() <= i16::MAX as i32
+                    && r.bottom() <= i16::MAX as i32
+            };
+            let Some(rect) = shown.full_bounds().filter(|r| in_range(*r)).or_else(|| shown.bounds()) else { continue };
             if rect.is_empty() {
                 continue;
             }
@@ -1536,6 +1543,27 @@ mod tests {
         assert_eq!(back.slices[0], sl);
         assert_eq!(back.slices[1].rect, IRect::new(0, 0, 4, 4));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn offcanvas_cels_round_trip() {
+        let mut doc = DocState::new(16, 12, None);
+        doc.layers[0].raster.set_pixel(1, 1, Rgba8::new(10, 20, 30, 255));
+        doc.layers[0].raster.set_pixel(2, 1, Rgba8::new(40, 50, 60, 255));
+        // The mask (baked into the cel) hides one of the pixels, off-canvas too.
+        let mut m = crate::mask::Mask::full(16, 12);
+        m.set(2, 1, 0);
+        doc.layers[0].mask = Some(std::sync::Arc::new(m));
+        let rest = crate::moving::begin(&doc, &[0]);
+        crate::moving::apply(&mut doc, &rest, -5, -4);
+        let path = temp("outside");
+        save(&path, &doc).unwrap();
+        let (back, _) = load_with_warnings(&path).unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        let r = &back.layers[0].raster;
+        assert_eq!(r.get_pixel_any(-4, -3), Rgba8::new(10, 20, 30, 255));
+        assert_eq!(r.get_pixel_any(-3, -3), Rgba8::TRANSPARENT);
+        assert_eq!(r.shifted_keep(5, 4).get_pixel(1, 1), Rgba8::new(10, 20, 30, 255));
     }
 
     #[test]

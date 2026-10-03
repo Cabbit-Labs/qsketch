@@ -426,6 +426,7 @@ fn read_layer_pixels(
     let n = w * h;
     let mut planes: [Option<Vec<u8>>; 4] = [None, None, None, None];
     let mut mask = None;
+    let mut mask_off: Option<(IRect, u8, Vec<u8>)> = None;
     for ch in &rec.channels {
         if ch.id == -2 {
             // The user mask, at its own rectangle; the default color fills
@@ -446,6 +447,12 @@ fn read_layer_pixels(
                 }
             }
             m.recompute_bounds();
+            // Off the canvas: the mask's own rect, and the default color over
+            // the rest of where the layer has pixels (filled in below, once
+            // the pixels are read).
+            if data.len() == mw * mh {
+                mask_off = Some((mr, default, data));
+            }
             mask = Some(m);
             continue;
         }
@@ -465,6 +472,7 @@ fn read_layer_pixels(
     if n == 0 {
         return Ok((Raster::new(hdr.width, hdr.height), mask));
     }
+    let canvas = IRect::new(0, 0, hdr.width as i32, hdr.height as i32);
     let mut rgba = vec![0u8; n * 4];
     let gray = hdr.mode == Mode::Gray;
     for i in 0..n {
@@ -478,9 +486,22 @@ fn read_layer_pixels(
         rgba[i * 4..i * 4 + 4].copy_from_slice(&[r, g, b, a]);
     }
     let sub = Raster::from_rgba(w as u32, h as u32, &rgba);
-    // Place at the layer's offset on the document canvas (rect may exceed it).
+    // Place at the layer's offset on the document canvas. The rect may
+    // reach past it: those pixels are kept outside the canvas.
     let mut out = Raster::new(hdr.width, hdr.height);
     blit(&mut out, &sub, rec.rect.x, rec.rect.y);
+    if let (Some(m), Some((mr, default, data))) = (mask.as_mut(), mask_off) {
+        let ext = mr.union(&out.outside_bounds().unwrap_or(IRect::EMPTY));
+        if ext.intersect(&canvas) != ext {
+            let mut block = vec![default; (ext.w * ext.h) as usize];
+            for y in 0..mr.h {
+                for x in 0..mr.w {
+                    block[((y + mr.y - ext.y) * ext.w + (x + mr.x - ext.x)) as usize] = data[(y * mr.w + x) as usize];
+                }
+            }
+            m.restore_outside(ext, block);
+        }
+    }
     Ok((out, mask))
 }
 
@@ -488,17 +509,16 @@ fn blit(dst: &mut Raster, src: &Raster, ox: i32, oy: i32) {
     let (dw, dh) = (dst.width() as i32, dst.height() as i32);
     for y in 0..src.height() as i32 {
         let dy = y + oy;
-        if dy < 0 || dy >= dh {
-            continue;
-        }
         for x in 0..src.width() as i32 {
             let dx = x + ox;
-            if dx < 0 || dx >= dw {
+            let px = src.get_pixel(x, y);
+            if px.a == 0 {
                 continue;
             }
-            let px = src.get_pixel(x, y);
-            if px.a != 0 {
+            if dx >= 0 && dy >= 0 && dx < dw && dy < dh {
                 dst.set_pixel(dx, dy, px);
+            } else {
+                dst.set_pixel_any(dx, dy, px);
             }
         }
     }
@@ -678,13 +698,18 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
     o.i16(doc.layers.len() as i16);
     let mut channel_blobs: Vec<Vec<Vec<u8>>> = Vec::with_capacity(doc.layers.len());
     for layer in &doc.layers {
-        let rect = layer.raster.bounds().unwrap_or(IRect::EMPTY);
+        // The layer's own rect, which may reach past the canvas: PSD keeps
+        // off-canvas pixels the way qsketch does.
+        let rect = layer.raster.full_bounds().unwrap_or(IRect::EMPTY);
         let (w, h) = (rect.w as usize, rect.h as usize);
         let blobs: Vec<Vec<u8>> = if w == 0 || h == 0 {
             (0..4).map(|_| vec![0, 0]).collect()
         } else {
-            let full = layer.raster.to_rgba();
-            let planes = split_planes(&crop(&full, doc.width as usize, rect));
+            let planes = if layer.raster.has_outside() {
+                split_planes(&layer.raster.crop(rect).to_rgba())
+            } else {
+                split_planes(&crop(&layer.raster.to_rgba(), doc.width as usize, rect))
+            };
             // Channel order in the record: -1 (alpha), 0, 1, 2.
             [3usize, 0, 1, 2]
                 .iter()
@@ -695,10 +720,23 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
                 })
                 .collect()
         };
-        // A layer mask travels as channel -2 covering the whole canvas.
+        // A layer mask travels as channel -2 covering the whole canvas, plus
+        // whatever coverage it keeps off it. Past its rect the default color
+        // applies: white for a canvas-sized mask, black when it reaches out
+        // (qsketch's off-canvas coverage is 0 wherever it isn't stored).
+        let canvas = IRect::new(0, 0, doc.width as i32, doc.height as i32);
+        let mask_rect = layer.mask.as_ref().map(|m| canvas.union(&m.extent())).unwrap_or(canvas);
+        let mask_default = if mask_rect == canvas { 255 } else { 0 };
         let mask_blob: Option<Vec<u8>> = layer.mask.as_ref().map(|m| {
             let mut b = vec![0, 1];
-            b.extend(encode_rle(&[m.to_gray()], doc.width as usize, doc.height as usize));
+            if mask_rect == canvas {
+                b.extend(encode_rle(&[m.to_gray()], doc.width as usize, doc.height as usize));
+            } else {
+                let r = mask_rect;
+                let gray: Vec<u8> =
+                    (r.y..r.bottom()).flat_map(|y| (r.x..r.right()).map(move |x| m.get_any(x, y))).collect();
+                b.extend(encode_rle(&[&gray], r.w as usize, r.h as usize));
+            }
             b
         });
         o.i32(rect.y);
@@ -727,14 +765,14 @@ pub fn save(path: &Path, doc: &DocState) -> anyhow::Result<()> {
         let extra = o.len_slot();
         match &mask_blob {
             Some(_) => {
-                // Layer mask data: rect (whole canvas), default color, flags
-                // (bit 1 = disabled), 2 bytes padding = 20 bytes.
+                // Layer mask data: rect, default color, flags (bit 1 =
+                // disabled), 2 bytes padding = 20 bytes.
                 o.u32(20);
-                o.i32(0);
-                o.i32(0);
-                o.i32(doc.height as i32);
-                o.i32(doc.width as i32);
-                o.u8(255);
+                o.i32(mask_rect.y);
+                o.i32(mask_rect.x);
+                o.i32(mask_rect.bottom());
+                o.i32(mask_rect.right());
+                o.u8(mask_default);
                 o.u8(if layer.props.mask_enabled { 0 } else { 2 });
                 o.u16(0);
             }
@@ -823,6 +861,34 @@ mod tests {
         assert_eq!(bm.get(0, 0), 255);
         assert!(!l.props.mask_enabled);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn offcanvas_pixels_and_mask_round_trip() {
+        let mut doc = DocState::new(16, 12, None);
+        doc.layers[0].raster.set_pixel(1, 1, Rgba8::new(10, 20, 30, 255));
+        doc.layers[0].raster.set_pixel(10, 8, Rgba8::new(40, 50, 60, 200));
+        let mut m = crate::mask::Mask::full(16, 12);
+        m.set(1, 1, 99);
+        doc.layers[0].mask = Some(std::sync::Arc::new(m));
+        let rest = crate::moving::begin(&doc, &[0]);
+        crate::moving::apply(&mut doc, &rest, -4, -3);
+        let dir = std::env::temp_dir().join(format!("qsk-psd-outside-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("o.psd");
+        save(&path, &doc).unwrap();
+        let mut back = load(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let l = &back.layers[0];
+        assert_eq!(l.raster.get_pixel_any(-3, -2), Rgba8::new(10, 20, 30, 255));
+        assert_eq!(l.raster.get_pixel(6, 5), Rgba8::new(40, 50, 60, 200));
+        assert_eq!(l.mask.as_ref().unwrap().get_any(-3, -2), 99);
+        let rest = crate::moving::begin(&back, &[0]);
+        crate::moving::apply(&mut back, &rest, 4, 3);
+        let l = &back.layers[0];
+        assert_eq!(l.raster.get_pixel(1, 1), Rgba8::new(10, 20, 30, 255));
+        assert_eq!(l.mask.as_ref().unwrap().get(1, 1), 99);
+        assert_eq!(l.mask.as_ref().unwrap().get(0, 0), 255);
     }
     use crate::color::Rgba8;
 

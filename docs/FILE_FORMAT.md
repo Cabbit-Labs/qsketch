@@ -255,7 +255,12 @@ the pixel aspect ratio), `.psd` (`io::psd`), and the flat image formats in
 `io::EXPORT_EXTENSIONS` (flattened through `composite::flatten`; a `.gif`
 of an animation is an animated GIF). `io::compat_warnings(path, doc)`
 lists what a given target would lose, and the app shows that list before
-writing. `io::ase::parse` keeps every frame, cel, tag, tileset and user
+writing. Off-canvas pixels survive both layered formats: a PSD layer
+record's rect and an Aseprite cel's position may reach past the canvas, so
+qsketch writes each layer's full extent there (a PSD mask that reaches off
+the canvas gets its own rect with default color 0) and reads it back
+outside the canvas. Only the flat image exports are canvas-sized.
+`io::ase::parse` keeps every frame, cel, tag, tileset and user
 data chunk of a sprite in `AseSprite`; `AseSprite::to_doc()` builds the
 document with all of its frames (an animated tilemap layer becomes a pixel
 layer, since qsketch tilemaps are static). `io::anim_io` writes animated
