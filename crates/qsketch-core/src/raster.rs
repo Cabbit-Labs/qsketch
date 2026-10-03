@@ -5,6 +5,12 @@
 //! behind `Arc`, so cloning a raster is O(tiles) pointer copies and mutation
 //! goes through `Arc::make_mut` (copy-on-write). This is what makes document
 //! snapshots for undo essentially free.
+//!
+//! Pixels can also live *outside* the canvas: a layer moved partly off the
+//! edge keeps what went over in `outside` tiles (signed tile coordinates on
+//! the same 64 px lattice) instead of losing it. Painting and compositing
+//! only ever see the canvas grid; moves, canvas resizes and flips carry the
+//! outside pixels along (see the `*_any` / `*_keep` methods).
 
 use std::sync::Arc;
 
@@ -72,6 +78,10 @@ pub fn tile_rect(tx: u32, ty: u32) -> IRect {
     IRect::new((tx as usize * TILE) as i32, (ty as usize * TILE) as i32, TILE as i32, TILE as i32)
 }
 
+/// Off-canvas tiles keyed by signed tile coordinates. They only ever hold
+/// pixels that lie outside the canvas rect.
+type Outside = std::collections::BTreeMap<(i32, i32), Arc<Tile>>;
+
 #[derive(Clone)]
 pub struct Raster {
     width: u32,
@@ -79,13 +89,14 @@ pub struct Raster {
     tiles_x: u32,
     tiles_y: u32,
     tiles: Vec<Option<Arc<Tile>>>,
+    outside: Option<Arc<Outside>>,
 }
 
 impl Raster {
     pub fn new(width: u32, height: u32) -> Self {
         let tiles_x = width.div_ceil(TILE as u32);
         let tiles_y = height.div_ceil(TILE as u32);
-        Self { width, height, tiles_x, tiles_y, tiles: vec![None; (tiles_x * tiles_y) as usize] }
+        Self { width, height, tiles_x, tiles_y, tiles: vec![None; (tiles_x * tiles_y) as usize], outside: None }
     }
 
     pub fn new_filled(width: u32, height: u32, c: Rgba8) -> Self {
@@ -293,8 +304,10 @@ impl Raster {
         }
     }
 
+    /// Empty the layer, including any pixels kept outside the canvas.
     pub fn clear(&mut self) {
         self.tiles.fill(None);
+        self.outside = None;
     }
 
     /// Drop tiles that became fully transparent (e.g. after erasing).
@@ -306,6 +319,14 @@ impl Raster {
                 }
             }
         }
+        if let Some(o) = &mut self.outside {
+            if o.values().any(|t| t.is_empty()) {
+                Arc::make_mut(o).retain(|_, t| !t.is_empty());
+            }
+            if o.is_empty() {
+                self.outside = None;
+            }
+        }
     }
 
     /// True if no tile holds any opaque pixel.
@@ -313,26 +334,13 @@ impl Raster {
         self.tiles.iter().all(|t| t.as_ref().is_none_or(|t| t.is_empty()))
     }
 
-    /// Bounding box of non-transparent pixels, if any.
+    /// Bounding box of non-transparent pixels on the canvas, if any.
     pub fn bounds(&self) -> Option<IRect> {
         let mut acc = IRect::EMPTY;
         for ty in 0..self.tiles_y {
             for tx in 0..self.tiles_x {
                 let Some(t) = self.tile(tx, ty) else { continue };
-                let tr = tile_rect(tx, ty);
-                let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
-                for ly in 0..TILE {
-                    for lx in 0..TILE {
-                        if t.px[(ly * TILE + lx) * 4 + 3] != 0 {
-                            x0 = x0.min(lx as i32);
-                            x1 = x1.max(lx as i32);
-                            y0 = y0.min(ly as i32);
-                            y1 = y1.max(ly as i32);
-                        }
-                    }
-                }
-                if x0 <= x1 {
-                    let r = IRect::from_corners(tr.x + x0, tr.y + y0, tr.x + x1, tr.y + y1);
+                if let Some(r) = tile_content(t, tx as i32, ty as i32) {
                     acc = acc.union(&r);
                 }
             }
@@ -345,14 +353,15 @@ impl Raster {
         }
     }
 
-    /// Copy of the pixels in `rect` (clamped), as a new raster of the rect's size
-    /// positioned at its own origin. Pixels outside the source are transparent.
+    /// Copy of the pixels in `rect`, as a new raster of the rect's size
+    /// positioned at its own origin. Off-canvas pixels count; places with no
+    /// pixels are transparent.
     pub fn crop(&self, rect: IRect) -> Raster {
         let mut out = Raster::new(rect.w.max(0) as u32, rect.h.max(0) as u32);
-        let src = rect.intersect(&self.rect());
+        let src = if self.outside.is_some() { rect } else { rect.intersect(&self.rect()) };
         for y in src.y..src.bottom() {
             for x in src.x..src.right() {
-                let c = self.get_pixel(x, y);
+                let c = self.get_pixel_any(x, y);
                 if c.a != 0 {
                     out.set_pixel(x - rect.x, y - rect.y, c);
                 }
@@ -407,6 +416,7 @@ impl Raster {
                 }
             }
         }
+        self.for_each_outside(|x, y, c| out.set_pixel_any(w - 1 - x, y, c));
         out
     }
 
@@ -421,6 +431,7 @@ impl Raster {
                 }
             }
         }
+        self.for_each_outside(|x, y, c| out.set_pixel_any(x, h - 1 - y, c));
         out
     }
 
@@ -439,14 +450,14 @@ impl Raster {
                 if c.a == 0 {
                     continue;
                 }
-                let (nx, ny) = match times {
-                    1 => (h - 1 - y, x),
-                    2 => (w - 1 - x, h - 1 - y),
-                    _ => (y, w - 1 - x),
-                };
+                let (nx, ny) = rotate_xy(x, y, w, h, times);
                 out.set_pixel(nx, ny, c);
             }
         }
+        self.for_each_outside(|x, y, c| {
+            let (nx, ny) = rotate_xy(x, y, w, h, times);
+            out.set_pixel_any(nx, ny, c);
+        });
         out
     }
 
@@ -505,12 +516,228 @@ impl Raster {
         Raster::from_rgba(new_w, new_h, &dst)
     }
 
-    /// Change canvas size, placing the old content at `(ox, oy)` in the new raster.
+    /// Change canvas size, placing the old content at `(ox, oy)` in the new
+    /// raster. Nothing is lost: what falls off the new canvas (and what was
+    /// already off the old one) is kept outside it.
     pub fn with_canvas_size(&self, new_w: u32, new_h: u32, ox: i32, oy: i32) -> Raster {
         let mut out = Raster::new(new_w, new_h);
-        out.blit(self, ox, oy, false);
+        self.place_into(&mut out, ox, oy);
         out
     }
+
+    /// The same content shifted by `(dx, dy)`, keeping whatever crosses the
+    /// canvas edge outside it (and bringing outside pixels back in).
+    pub fn shifted_keep(&self, dx: i32, dy: i32) -> Raster {
+        let mut out = Raster::new(self.width, self.height);
+        self.place_into(&mut out, dx, dy);
+        out
+    }
+
+    /// Copy every pixel (on and off the canvas) into the empty raster `out`,
+    /// offset by `(dx, dy)`, a row segment at a time.
+    fn place_into(&self, out: &mut Raster, dx: i32, dy: i32) {
+        let (w, h) = (self.width as i32, self.height as i32);
+        let mut copy = |t: &Tile, tx: i32, ty: i32, on_canvas: bool| {
+            let (x0, y0) = (tx * TILE as i32, ty * TILE as i32);
+            // Grid tiles may carry stray pixels in their padding past the
+            // canvas edge; only the canvas part of them counts.
+            let (lx1, ly1) = if on_canvas {
+                ((w - x0).clamp(0, TILE as i32) as usize, (h - y0).clamp(0, TILE as i32) as usize)
+            } else {
+                (TILE, TILE)
+            };
+            // Only the non-transparent runs: an outside tile can share its
+            // key with an edge grid tile, and its empty cells there must not
+            // overwrite the grid's pixels.
+            for ly in 0..ly1 {
+                let row = &t.px[ly * TILE * 4..][..lx1 * 4];
+                let mut lx = 0;
+                while lx < lx1 {
+                    if row[lx * 4 + 3] == 0 {
+                        lx += 1;
+                        continue;
+                    }
+                    let start = lx;
+                    while lx < lx1 && row[lx * 4 + 3] != 0 {
+                        lx += 1;
+                    }
+                    out.put_row(x0 + start as i32 + dx, y0 + ly as i32 + dy, &row[start * 4..lx * 4]);
+                }
+            }
+        };
+        for ty in 0..self.tiles_y {
+            for tx in 0..self.tiles_x {
+                if let Some(t) = self.tile(tx, ty) {
+                    copy(t, tx as i32, ty as i32, true);
+                }
+            }
+        }
+        if let Some(o) = &self.outside {
+            for (&(tx, ty), t) in o.iter() {
+                copy(t, tx, ty, false);
+            }
+        }
+        out.prune_empty_tiles();
+    }
+
+    /// Write straight RGBA pixels starting at `(x, y)` along one row,
+    /// splitting at tile and canvas edges: canvas pixels land in the grid,
+    /// the rest outside. Transparent runs don't allocate tiles.
+    fn put_row(&mut self, x: i32, y: i32, px: &[u8]) {
+        let (w, h) = (self.width as i32, self.height as i32);
+        let in_row = y >= 0 && y < h;
+        let n = (px.len() / 4) as i32;
+        let (ty, ly) = (y.div_euclid(TILE as i32), y.rem_euclid(TILE as i32) as usize);
+        let mut i = 0;
+        while i < n {
+            let cx = x + i;
+            let mut end = (cx.div_euclid(TILE as i32) + 1) * TILE as i32;
+            if in_row {
+                if cx < 0 {
+                    end = end.min(0);
+                } else if cx < w {
+                    end = end.min(w);
+                }
+            }
+            let seg = (end - cx).min(n - i);
+            let bytes = &px[i as usize * 4..(i + seg) as usize * 4];
+            let lx = cx.rem_euclid(TILE as i32) as usize;
+            let tx = cx.div_euclid(TILE as i32);
+            let clear = bytes.chunks_exact(4).all(|p| p[3] == 0);
+            let tile: Option<&mut Tile> = if in_row && cx >= 0 && cx < w {
+                if clear && self.tile(tx as u32, ty as u32).is_none() {
+                    None
+                } else {
+                    Some(self.tile_mut(tx as u32, ty as u32))
+                }
+            } else {
+                let o = Arc::make_mut(self.outside.get_or_insert_with(Default::default));
+                if clear && !o.contains_key(&(tx, ty)) {
+                    None
+                } else {
+                    Some(Arc::make_mut(o.entry((tx, ty)).or_insert_with(Tile::zeroed)))
+                }
+            };
+            if let Some(t) = tile {
+                t.px[(ly * TILE + lx) * 4..][..bytes.len()].copy_from_slice(bytes);
+            }
+            i += seg;
+        }
+        if self.outside.as_ref().is_some_and(|o| o.is_empty()) {
+            self.outside = None;
+        }
+    }
+
+    /// The pixel at `(x, y)`, on or off the canvas.
+    pub fn get_pixel_any(&self, x: i32, y: i32) -> Rgba8 {
+        if x >= 0 && y >= 0 && x < self.width as i32 && y < self.height as i32 {
+            return self.get_pixel(x, y);
+        }
+        let Some(o) = &self.outside else { return Rgba8::TRANSPARENT };
+        let k = (x.div_euclid(TILE as i32), y.div_euclid(TILE as i32));
+        match o.get(&k) {
+            Some(t) => t.get(x.rem_euclid(TILE as i32) as usize, y.rem_euclid(TILE as i32) as usize),
+            None => Rgba8::TRANSPARENT,
+        }
+    }
+
+    /// Set the pixel at `(x, y)`, keeping it outside the canvas if it lies
+    /// there (plain `set_pixel` clips it away).
+    pub fn set_pixel_any(&mut self, x: i32, y: i32, c: Rgba8) {
+        self.put_row(x, y, &c.to_array());
+    }
+
+    /// Whether any pixels are kept outside the canvas.
+    pub fn has_outside(&self) -> bool {
+        self.outside.as_ref().is_some_and(|o| o.values().any(|t| !t.is_empty()))
+    }
+
+    /// Forget the pixels kept outside the canvas.
+    pub fn clear_outside(&mut self) {
+        self.outside = None;
+    }
+
+    /// Bounding box of the pixels kept outside the canvas, if any.
+    pub fn outside_bounds(&self) -> Option<IRect> {
+        let o = self.outside.as_ref()?;
+        let r = o.iter().filter_map(|(&(tx, ty), t)| tile_content(t, tx, ty)).fold(IRect::EMPTY, |a, r| a.union(&r));
+        (!r.is_empty()).then_some(r)
+    }
+
+    /// Bounding box of all non-transparent pixels, on and off the canvas.
+    pub fn full_bounds(&self) -> Option<IRect> {
+        match (self.bounds(), self.outside_bounds()) {
+            (Some(a), Some(b)) => Some(a.union(&b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// Visit every non-transparent pixel kept outside the canvas.
+    pub fn for_each_outside(&self, mut f: impl FnMut(i32, i32, Rgba8)) {
+        let Some(o) = &self.outside else { return };
+        for (&(tx, ty), t) in o.iter() {
+            for ly in 0..TILE {
+                for lx in 0..TILE {
+                    let c = t.get(lx, ly);
+                    if c.a != 0 {
+                        f(tx * TILE as i32 + lx as i32, ty * TILE as i32 + ly as i32, c);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The outside pixels as one picture covering their bounding box
+    /// (canvas pixels inside that box left transparent), for saving.
+    pub fn outside_image(&self) -> Option<(IRect, Raster)> {
+        let r = self.outside_bounds()?;
+        let mut img = Raster::new(r.w as u32, r.h as u32);
+        self.for_each_outside(|x, y, c| img.set_pixel(x - r.x, y - r.y, c));
+        Some((r, img))
+    }
+
+    /// Put back pixels saved by [`Raster::outside_image`] with its top-left
+    /// at `(x, y)`. Only the ones that fall outside the canvas are kept.
+    pub fn restore_outside(&mut self, x: i32, y: i32, img: &Raster) {
+        let (w, h) = (self.width as i32, self.height as i32);
+        for iy in 0..img.height() as i32 {
+            for ix in 0..img.width() as i32 {
+                let c = img.get_pixel(ix, iy);
+                let (px, py) = (x + ix, y + iy);
+                if c.a != 0 && !(px >= 0 && py >= 0 && px < w && py < h) {
+                    self.set_pixel_any(px, py, c);
+                }
+            }
+        }
+    }
+}
+
+/// Where a 90°-step clockwise rotation (`times` of them) of a `w`×`h`
+/// canvas sends `(x, y)`.
+fn rotate_xy(x: i32, y: i32, w: i32, h: i32, times: u32) -> (i32, i32) {
+    match times % 4 {
+        0 => (x, y),
+        1 => (h - 1 - y, x),
+        2 => (w - 1 - x, h - 1 - y),
+        _ => (y, w - 1 - x),
+    }
+}
+
+/// Document-space bounding box of tile `(tx, ty)`'s non-transparent pixels.
+fn tile_content(t: &Tile, tx: i32, ty: i32) -> Option<IRect> {
+    let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for ly in 0..TILE {
+        for lx in 0..TILE {
+            if t.px[(ly * TILE + lx) * 4 + 3] != 0 {
+                x0 = x0.min(lx as i32);
+                x1 = x1.max(lx as i32);
+                y0 = y0.min(ly as i32);
+                y1 = y1.max(ly as i32);
+            }
+        }
+    }
+    let (ox, oy) = (tx * TILE as i32, ty * TILE as i32);
+    (x0 <= x1).then(|| IRect::from_corners(ox + x0, oy + y0, ox + x1, oy + y1))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -615,5 +842,28 @@ mod tests {
         let big = r.resized(8, 6, ResizeFilter::Nearest);
         assert_eq!(big.get_pixel(1, 1), Rgba8::WHITE);
         assert_eq!(big.get_pixel(2, 2), Rgba8::TRANSPARENT);
+    }
+
+    #[test]
+    fn shifted_keep_round_trips_off_the_canvas() {
+        // new_filled paints the padding of the edge tiles too: it must not
+        // leak in as content.
+        let r = Raster::new_filled(100, 70, Rgba8::rgb(9, 8, 7));
+        for &(dx, dy) in &[(30, -10), (-130, 5), (64, 64), (-1, 69)] {
+            let moved = r.shifted_keep(dx, dy);
+            assert!(moved.has_outside());
+            assert_eq!(moved.get_pixel_any(dx, dy), Rgba8::rgb(9, 8, 7));
+            assert_eq!(moved.get_pixel_any(dx + 100, dy), Rgba8::TRANSPARENT, "padding stays out");
+            assert_eq!(moved.full_bounds(), Some(IRect::new(dx, dy, 100, 70)));
+            let back = moved.shifted_keep(-dx, -dy);
+            assert!(!back.has_outside());
+            assert_eq!(back.to_rgba(), r.to_rgba());
+        }
+        // Flipping the canvas mirrors outside pixels too.
+        let mut a = Raster::new(10, 10);
+        a.set_pixel_any(-3, 2, Rgba8::WHITE);
+        assert_eq!(a.get_pixel(0, 2), Rgba8::TRANSPARENT);
+        assert_eq!(a.flipped_h().get_pixel_any(12, 2), Rgba8::WHITE);
+        assert_eq!(a.with_canvas_size(13, 10, 3, 0).get_pixel(0, 2), Rgba8::WHITE);
     }
 }

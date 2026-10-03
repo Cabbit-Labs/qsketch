@@ -2,6 +2,26 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.62.0 — 2026-10-03
+
+- Move groups and several layers at once. Ctrl+drag on the canvas (with any
+  tool) or the Move tool now moves every layer selected in the Layers panel
+  together, and a selected group moves everything inside it, hidden layers
+  included. Masks, shape layers and text layers come along (a text layer
+  keeps its position for later edits). Locked layers, layers in a locked
+  group, and tilemaps stay put, and a note says so. With a pixel selection,
+  the selected pixels move on each selected layer. Arrow-key nudges work
+  the same way. One drag is one undo step.
+- Layers keep pixels outside the canvas. Dragging a layer partly off the
+  edge no longer crops it: what went over is kept and comes back when you
+  drag it back in. That includes layer masks. Canvas Size keeps what falls
+  outside the new canvas instead of cutting it, and flipping or rotating
+  the canvas carries off-canvas pixels along. Selected pixels moved past
+  the edge are kept the same way. .qsk files
+  store it; saving as PSD, Aseprite or an image keeps only the canvas, and
+  Save As warns when that would drop anything. Crop still cuts away what is
+  outside the new canvas.
+
 ## 0.61.3 — 2026-10-03
 
 - Transform and Warp handles work with the Zoom, Hand and Rotate View

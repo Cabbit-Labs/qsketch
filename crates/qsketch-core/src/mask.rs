@@ -11,6 +11,17 @@ pub struct Mask {
     data: Vec<u8>,
     /// Bounding box of non-zero coverage (empty rect if none).
     bounds: IRect,
+    /// Layer masks only: coverage of a layer moved partly off the canvas,
+    /// kept so it comes back when the layer does (see [`Mask::shifted_keep`]).
+    outside: Option<std::sync::Arc<Outside>>,
+}
+
+/// Off-canvas coverage, dense over `rect`; cells that fall on the canvas
+/// stay 0 (the canvas data owns those).
+#[derive(Clone)]
+struct Outside {
+    rect: IRect,
+    data: Vec<u8>,
 }
 
 /// How a new selection combines with the existing one.
@@ -25,7 +36,7 @@ pub enum SelectionOp {
 
 impl Mask {
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height, data: vec![0; (width * height) as usize], bounds: IRect::EMPTY }
+        Self { width, height, data: vec![0; (width * height) as usize], bounds: IRect::EMPTY, outside: None }
     }
 
     pub fn full(width: u32, height: u32) -> Self {
@@ -34,6 +45,7 @@ impl Mask {
             height,
             data: vec![255; (width * height) as usize],
             bounds: IRect::new(0, 0, width as i32, height as i32),
+            outside: None,
         }
     }
 
@@ -362,6 +374,10 @@ impl Mask {
 
     /// Mirror the whole mask left-right.
     pub fn flipped_h(&self) -> Self {
+        let w = self.width as i32;
+        if self.outside.is_some() {
+            return self.remap_keep(self.width, self.height, |x, y| (w - 1 - x, y));
+        }
         let mut m = Self::new(self.width, self.height);
         let w = self.width as i32;
         for y in 0..self.height as i32 {
@@ -375,6 +391,10 @@ impl Mask {
 
     /// Mirror the whole mask top-bottom.
     pub fn flipped_v(&self) -> Self {
+        let h = self.height as i32;
+        if self.outside.is_some() {
+            return self.remap_keep(self.width, self.height, |x, y| (x, h - 1 - y));
+        }
         let mut m = Self::new(self.width, self.height);
         let h = self.height as i32;
         for y in 0..h {
@@ -394,6 +414,13 @@ impl Mask {
         }
         let (w, h) = (self.width as i32, self.height as i32);
         let (nw, nh) = if times % 2 == 1 { (h, w) } else { (w, h) };
+        if self.outside.is_some() {
+            return self.remap_keep(nw as u32, nh as u32, |x, y| match times {
+                1 => (h - 1 - y, x),
+                2 => (w - 1 - x, h - 1 - y),
+                _ => (y, w - 1 - x),
+            });
+        }
         let mut m = Self::new(nw as u32, nh as u32);
         for y in 0..h {
             for x in 0..w {
@@ -452,6 +479,167 @@ impl Mask {
             }
         }
         m.recompute_bounds();
+        m
+    }
+
+    /// Layer masks: [`Mask::with_canvas_size`] that keeps what falls off the
+    /// new canvas (and what was already off the old one) outside it.
+    pub fn with_canvas_size_keep(&self, new_w: u32, new_h: u32, ox: i32, oy: i32) -> Self {
+        self.remap_keep(new_w, new_h, |x, y| (x + ox, y + oy))
+    }
+
+    /// Layer masks: the same coverage moved by `(dx, dy)`, keeping what
+    /// crosses the canvas edge outside it.
+    pub fn shifted_keep(&self, dx: i32, dy: i32) -> Self {
+        let (w, h) = (self.width as i32, self.height as i32);
+        let canvas = self.rect();
+        let mut m = Self::new(self.width, self.height);
+        // Canvas to canvas: whole rows at a time.
+        let (x0, x1) = (dx.max(0), (w + dx).min(w));
+        if x0 < x1 {
+            for y in dy.max(0)..(h + dy).min(h) {
+                let (d, s) = ((y * w + x0) as usize, ((y - dy) * w + x0 - dx) as usize);
+                let n = (x1 - x0) as usize;
+                m.data[d..d + n].copy_from_slice(&self.data[s..s + n]);
+            }
+        }
+        // Off-canvas cells coming back on, and everything that ends up off:
+        // only the strips that cross the edge, plus the outside block.
+        let mut sources = minus(self.bounds, canvas.translate(-dx, -dy));
+        if let Some(o) = &self.outside {
+            sources.push(o.rect);
+        }
+        let each = |visit: &mut dyn FnMut(i32, i32, u8)| {
+            for r in &sources {
+                for y in r.y..r.bottom() {
+                    for x in r.x..r.right() {
+                        let v = self.get_any(x, y);
+                        if v != 0 {
+                            visit(x + dx, y + dy, v);
+                        }
+                    }
+                }
+            }
+        };
+        let (mut ox0, mut oy0, mut ox1, mut oy1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+        each(&mut |x, y, v| {
+            if canvas.contains(x, y) {
+                m.data[(y * w + x) as usize] = v;
+            } else {
+                (ox0, oy0, ox1, oy1) = (ox0.min(x), oy0.min(y), ox1.max(x), oy1.max(y));
+            }
+        });
+        if ox0 <= ox1 {
+            let rect = IRect::from_corners(ox0, oy0, ox1, oy1);
+            let mut data = vec![0u8; (rect.w * rect.h) as usize];
+            each(&mut |x, y, v| {
+                if !canvas.contains(x, y) {
+                    data[((y - rect.y) * rect.w + (x - rect.x)) as usize] = v;
+                }
+            });
+            m.outside = Some(std::sync::Arc::new(Outside { rect, data }));
+        }
+        m.recompute_bounds();
+        m
+    }
+
+    /// Coverage at `(x, y)`, on or off the canvas.
+    pub fn get_any(&self, x: i32, y: i32) -> u8 {
+        if x >= 0 && y >= 0 && x < self.width as i32 && y < self.height as i32 {
+            return self.get(x, y);
+        }
+        match &self.outside {
+            Some(o) if o.rect.contains(x, y) => o.data[((y - o.rect.y) * o.rect.w + (x - o.rect.x)) as usize],
+            _ => 0,
+        }
+    }
+
+    /// Area holding coverage, on and off the canvas.
+    pub fn extent(&self) -> IRect {
+        match &self.outside {
+            Some(o) => self.bounds.union(&o.rect),
+            None => self.bounds,
+        }
+    }
+
+    /// Whether coverage is kept outside the canvas.
+    pub fn has_outside(&self) -> bool {
+        self.outside.is_some()
+    }
+
+    /// The off-canvas coverage as a grayscale block and where it sits, for
+    /// saving.
+    pub fn outside_gray(&self) -> Option<(IRect, &[u8])> {
+        self.outside.as_ref().map(|o| (o.rect, o.data.as_slice()))
+    }
+
+    /// Put back coverage saved by [`Mask::outside_gray`].
+    pub fn restore_outside(&mut self, rect: IRect, data: Vec<u8>) {
+        if data.len() != (rect.w.max(0) * rect.h.max(0)) as usize {
+            return;
+        }
+        let mut o = Outside { rect, data };
+        let canvas = self.rect();
+        for y in rect.y..rect.bottom() {
+            for x in rect.x..rect.right() {
+                if canvas.contains(x, y) {
+                    o.data[((y - rect.y) * rect.w + (x - rect.x)) as usize] = 0;
+                }
+            }
+        }
+        self.outside = o.data.iter().any(|&v| v != 0).then(|| std::sync::Arc::new(o));
+    }
+
+    /// Rebuild on a `new_w`×`new_h` canvas with every non-zero value (on and
+    /// off the old canvas) moved by `f`; what lands off the new canvas is
+    /// kept outside it.
+    fn remap_keep(&self, new_w: u32, new_h: u32, f: impl Fn(i32, i32) -> (i32, i32)) -> Self {
+        // Every non-zero value, mapped. Run twice: once to size the
+        // off-canvas block, once to fill it.
+        let each = |visit: &mut dyn FnMut(i32, i32, u8)| {
+            let b = self.bounds;
+            for y in b.y..b.bottom() {
+                for x in b.x..b.right() {
+                    let v = self.get(x, y);
+                    if v != 0 {
+                        let (nx, ny) = f(x, y);
+                        visit(nx, ny, v);
+                    }
+                }
+            }
+            if let Some(o) = &self.outside {
+                for y in o.rect.y..o.rect.bottom() {
+                    for x in o.rect.x..o.rect.right() {
+                        let v = o.data[((y - o.rect.y) * o.rect.w + (x - o.rect.x)) as usize];
+                        if v != 0 {
+                            let (nx, ny) = f(x, y);
+                            visit(nx, ny, v);
+                        }
+                    }
+                }
+            }
+        };
+        let mut m = Self::new(new_w, new_h);
+        let canvas = m.rect();
+        let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+        each(&mut |x, y, v| {
+            if canvas.contains(x, y) {
+                m.data[(y as u32 * new_w + x as u32) as usize] = v;
+            } else {
+                (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+            }
+        });
+        m.recompute_bounds();
+        if x0 <= x1 {
+            let rect = IRect::from_corners(x0, y0, x1, y1);
+            let mut data = vec![0u8; (rect.w * rect.h) as usize];
+            each(&mut |x, y, v| {
+                if !canvas.contains(x, y) {
+                    data[((y - rect.y) * rect.w + (x - rect.x)) as usize] = v;
+                }
+            });
+            m.outside = Some(std::sync::Arc::new(Outside { rect, data }));
+        }
         m
     }
 
@@ -562,7 +750,7 @@ impl Mask {
     /// anti-aliased edges (GIMP's Select ▸ Sharpen).
     pub fn sharpened(&self) -> Mask {
         let data = self.data.iter().map(|&v| if v >= 128 { 255 } else { 0 }).collect();
-        let mut m = Mask { width: self.width, height: self.height, data, bounds: IRect::EMPTY };
+        let mut m = Mask { width: self.width, height: self.height, data, bounds: IRect::EMPTY, outside: None };
         m.recompute_bounds();
         m
     }
@@ -707,10 +895,25 @@ impl Mask {
 
     pub fn from_gray(width: u32, height: u32, data: Vec<u8>) -> Self {
         assert_eq!(data.len(), (width * height) as usize);
-        let mut m = Self { width, height, data, bounds: IRect::EMPTY };
+        let mut m = Self { width, height, data, bounds: IRect::EMPTY, outside: None };
         m.recompute_bounds();
         m
     }
+}
+
+/// `r` with `c` cut out, as up to four rects.
+fn minus(r: IRect, c: IRect) -> Vec<IRect> {
+    let i = r.intersect(&c);
+    if i.is_empty() {
+        return if r.is_empty() { Vec::new() } else { vec![r] };
+    }
+    let parts = [
+        IRect::from_min_max(r.x, r.y, r.right(), i.y),
+        IRect::from_min_max(r.x, i.bottom(), r.right(), r.bottom()),
+        IRect::from_min_max(r.x, i.y, i.x, i.bottom()),
+        IRect::from_min_max(i.right(), i.y, r.right(), i.bottom()),
+    ];
+    parts.into_iter().filter(|p| !p.is_empty()).collect()
 }
 
 /// Exact squared Euclidean distance transform, in place
@@ -934,5 +1137,32 @@ mod tests {
         let a = Mask::from_rect(10, 10, IRect::new(2, 2, 3, 3));
         // 3x3 square: 12 unit edges
         assert_eq!(a.outline_segments().len(), 12);
+    }
+
+    #[test]
+    fn shifted_keep_matches_the_generic_remap_and_round_trips() {
+        let mut m = Mask::new(20, 13);
+        let mut seed = 7u32;
+        for y in 0..13 {
+            for x in 0..20 {
+                seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                if seed % 3 == 0 {
+                    m.set(x, y, (seed >> 16) as u8 | 1);
+                }
+            }
+        }
+        m.recompute_bounds();
+        for &(dx, dy) in &[(0, 0), (3, -2), (-25, 4), (7, 15), (-1, -1)] {
+            let fast = m.shifted_keep(dx, dy);
+            let slow = m.remap_keep(20, 13, |x, y| (x + dx, y + dy));
+            for y in -30..45 {
+                for x in -40..60 {
+                    assert_eq!(fast.get_any(x, y), slow.get_any(x, y), "({dx},{dy}) at ({x},{y})");
+                }
+            }
+            let back = fast.shifted_keep(-dx, -dy);
+            assert!(!back.has_outside());
+            assert_eq!(back.data(), m.data());
+        }
     }
 }

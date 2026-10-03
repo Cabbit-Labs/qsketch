@@ -13,6 +13,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::document::{DocMeta, DocState, DocStats, Guide, LoadedMeta};
+use crate::geom::IRect;
 use crate::layer::{Layer, LayerProps};
 use crate::mask::Mask;
 use crate::palette::Palette;
@@ -78,6 +79,18 @@ struct CelEntry {
     opacity: f32,
     #[serde(default, skip_serializing_if = "is_zero_i16")]
     z_index: i16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    outside: Option<OutsideEntry>,
+}
+
+/// Pixels a layer keeps outside the canvas (0.62+): a PNG of their bounding
+/// box, with its top-left at `(x, y)` in canvas coordinates. Older versions
+/// ignore it and open the on-canvas part.
+#[derive(Serialize, Deserialize)]
+struct OutsideEntry {
+    file: String,
+    x: i32,
+    y: i32,
 }
 
 fn one() -> f32 {
@@ -123,6 +136,38 @@ struct LayerEntry {
     /// picture, so older versions still open the first frame.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     cels: Vec<CelEntry>,
+    /// Frame 0's off-canvas pixels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    outside: Option<OutsideEntry>,
+    /// The mask's off-canvas coverage (grayscale PNG).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mask_outside: Option<OutsideEntry>,
+}
+
+/// Store `r`'s off-canvas pixels as `name`, if it has any.
+fn write_outside<W: Write + std::io::Seek>(
+    zip: &mut ZipWriter<W>,
+    opts: SimpleFileOptions,
+    name: String,
+    r: &Raster,
+) -> anyhow::Result<Option<OutsideEntry>> {
+    let Some((rect, img)) = r.outside_image() else { return Ok(None) };
+    zip.start_file(&name, opts)?;
+    zip.write_all(&super::image_io::encode_png(img.width(), img.height(), &img.to_rgba())?)?;
+    Ok(Some(OutsideEntry { file: name, x: rect.x, y: rect.y }))
+}
+
+/// Put saved off-canvas pixels back on `r` (a missing or bad entry is skipped).
+fn read_outside(zip: &mut ZipArchive<BufReader<File>>, e: &OutsideEntry, r: &mut Raster) {
+    let mut bytes = Vec::new();
+    let Ok(mut f) = zip.by_name(&e.file) else { return };
+    if f.read_to_end(&mut bytes).is_err() {
+        return;
+    }
+    drop(f);
+    if let Ok(img) = super::image_io::decode_bytes(&bytes) {
+        r.restore_outside(e.x, e.y, &img);
+    }
 }
 
 fn gray_png(w: u32, h: u32, gray: &[u8]) -> anyhow::Result<Vec<u8>> {
@@ -170,28 +215,39 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
             let mut cels = Vec::new();
             if nframes > 1 && layer.animated() && layer.cels.len() == nframes {
                 for (f, c) in layer.cels.iter().enumerate() {
-                    let mut entry = CelEntry { file: None, link: c.link, opacity: c.opacity, z_index: c.z_index };
-                    if c.link.is_none() && f > 0 && !c.image.is_empty() {
+                    let mut entry =
+                        CelEntry { file: None, link: c.link, opacity: c.opacity, z_index: c.z_index, outside: None };
+                    if c.link.is_none() && f > 0 && (!c.image.is_empty() || c.image.has_outside()) {
                         let name = format!("layers/{i:03}/f{f:04}.png");
                         zip.start_file(&name, stored)?;
                         zip.write_all(&super::image_io::encode_png(doc.width, doc.height, &c.image.to_rgba())?)?;
                         entry.file = Some(name);
+                        entry.outside =
+                            write_outside(&mut zip, stored, format!("layers/{i:03}/f{f:04}.outside.png"), &c.image)?;
                     } else if c.link.is_none() && f == 0 {
                         entry.file = Some(file.clone());
                     }
                     cels.push(entry);
                 }
             }
+            let outside = write_outside(&mut zip, stored, format!("layers/{i:03}.outside.png"), &first)?;
+            let mut mask_outside = None;
             let mask = match &layer.mask {
                 Some(m) => {
                     let name = format!("layers/{i:03}.mask.png");
                     zip.start_file(&name, stored)?;
                     zip.write_all(&gray_png(doc.width, doc.height, m.to_gray())?)?;
+                    if let Some((r, gray)) = m.outside_gray() {
+                        let name = format!("layers/{i:03}.mask.outside.png");
+                        zip.start_file(&name, stored)?;
+                        zip.write_all(&gray_png(r.w as u32, r.h as u32, gray)?)?;
+                        mask_outside = Some(OutsideEntry { file: name, x: r.x, y: r.y });
+                    }
                     Some(name)
                 }
                 None => None,
             };
-            entries.push(LayerEntry { props: layer.props.clone(), file, mask, cels });
+            entries.push(LayerEntry { props: layer.props.clone(), file, mask, cels, outside, mask_outside });
         }
         let selection = match &doc.selection {
             Some(m) if !m.is_empty() => {
@@ -297,8 +353,24 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
         Ok(if raster.width() != w || raster.height() != h { raster.with_canvas_size(w, h, 0, 0) } else { raster })
     };
     for entry in manifest.layers {
-        let raster = read_raster(&mut zip, &entry.file)?;
-        let mask = entry.mask.as_deref().and_then(|name| read_gray(&mut zip, name, w, h)).map(Arc::new);
+        let mut raster = read_raster(&mut zip, &entry.file)?;
+        if let Some(o) = &entry.outside {
+            read_outside(&mut zip, o, &mut raster);
+        }
+        let mut mask = entry.mask.as_deref().and_then(|name| read_gray(&mut zip, name, w, h));
+        if let (Some(m), Some(o)) = (mask.as_mut(), &entry.mask_outside) {
+            let mut bytes = Vec::new();
+            if let Ok(mut f) = zip.by_name(&o.file) {
+                if f.read_to_end(&mut bytes).is_ok() {
+                    if let Ok(img) = image::load_from_memory(&bytes) {
+                        let img = img.to_luma8();
+                        let r = IRect::new(o.x, o.y, img.width() as i32, img.height() as i32);
+                        m.restore_outside(r, img.into_raw());
+                    }
+                }
+            }
+        }
+        let mask = mask.map(Arc::new);
         let mut cels = Vec::new();
         if nframes > 1 && entry.props.kind == crate::layer::LayerKind::Raster {
             for f in 0..nframes {
@@ -307,7 +379,13 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
                     Some(c) => {
                         let image = match (f, &c.file) {
                             (0, _) => raster.clone(),
-                            (_, Some(name)) => read_raster(&mut zip, name).unwrap_or_else(|_| Raster::new(w, h)),
+                            (_, Some(name)) => {
+                                let mut r = read_raster(&mut zip, name).unwrap_or_else(|_| Raster::new(w, h));
+                                if let Some(o) = &c.outside {
+                                    read_outside(&mut zip, o, &mut r);
+                                }
+                                r
+                            }
                             (_, None) => Raster::new(w, h),
                         };
                         crate::anim::Cel { image, link: None, opacity: c.opacity, z_index: c.z_index }
@@ -521,5 +599,31 @@ mod tests {
         assert_eq!(back.members(gi), 1..2);
         assert_eq!(back.layers[1].props.parent, Some(g));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn offcanvas_pixels_and_mask_survive_a_save() {
+        use crate::color::Rgba8;
+        let mut doc = DocState::new(8, 8, None);
+        doc.layers[0].raster.set_pixel(1, 1, Rgba8::WHITE);
+        let mut m = Mask::full(8, 8);
+        m.set(0, 0, 77);
+        doc.layers[0].mask = Some(Arc::new(m));
+        // Push it half off the top-left corner.
+        let rest = crate::moving::begin(&doc, &[0]);
+        crate::moving::apply(&mut doc, &rest, -3, -2);
+        assert!(doc.layers[0].raster.has_outside());
+        let dir = std::env::temp_dir().join(format!("qsk-outside-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("o.qsk");
+        save(&path, &doc).unwrap();
+        let mut back = load(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(back.layers[0].raster.get_pixel_any(-2, -1), Rgba8::WHITE);
+        assert_eq!(back.layers[0].mask.as_ref().unwrap().get_any(-3, -2), 77);
+        let rest = crate::moving::begin(&back, &[0]);
+        crate::moving::apply(&mut back, &rest, 3, 2);
+        assert_eq!(back.layers[0].raster.get_pixel(1, 1), Rgba8::WHITE);
+        assert_eq!(back.layers[0].mask.as_ref().unwrap().get(0, 0), 77);
     }
 }

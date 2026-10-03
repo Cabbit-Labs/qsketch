@@ -16,6 +16,8 @@ mydrawing.qsk  (a ZIP file)
 ├── layers/
 │   ├── 000.png           # bottom layer, straight-alpha RGBA8 PNG
 │   ├── 000.mask.png      # optional: that layer's mask, 8-bit grayscale
+│   ├── 000.outside.png   # optional (0.62+): pixels kept off the canvas
+│   ├── 000.mask.outside.png  # optional (0.62+): mask coverage off the canvas
 │   ├── 001.png
 │   ├── 001/
 │   │   ├── f0001.png     # optional (0.59+): that layer's own picture in frame 2
@@ -36,6 +38,16 @@ mydrawing.qsk  (a ZIP file)
   have one, named in the layer's manifest entry under `mask`. 8-bit
   grayscale the size of the document: `255` = shown, `0` = hidden. The
   entry's `mask_enabled` flag (default `true`) records a disabled mask.
+- **Off-canvas pixels** (0.62+). A layer moved partly past the canvas edge
+  keeps what went over. `layers/NNN.outside.png` holds those pixels (frame
+  0's, for an animated layer) as one RGBA8 PNG of their bounding box, named
+  in the layer's manifest entry as `"outside": { "file", "x", "y" }`, where
+  `x`/`y` is the PNG's top-left in canvas coordinates (often negative).
+  Pixels of that box that fall on the canvas are transparent: the layer PNG
+  owns those. `mask_outside` does the same for the mask
+  (`layers/NNN.mask.outside.png`, 8-bit grayscale), and a cel entry's
+  `outside` for that frame's picture (`layers/NNN/fFFFF.outside.png`).
+  Readers that don't know these fields open the on-canvas part.
 - **Cels** (`layers/NNN/fFFFF.png`, 0.59+) hold a layer's pictures in frames
   other than the first, for documents with more than one frame.
   `layers/NNN.png` is always frame 0's picture, so a reader that knows

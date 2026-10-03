@@ -404,6 +404,15 @@ pub enum CanvasEvent {
     Cancel,
 }
 
+/// What a Move drag carries.
+pub enum MoveWhat {
+    /// The selected pixels, lifted off each layer: `(layer, what's left
+    /// behind, the lifted pixels)`.
+    Pixels(Vec<(usize, Raster, Floating)>),
+    /// Whole layers (every member of a selected group), as they started.
+    Layers(Vec<qsketch_core::moving::AtRest>),
+}
+
 pub enum ToolSession {
     /// A Liquify brush drag (the dialog owns the state; this only keeps the
     /// pointer captured so drags reach it).
@@ -430,11 +439,9 @@ pub enum ToolSession {
         mods: Modifiers,
     },
     Moving {
-        base: Raster,
-        floating: Floating,
+        what: MoveWhat,
         start: Pt,
         cur: Pt,
-        layer: usize,
         sel_before: Option<Arc<Mask>>,
         last_rect: IRect,
     },
@@ -681,6 +688,9 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             // Shift / Alt with a selection tool mean add / subtract, so they
             // keep editing the selection instead of grabbing it.
             && !(tool.is_selection() && (inp.mods.shift || inp.mods.alt))
+            // Groups and several layers move together through the Move
+            // tool's own drag instead (the transform box holds one layer).
+            && transform::moves_one_layer(state, doc_id)
             && floating::begin_selection_transform(state, doc_id, inp)
         {
             floating::handle(state, doc_id, ev);

@@ -96,7 +96,7 @@ pub fn resize_canvas(doc: &mut DocState, new_w: u32, new_h: u32, anchor: Anchor)
     for l in &mut doc.layers {
         transform_frames(l, nf, cur, |r| r.with_canvas_size(new_w, new_h, ox, oy));
         if let Some(m) = &l.mask {
-            l.mask = Some(Arc::new(m.with_canvas_size(new_w, new_h, ox, oy)));
+            l.mask = Some(Arc::new(m.with_canvas_size_keep(new_w, new_h, ox, oy)));
         }
     }
     doc.selection = doc.selection.as_ref().map(|m| Arc::new(m.with_canvas_size(new_w, new_h, ox, oy)));
@@ -487,19 +487,26 @@ pub fn drop_floating(base: &Raster, floating: &Floating, dx: i32, dy: i32) -> Ra
     let mut out = base.clone();
     let ox = floating.origin.0 + dx;
     let oy = floating.origin.1 + dy;
-    let dst =
-        IRect::new(ox, oy, floating.raster.width() as i32, floating.raster.height() as i32).intersect(&out.rect());
+    // Pixels dropped past the canvas edge are kept outside it, not clipped.
+    let dst = IRect::new(ox, oy, floating.raster.width() as i32, floating.raster.height() as i32);
+    let canvas = out.rect();
     for y in dst.y..dst.bottom() {
         for x in dst.x..dst.right() {
             let s = floating.raster.get_pixel(x - ox, y - oy);
             if s.a == 0 {
                 continue;
             }
-            if s.a == 255 {
-                out.set_pixel(x, y, s);
+            let on = canvas.contains(x, y);
+            let c = if s.a == 255 {
+                s
             } else {
-                let o = out.get_pixel(x, y);
-                out.set_pixel(x, y, Rgba8::from_f32(src_over(o.to_f32(), s.to_f32())));
+                let o = if on { out.get_pixel(x, y) } else { out.get_pixel_any(x, y) };
+                Rgba8::from_f32(src_over(o.to_f32(), s.to_f32()))
+            };
+            if on {
+                out.set_pixel(x, y, c);
+            } else {
+                out.set_pixel_any(x, y, c);
             }
         }
     }

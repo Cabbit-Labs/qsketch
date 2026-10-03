@@ -269,7 +269,12 @@ the editor says which one lost it rather than refusing the change.
 | Pick the foreground color (hold for a zoomed loupe and crosshair) | right-click, or `Alt` + click |
 | Pick the background color | `Alt` + right-click |
 | Pan the view | middle-drag |
-| Move the layer / selected pixels with any tool | `Ctrl` + drag |
+| Move the selected layers and groups (or the selected pixels on them) with any tool | `Ctrl` + drag |
+
+A move takes every layer selected in the Layers panel, and a selected group
+takes everything inside it, hidden layers included. Locked layers and tilemaps
+stay put. Pixels dragged past the canvas edge are kept outside it, so dragging
+them back brings them back. Arrow keys with the Move tool nudge the same way.
 
 `Alt` with any color tool picks a color whatever the chords say, which is the
 Photoshop reflex; turn it off in Preferences ▸ Mouse if it gets in the way.

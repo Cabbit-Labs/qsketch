@@ -119,6 +119,11 @@ pub fn compat_warnings(path: &Path, doc: &crate::document::DocState) -> Vec<Stri
         }
         return w;
     }
+    if doc.layers.iter().any(|l| l.raster.has_outside() || l.mask.as_ref().is_some_and(|m| m.has_outside())) {
+        w.push(format!(
+            "{name} keeps only what is on the canvas: layers moved partly off it lose their off-canvas pixels in the file."
+        ));
+    }
     if doc.layers.iter().any(|l| l.props.tilemap.is_some()) {
         w.push(format!("{name} can't store qsketch tilemaps: tilemap layers are saved as plain pixel layers."));
     }

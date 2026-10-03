@@ -30,6 +30,7 @@ pub mod history;
 pub mod io;
 pub mod layer;
 pub mod mask;
+pub mod moving;
 pub mod ops;
 pub mod palette;
 pub mod raster;

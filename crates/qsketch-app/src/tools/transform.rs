@@ -1,9 +1,13 @@
 //! Move tool (drag layer content / selected pixels) and the Crop tool.
 
-use qsketch_core::ops::{self, drop_floating};
-use qsketch_core::{IRect, Pt};
+use std::sync::Arc;
 
-use super::{rect_from_drag, CanvasEvent, ToolSession};
+use qsketch_core::layer::LayerKind;
+use qsketch_core::moving;
+use qsketch_core::ops::{self, drop_floating};
+use qsketch_core::{IRect, Mask, Pt};
+
+use super::{rect_from_drag, CanvasEvent, MoveWhat, ToolSession};
 use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
 
@@ -13,36 +17,12 @@ pub fn handle_move(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             if state.session.is_some() {
                 return;
             }
-            let Some(entry) = state.doc_mut(doc_id) else { return };
-            let s = entry.doc.state_mut();
-            let li = s.active;
-            if !s.layer_editable(li) {
-                state.toasts.push(Level::Info, "The active layer is locked or hidden.");
-                return;
-            }
-            let sel_before = s.selection.clone();
-            let Some(floating) = ops::lift(s, li) else { return };
-            let base = s.layers[li].raster.clone();
-            let fr = IRect::new(
-                floating.origin.0,
-                floating.origin.1,
-                floating.raster.width() as i32,
-                floating.raster.height() as i32,
-            );
-            state.session = Some(ToolSession::Moving {
-                base,
-                floating,
-                start: inp.doc,
-                cur: inp.doc,
-                layer: li,
-                sel_before,
-                last_rect: fr,
-            });
+            let Some((what, last_rect, sel_before)) = begin_move(state, doc_id) else { return };
+            state.session = Some(ToolSession::Moving { what, start: inp.doc, cur: inp.doc, sel_before, last_rect });
             state.session_doc = Some(doc_id);
         }
         CanvasEvent::Drag(inp) => {
-            let Some(ToolSession::Moving { base, floating, start, cur, layer, last_rect, .. }) = &mut state.session
-            else {
+            let Some(ToolSession::Moving { what, start, cur, last_rect, .. }) = &mut state.session else {
                 return;
             };
             let mut d = Pt::new(inp.doc.x - start.x, inp.doc.y - start.y);
@@ -60,33 +40,7 @@ pub fn handle_move(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             }
             *cur = Pt::new(start.x + dx as f32, start.y + dy as f32);
             let Some(entry) = state.docs.iter_mut().find(|d| d.id == doc_id) else { return };
-            // Moving the whole layer moves its mask with it (a selection
-            // move lifts pixels only, as in Photoshop with the mask unlinked).
-            let base_mask = if floating.mask.is_none() {
-                entry.doc.history.current().layers.get(*layer).and_then(|l| l.mask.clone())
-            } else {
-                None
-            };
-            let new_raster = drop_floating(base, floating, dx, dy);
-            let nr = IRect::new(
-                floating.origin.0 + dx,
-                floating.origin.1 + dy,
-                floating.raster.width() as i32,
-                floating.raster.height() as i32,
-            );
-            let s = entry.doc.state_mut();
-            s.layers[*layer].raster = new_raster;
-            if let Some(bm) = base_mask {
-                s.layers[*layer].mask = Some(std::sync::Arc::new(bm.translated(dx, dy)));
-            }
-            s.selection = floating.mask.as_ref().map(|m| {
-                std::sync::Arc::new(m.with_canvas_size(
-                    s.width,
-                    s.height,
-                    floating.origin.0 + dx,
-                    floating.origin.1 + dy,
-                ))
-            });
+            let nr = apply_move(entry.doc.state_mut(), what, dx, dy);
             entry.doc.mark_dirty_rect(last_rect.union(&nr));
             entry.sel_outline = None;
             *last_rect = nr;
@@ -108,38 +62,126 @@ pub fn handle_move(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     }
 }
 
-/// Nudge the layer / selection by whole pixels (arrow keys).
-pub fn nudge(state: &mut AppState, doc_id: DocId, dx: i32, dy: i32) {
-    state.settle();
-    let Some(entry) = state.doc_mut(doc_id) else { return };
+/// Whether a move would carry just the active layer (no group, no other
+/// layers selected), which the selection transform box can hold.
+pub fn moves_one_layer(state: &AppState, doc_id: DocId) -> bool {
+    state.doc(doc_id).is_some_and(|e| {
+        let s = e.doc.state();
+        e.selected_ids().len() == 1 && !s.layers[s.active].is_group()
+    })
+}
+
+/// Pick up what a move drags: with a selection, its pixels on every
+/// selected layer; without one, the selected layers whole (a group stands
+/// for everything inside it, hidden layers included). Returns the cargo,
+/// the canvas area it covers, and the selection to restore if nothing
+/// moves. Says why in a toast when there is nothing to move.
+fn begin_move(state: &mut AppState, doc_id: DocId) -> Option<(MoveWhat, IRect, Option<Arc<Mask>>)> {
+    let entry = state.doc_mut(doc_id)?;
+    let ids = entry.selected_ids();
     let s = entry.doc.state_mut();
-    let li = s.active;
-    if !s.layer_editable(li) {
-        return;
+    let t = moving::targets(s, &ids);
+    let sel_before = s.selection.clone();
+    let canvas = s.rect();
+    let (what, rect, skipped_kind) = if sel_before.is_some() {
+        // Shapes and text are drawn from their data, so selected pixels
+        // only lift off plain pixel layers.
+        let (raster, other): (Vec<usize>, Vec<usize>) =
+            t.layers.iter().partition(|&&i| s.layers[i].props.kind == LayerKind::Raster);
+        let mut lifted = Vec::new();
+        let mut rect = IRect::EMPTY;
+        for i in raster {
+            if let Some(f) = ops::lift(s, i) {
+                rect =
+                    rect.union(&IRect::new(f.origin.0, f.origin.1, f.raster.width() as i32, f.raster.height() as i32));
+                lifted.push((i, s.layers[i].raster.clone(), f));
+            }
+        }
+        (MoveWhat::Pixels(lifted), rect, other.len())
+    } else {
+        let rest = moving::begin(s, &t.layers);
+        let rect = moving::area(&rest, 0, 0, canvas);
+        (MoveWhat::Layers(rest), rect, 0)
+    };
+    let empty = match &what {
+        MoveWhat::Pixels(v) => v.is_empty(),
+        MoveWhat::Layers(v) => v.is_empty(),
+    };
+    let mut skipped = Vec::new();
+    if t.locked > 0 {
+        skipped.push(plural(t.locked, "locked layer"));
     }
-    let Some(floating) = ops::lift(s, li) else { return };
-    let base = s.layers[li].raster.clone();
-    s.layers[li].raster = drop_floating(&base, &floating, dx, dy);
-    if floating.mask.is_none() {
-        if let Some(m) = s.layers[li].mask.clone() {
-            s.layers[li].mask = Some(std::sync::Arc::new(m.translated(dx, dy)));
+    if t.tilemaps > 0 {
+        skipped.push(plural(t.tilemaps, "tilemap layer"));
+    }
+    if skipped_kind > 0 {
+        skipped.push(plural(skipped_kind, "shape or text layer"));
+    }
+    if empty {
+        let msg = if skipped.is_empty() {
+            "Nothing to move on the selected layers.".to_string()
+        } else {
+            format!("Nothing to move: {} can't move.", skipped.join(", "))
+        };
+        state.toasts.push(Level::Info, msg);
+        return None;
+    }
+    if !skipped.is_empty() {
+        state.toasts.push(Level::Info, format!("{} stayed put.", capitalize(&skipped.join(", "))));
+    }
+    Some((what, rect, sel_before))
+}
+
+/// Place the move's cargo offset by `(dx, dy)`; returns the canvas area it
+/// now covers.
+fn apply_move(s: &mut qsketch_core::DocState, what: &MoveWhat, dx: i32, dy: i32) -> IRect {
+    match what {
+        MoveWhat::Layers(rest) => {
+            moving::apply(s, rest, dx, dy);
+            moving::area(rest, dx, dy, s.rect())
+        }
+        MoveWhat::Pixels(lifted) => {
+            let mut nr = IRect::EMPTY;
+            for (i, base, f) in lifted {
+                s.layers[*i].raster = drop_floating(base, f, dx, dy);
+                nr = nr.union(&IRect::new(
+                    f.origin.0 + dx,
+                    f.origin.1 + dy,
+                    f.raster.width() as i32,
+                    f.raster.height() as i32,
+                ));
+            }
+            // Every layer was lifted through the same selection.
+            if let Some((_, _, f)) = lifted.first() {
+                let (w, h) = (s.width, s.height);
+                s.selection =
+                    f.mask.as_ref().map(|m| Arc::new(m.with_canvas_size(w, h, f.origin.0 + dx, f.origin.1 + dy)));
+            }
+            nr
         }
     }
-    if let Some(m) = &floating.mask {
-        s.selection = Some(std::sync::Arc::new(m.with_canvas_size(
-            s.width,
-            s.height,
-            floating.origin.0 + dx,
-            floating.origin.1 + dy,
-        )));
+}
+
+fn plural(n: usize, what: &str) -> String {
+    if n == 1 {
+        format!("1 {what}")
+    } else {
+        format!("{n} {what}s")
     }
-    let r = IRect::new(
-        floating.origin.0,
-        floating.origin.1,
-        floating.raster.width() as i32,
-        floating.raster.height() as i32,
-    );
-    entry.doc.mark_dirty_rect(r.union(&r.translate(dx, dy)));
+}
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+}
+
+/// Nudge the selected layers / selected pixels by whole pixels (arrow keys).
+pub fn nudge(state: &mut AppState, doc_id: DocId, dx: i32, dy: i32) {
+    state.settle();
+    let Some((what, last_rect, _)) = begin_move(state, doc_id) else { return };
+    let Some(entry) = state.doc_mut(doc_id) else { return };
+    let nr = apply_move(entry.doc.state_mut(), &what, dx, dy);
+    entry.doc.mark_dirty_rect(last_rect.union(&nr));
     entry.doc.commit("Nudge");
     entry.sel_outline = None;
 }
