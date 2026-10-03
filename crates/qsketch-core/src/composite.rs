@@ -495,6 +495,36 @@ pub fn flatten_par(doc: &DocState) -> Raster {
     out
 }
 
+/// [`flatten_range`] that keeps what the layers have off the canvas: when
+/// any of them reaches past it, the range is composited on a canvas grown
+/// to cover everything and the result keeps the overhang outside the
+/// canvas. Effects are composited there too.
+pub fn flatten_range_keep(
+    doc: &DocState,
+    range: std::ops::Range<usize>,
+    parent: Option<crate::layer::LayerId>,
+) -> Raster {
+    let canvas = IRect::new(0, 0, doc.width as i32, doc.height as i32);
+    let mut ext = canvas;
+    let mut reach = 0;
+    for l in &doc.layers[range.clone()] {
+        if let Some(b) = l.raster.outside_bounds() {
+            ext = ext.union(&b);
+        }
+        if let Some(m) = l.mask.as_ref().filter(|m| m.has_outside()) {
+            ext = ext.union(&m.extent());
+        }
+        reach = reach.max(l.props.style.reach());
+    }
+    if ext == canvas {
+        return flatten_range(doc, range, parent);
+    }
+    let ext = ext.expand(reach);
+    let mut big = doc.clone();
+    crate::ops::resize_canvas_at(&mut big, ext.w as u32, ext.h as u32, -ext.x, -ext.y);
+    flatten_range(&big, range, parent).with_canvas_size(doc.width, doc.height, ext.x, ext.y)
+}
+
 /// Flatten the direct children of `parent` within `range` (a group's
 /// members, say) into one straight-alpha raster.
 pub fn flatten_range(doc: &DocState, range: std::ops::Range<usize>, parent: Option<crate::layer::LayerId>) -> Raster {

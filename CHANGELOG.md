@@ -2,6 +2,20 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.62.2 — 2026-10-03
+
+- Merge Down now looks the same before and after. It used to paint the
+  upper layer's raw pixels onto the one below, ignoring clipping (a color
+  layer clipped to line art flooded the whole layer with its color), the
+  lower layer's opacity, and layer effects. The pair is now rendered the
+  way the canvas shows it, then baked into one layer: clipping, masks,
+  opacity, blend modes and effects all carry over. When the lower layer is
+  Normal, the result is Normal at 100% with its old opacity baked in.
+  Another blend mode below is kept with its opacity (the closest one
+  layer can get to two).
+- Merge Down, Merge Group and Merge Visible keep pixels outside the canvas
+  instead of cropping them. Flatten Image still crops to the canvas.
+
 ## 0.62.1 — 2026-10-03
 
 - Photoshop and Aseprite files keep pixels outside the canvas too. Both

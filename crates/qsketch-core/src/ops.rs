@@ -84,13 +84,18 @@ fn transform_frames(l: &mut Layer, frames: usize, current: usize, f: impl Fn(&Ra
 }
 
 pub fn resize_canvas(doc: &mut DocState, new_w: u32, new_h: u32, anchor: Anchor) {
+    let (ox, oy) = anchor.offset(doc.width, doc.height, new_w.max(1), new_h.max(1));
+    resize_canvas_at(doc, new_w, new_h, ox, oy);
+}
+
+/// [`resize_canvas`] with the old canvas's top-left landing at `(ox, oy)`.
+pub fn resize_canvas_at(doc: &mut DocState, new_w: u32, new_h: u32, ox: i32, oy: i32) {
     // The cell grid can't follow a canvas change: tilemaps become pixels.
     crate::tilemap::detach_all(doc);
     crate::vector::detach_all(doc);
     crate::text::detach_all(doc);
     let new_w = new_w.max(1);
     let new_h = new_h.max(1);
-    let (ox, oy) = anchor.offset(doc.width, doc.height, new_w, new_h);
     doc.sync_cels();
     let (nf, cur) = (doc.frames.len(), doc.frame);
     for l in &mut doc.layers {

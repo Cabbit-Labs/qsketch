@@ -5,7 +5,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::blend::composite_pixel;
 use crate::color::Rgba8;
 use crate::composite::{Composite, TileSet};
 use crate::geom::IRect;
@@ -267,23 +266,70 @@ impl DocState {
             idx
         };
         let top = self.layers[idx].clone();
-        let top_opacity = top.props.opacity * top.cel_opacity(self.frame);
-        let below = &mut self.layers[idx - 1];
         if top.is_adjustment() {
             // Merging an adjustment layer bakes the adjustment into the
             // pixels below.
+            let below = &mut self.layers[idx - 1];
             if top.props.visible {
                 below.apply_mask();
                 top.apply_adjustment_to(&mut below.raster);
             }
         } else if top.props.visible {
-            // Merging bakes both masks in: the result has none.
-            below.apply_mask();
-            merge_raster(&mut below.raster, &top.masked_raster(), top.props.blend, top_opacity);
+            self.merge_pair(idx - 1, idx);
         }
         self.layers.remove(idx);
         self.active = idx - 1;
         true
+    }
+
+    /// Bake layer `top` onto layer `below` so the result looks the way the
+    /// two did: rendered by the compositor on their own, so clipping, masks,
+    /// opacity, blend modes and effects all count, and off-canvas pixels are
+    /// kept. A Normal layer below takes in its opacity and ends up Normal at
+    /// 100%; another blend mode below is kept with its opacity, and the pair
+    /// is merged under it as if it were Normal (the closest a single layer
+    /// can get). The result is a plain pixel layer without mask or effects.
+    fn merge_pair(&mut self, below: usize, top: usize) {
+        let lo = &self.layers[below];
+        let up = &self.layers[top];
+        let keep_mode = !matches!(lo.props.blend, crate::blend::BlendMode::Normal);
+        // The pair alone, as plain static layers (the current frame's
+        // pictures): the top's frame opacity is baked, the bottom's stays on
+        // its cels.
+        let mut a = lo.clone();
+        a.props.parent = None;
+        a.props.visible = true;
+        a.props.clipped = false;
+        a.cels = Vec::new();
+        if keep_mode {
+            a.props.blend = crate::blend::BlendMode::Normal;
+            a.props.opacity = 1.0;
+        }
+        let mut b = up.clone();
+        b.props.parent = None;
+        b.props.opacity *= up.cel_opacity(self.frame);
+        b.cels = Vec::new();
+        // Both clipped to the same base further down: they stay clipped as
+        // one, so here the top just goes over the bottom.
+        b.props.clipped = up.props.clipped && !lo.props.clipped;
+        let mut pair = self.clone();
+        pair.layers = vec![a, b];
+        pair.active = 0;
+        let raster = crate::composite::flatten_range_keep(&pair, 0..2, None);
+        let l = &mut self.layers[below];
+        l.raster = raster;
+        l.mask = None;
+        l.props.style = Default::default();
+        if !keep_mode {
+            l.props.opacity = 1.0;
+        }
+        // Drawn from data no more: it is pixels now (a tilemap keeps its
+        // grid and takes the pixels into its cells at commit).
+        if matches!(l.props.kind, crate::layer::LayerKind::Shape | crate::layer::LayerKind::Text) {
+            l.props.kind = crate::layer::LayerKind::Raster;
+            l.props.shape = None;
+            l.props.text = None;
+        }
     }
 
     /// Flatten all visible layers into one `Background` layer (hidden layers are dropped).
@@ -297,7 +343,8 @@ impl DocState {
     /// Merge all visible layers into the active one, leaving hidden layers
     /// (and hidden groups, intact) alone.
     pub fn merge_visible(&mut self) {
-        let base = crate::composite::flatten(self);
+        // Unlike Flatten, the merged layer keeps what reaches off the canvas.
+        let base = crate::composite::flatten_range_keep(self, 0..self.layers.len(), None);
         // Keep every hidden block; hidden layers found inside visible groups
         // move to the top level since their group goes away.
         let mut hidden: Vec<Layer> = Vec::new();
@@ -322,27 +369,6 @@ impl DocState {
         self.layers = hidden;
         self.layers.push(merged);
         self.active = self.layers.len() - 1;
-    }
-}
-
-/// Composite `src` onto `dst` in place using `mode`/`opacity` (straight alpha).
-pub fn merge_raster(dst: &mut Raster, src: &Raster, mode: crate::blend::BlendMode, opacity: f32) {
-    for ty in 0..src.tiles_y() {
-        for tx in 0..src.tiles_x() {
-            let Some(st) = src.tile(tx, ty) else { continue };
-            let dt = dst.tile_mut(tx, ty);
-            for i in 0..crate::raster::TILE_PX {
-                let s = &st.px[i * 4..i * 4 + 4];
-                if s[3] == 0 {
-                    continue;
-                }
-                let d = &mut dt.px[i * 4..i * 4 + 4];
-                let back = [d[0] as f32 / 255.0, d[1] as f32 / 255.0, d[2] as f32 / 255.0, d[3] as f32 / 255.0];
-                let srcf = [s[0] as f32 / 255.0, s[1] as f32 / 255.0, s[2] as f32 / 255.0, s[3] as f32 / 255.0];
-                let o = composite_pixel(mode, back, srcf, opacity);
-                d.copy_from_slice(&Rgba8::from_f32(o).to_array());
-            }
-        }
     }
 }
 
@@ -1068,5 +1094,82 @@ mod tests {
         doc.state_mut().layers[0].raster.set_pixel(4, 4, Rgba8::rgb(40, 40, 40));
         doc.commit("paint");
         assert_eq!(doc.state().layers[0].raster.get_pixel(4, 4), Rgba8::rgb(40, 40, 40));
+    }
+
+    /// Merge Down must look the same as before: flatten, merge, flatten again.
+    fn assert_merge_is_wysiwyg(mut d: DocState, top: usize) {
+        let before = crate::composite::flatten(&d);
+        assert!(d.merge_down(top));
+        let after = crate::composite::flatten(&d);
+        for y in 0..d.height as i32 {
+            for x in 0..d.width as i32 {
+                let (a, b) = (before.get_pixel(x, y), after.get_pixel(x, y));
+                let close = |p: u8, q: u8| (p as i32 - q as i32).abs() <= 2;
+                assert!(
+                    close(a.r, b.r) && close(a.g, b.g) && close(a.b, b.b) && close(a.a, b.a),
+                    "({x},{y}): before {a:?}, after {b:?}"
+                );
+            }
+        }
+    }
+
+    fn three_layers() -> DocState {
+        // White backdrop, a half-transparent blob, and a layer above it.
+        let mut d = DocState::new(8, 8, Some(Rgba8::WHITE));
+        let mut lo = Layer::new(2, "lo", 8, 8);
+        lo.raster.fill_rect(IRect::new(1, 1, 4, 4), Rgba8::new(0, 0, 255, 128));
+        let mut up = Layer::new(3, "up", 8, 8);
+        up.raster.fill_rect(IRect::new(0, 0, 8, 8), Rgba8::new(255, 0, 0, 255));
+        d.layers.push(lo);
+        d.layers.push(up);
+        d.next_layer_id = 4;
+        d
+    }
+
+    #[test]
+    fn merging_a_clipped_layer_keeps_it_inside_its_base() {
+        let mut d = three_layers();
+        d.layers[2].props.clipped = true;
+        let mut check = d.clone();
+        assert_merge_is_wysiwyg(d.clone(), 2);
+        assert!(check.merge_down(2));
+        // Outside the blob the merged layer stays transparent, not red.
+        assert_eq!(check.layers[1].raster.get_pixel(6, 6).a, 0);
+        // Inside: red clipped to the half-transparent blob, over it.
+        let px = check.layers[1].raster.get_pixel(2, 2);
+        assert!(px.r > px.b && px.a > 128, "{px:?}");
+    }
+
+    #[test]
+    fn merging_keeps_opacity_blend_modes_and_masks() {
+        let mut d = three_layers();
+        d.layers[1].props.opacity = 0.6;
+        d.layers[2].props.opacity = 0.5;
+        d.layers[2].props.blend = crate::blend::BlendMode::Multiply;
+        d.layers[2].props.clipped = true;
+        let mut m = Mask::full(8, 8);
+        m.set(2, 2, 40);
+        d.layers[2].mask = Some(Arc::new(m));
+        assert_merge_is_wysiwyg(d, 2);
+        // A Normal top over a translucent layer.
+        let mut d = three_layers();
+        d.layers[2].raster.clear();
+        d.layers[2].raster.fill_rect(IRect::new(3, 3, 3, 3), Rgba8::new(0, 200, 0, 90));
+        d.layers[1].props.opacity = 0.7;
+        assert_merge_is_wysiwyg(d, 2);
+    }
+
+    #[test]
+    fn merging_keeps_offcanvas_pixels() {
+        let mut d = three_layers();
+        d.layers[2].raster.clear();
+        d.layers[2].raster.set_pixel(0, 0, Rgba8::new(0, 255, 0, 255));
+        let rest = crate::moving::begin(&d, &[1, 2]);
+        crate::moving::apply(&mut d, &rest, -3, -3);
+        assert!(d.merge_down(2));
+        let r = &d.layers[1].raster;
+        assert_eq!(r.get_pixel_any(-3, -3), Rgba8::new(0, 255, 0, 255));
+        assert_eq!(r.get_pixel_any(-2, -2).a, 128);
+        assert_eq!(r.get_pixel(1, 1).a, 128);
     }
 }

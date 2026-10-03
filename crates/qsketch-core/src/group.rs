@@ -270,7 +270,7 @@ impl DocState {
             return false;
         }
         let members = self.members(idx);
-        let raster = crate::composite::flatten_range(self, members.clone(), Some(l.props.id));
+        let raster = crate::composite::flatten_range_keep(self, members.clone(), Some(l.props.id));
         let mut props = l.props.clone();
         props.kind = LayerKind::Raster;
         props.expanded = true;
