@@ -236,6 +236,13 @@ pub(super) fn begin_engine_with(
             );
             return None;
         }
+        if s.layers[li].is_smart() {
+            state.toasts.push(
+                Level::Info,
+                "This is a smart object: transform it with Ctrl+T, or Layer › Smart Object › Rasterize Smart Object to paint on it.",
+            );
+            return None;
+        }
         if s.layers[li].is_text() {
             state.toasts.push(
                 Level::Info,

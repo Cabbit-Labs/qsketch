@@ -108,6 +108,8 @@ pub fn resize_canvas_at(doc: &mut DocState, new_w: u32, new_h: u32, ox: i32, oy:
     doc.width = new_w;
     doc.height = new_h;
     crate::slice::offset_all(doc, ox, oy);
+    let (dx, dy) = (ox as f32, oy as f32);
+    crate::smart::map_all(doc, |p| Pt::new(p.x + dx, p.y + dy), Some((1.0, 1.0)));
 }
 
 pub fn resize_image(doc: &mut DocState, new_w: u32, new_h: u32, filter: ResizeFilter) {
@@ -130,6 +132,8 @@ pub fn resize_image(doc: &mut DocState, new_w: u32, new_h: u32, filter: ResizeFi
     doc.width = new_w;
     doc.height = new_h;
     crate::slice::scale_all(doc, sx, sy);
+    // Smart objects scale their placement and redraw from the originals.
+    crate::smart::map_all(doc, |p| Pt::new(p.x * sx, p.y * sy), Some((sx, sy)));
 }
 
 pub fn crop(doc: &mut DocState, rect: IRect) {
@@ -153,6 +157,8 @@ pub fn crop(doc: &mut DocState, rect: IRect) {
     doc.width = r.w as u32;
     doc.height = r.h as u32;
     crate::slice::offset_all(doc, -r.x, -r.y);
+    let (dx, dy) = (-r.x as f32, -r.y as f32);
+    crate::smart::map_all(doc, |p| Pt::new(p.x + dx, p.y + dy), Some((1.0, 1.0)));
 }
 
 pub fn flip_horizontal(doc: &mut DocState) {
@@ -171,6 +177,8 @@ pub fn flip_horizontal(doc: &mut DocState) {
     doc.selection = None;
     let w = doc.width as i32;
     crate::slice::transform_all(doc, |r| IRect::new(w - r.x - r.w, r.y, r.w, r.h), |x, y| (w - x, y));
+    let wf = w as f32;
+    crate::smart::map_all(doc, |p| Pt::new(wf - p.x, p.y), None);
 }
 
 pub fn flip_vertical(doc: &mut DocState) {
@@ -189,6 +197,8 @@ pub fn flip_vertical(doc: &mut DocState) {
     doc.selection = None;
     let h = doc.height as i32;
     crate::slice::transform_all(doc, |r| IRect::new(r.x, h - r.y - r.h, r.w, r.h), |x, y| (x, h - y));
+    let hf = h as f32;
+    crate::smart::map_all(doc, |p| Pt::new(p.x, hf - p.y), None);
 }
 
 /// Rotate the whole canvas by `times` × 90° clockwise.
@@ -221,10 +231,22 @@ pub fn rotate_canvas(doc: &mut DocState, times: u32) {
         3 => crate::slice::transform_all(doc, |r| IRect::new(r.y, w - r.x - r.w, r.h, r.w), |x, y| (y, w - x)),
         _ => {}
     }
+    let (wf, hf) = (w as f32, h as f32);
+    match times % 4 {
+        1 => crate::smart::map_all(doc, |p| Pt::new(hf - p.y, p.x), None),
+        2 => crate::smart::map_all(doc, |p| Pt::new(wf - p.x, hf - p.y), None),
+        3 => crate::smart::map_all(doc, |p| Pt::new(p.y, wf - p.x), None),
+        _ => {}
+    }
 }
 
 /// Flip / rotate a single layer in place (content only).
 pub fn flip_layer_horizontal(doc: &mut DocState, idx: usize) {
+    if doc.layers.get(idx).is_some_and(|l| l.is_smart()) {
+        let w = doc.width as f32;
+        flip_smart(doc, idx, |p| Pt::new(w - p.x, p.y), |m| m.flipped_h());
+        return;
+    }
     crate::vector::rasterize(doc, idx);
     crate::text::rasterize(doc, idx);
     if let Some(l) = doc.layers.get_mut(idx) {
@@ -234,7 +256,24 @@ pub fn flip_layer_horizontal(doc: &mut DocState, idx: usize) {
         }
     }
 }
+/// A smart object flips its placement (and mask) and redraws.
+fn flip_smart(doc: &mut DocState, idx: usize, f: impl Fn(Pt) -> Pt, mask: impl Fn(&Mask) -> Mask) {
+    let l = &mut doc.layers[idx];
+    if let Some(p) = l.props.smart.as_mut() {
+        p.map(f, None);
+    }
+    if let Some(m) = &l.mask {
+        l.mask = Some(Arc::new(mask(m)));
+    }
+    crate::smart::rerender(doc, idx);
+}
+
 pub fn flip_layer_vertical(doc: &mut DocState, idx: usize) {
+    if doc.layers.get(idx).is_some_and(|l| l.is_smart()) {
+        let h = doc.height as f32;
+        flip_smart(doc, idx, |p| Pt::new(p.x, h - p.y), |m| m.flipped_v());
+        return;
+    }
     crate::vector::rasterize(doc, idx);
     crate::text::rasterize(doc, idx);
     if let Some(l) = doc.layers.get_mut(idx) {

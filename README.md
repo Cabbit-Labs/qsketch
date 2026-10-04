@@ -119,6 +119,11 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   Kaleidoscope, Chromatic Aberration, Scanlines, Pixel Sort, Glitch). They
   respect the selection and alpha lock, run in premultiplied color so
   transparent edges stay clean, and `Ctrl+F` repeats the last one.
+- **Smart objects.** Convert a layer (Layer › Smart Object) or paste an
+  image as one (Ctrl+Alt+V) and it keeps its original pixels: scale,
+  rotate, distort and warp it with Ctrl+T as often as you like, shrink it
+  and grow it back, and it is always drawn fresh from the original, never
+  worn down. Canvas resizes, flips and turns keep it smart too.
 - **Editable text layers.** The Text tool starts a text layer that stays
   editable: click it again to change the words, font, size, style or color,
   drag it to move it, and rasterize it only when you want pixels.

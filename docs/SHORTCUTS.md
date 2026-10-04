@@ -43,6 +43,7 @@ reachable from its menu until you assign one.
 | Copy Merged | `Ctrl+Shift+C` |
 | Paste | `Ctrl+V` |
 | Paste in Place | `Ctrl+Shift+V` |
+| Paste as Smart Object | `Ctrl+Alt+V` |
 | Clear | `Delete` |
 | Fill with Foreground | `Alt+Backspace` |
 | Fill with Background | `Ctrl+Backspace` |

@@ -56,6 +56,9 @@ pub struct LayerProps {
     /// Text layers only: the editable text the pixels are drawn from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<crate::text::TextLayer>,
+    /// Smart objects only: how the original pixels are placed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smart: Option<crate::smart::SmartObject>,
     /// Animation: a new frame's cel on this layer links to the frame
     /// before instead of starting empty (or as a copy), so the picture
     /// carries on until it is deliberately unlinked.
@@ -90,6 +93,10 @@ pub enum LayerKind {
     /// Pixels drawn from editable text (`LayerProps::text`): the Text tool
     /// reopens it for editing and the layer is redrawn.
     Text,
+    /// A smart object: original pixels (`Layer::smart`) drawn through an
+    /// editable placement (`LayerProps::smart`), so scaling, rotating and
+    /// warping never wear the pixels down.
+    Smart,
 }
 
 #[derive(Clone)]
@@ -105,6 +112,10 @@ pub struct Layer {
     /// commit. Empty for static layers and for layers of a one-frame
     /// document.
     pub cels: Vec<crate::anim::Cel>,
+    /// Smart objects only: the original pixels the layer is drawn from
+    /// through `LayerProps::smart` (see [`crate::smart`]). Shared, so copies
+    /// of the layer cost a pointer.
+    pub smart: Option<Arc<Raster>>,
 }
 
 impl Layer {
@@ -128,11 +139,13 @@ impl Layer {
                 tilemap: None,
                 shape: None,
                 text: None,
+                smart: None,
                 continuous: false,
                 color: None,
                 notes: String::new(),
             },
             raster: Raster::new(width, height),
+            smart: None,
             mask: None,
             cels: Vec::new(),
         }
@@ -229,12 +242,20 @@ impl Layer {
     /// A plain raster layer: the only kind whose pixels filters, transforms
     /// and the like work on.
     pub fn owns_pixels(&self) -> bool {
-        matches!(self.props.kind, LayerKind::Raster | LayerKind::Tilemap | LayerKind::Shape | LayerKind::Text)
+        matches!(
+            self.props.kind,
+            LayerKind::Raster | LayerKind::Tilemap | LayerKind::Shape | LayerKind::Text | LayerKind::Smart
+        )
     }
 
     /// A vector shape layer (see [`LayerKind::Shape`]).
     pub fn is_shape(&self) -> bool {
         self.props.kind == LayerKind::Shape && self.props.shape.is_some()
+    }
+
+    /// A smart object (see [`LayerKind::Smart`]).
+    pub fn is_smart(&self) -> bool {
+        self.props.kind == LayerKind::Smart && self.props.smart.is_some() && self.smart.is_some()
     }
 
     /// An editable text layer (see [`LayerKind::Text`]).
@@ -288,6 +309,7 @@ impl Layer {
             && !self.props.locked
             && !self.is_shape()
             && !self.is_text()
+            && !self.is_smart()
             && (self.owns_pixels() || (self.is_adjustment() && self.mask.is_some()))
     }
 }

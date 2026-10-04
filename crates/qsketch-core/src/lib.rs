@@ -36,6 +36,7 @@ pub mod palette;
 pub mod raster;
 pub mod shape;
 pub mod slice;
+pub mod smart;
 pub mod style;
 pub mod text;
 pub mod tilemap;

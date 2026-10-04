@@ -325,10 +325,15 @@ impl DocState {
         }
         // Drawn from data no more: it is pixels now (a tilemap keeps its
         // grid and takes the pixels into its cells at commit).
-        if matches!(l.props.kind, crate::layer::LayerKind::Shape | crate::layer::LayerKind::Text) {
+        if matches!(
+            l.props.kind,
+            crate::layer::LayerKind::Shape | crate::layer::LayerKind::Text | crate::layer::LayerKind::Smart
+        ) {
             l.props.kind = crate::layer::LayerKind::Raster;
             l.props.shape = None;
             l.props.text = None;
+            l.props.smart = None;
+            l.smart = None;
         }
     }
 

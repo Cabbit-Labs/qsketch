@@ -61,6 +61,7 @@ pub struct AtRest {
     mask: Option<Arc<Mask>>,
     shape: Option<Vec<[i32; 2]>>,
     text_anchor: Option<(i32, i32)>,
+    smart: Option<crate::smart::SmartObject>,
     /// Where it has pixels or mask coverage, on and off the canvas.
     extent: IRect,
 }
@@ -92,6 +93,7 @@ pub fn begin(doc: &DocState, layers: &[usize]) -> Vec<AtRest> {
                 mask: l.mask.clone(),
                 shape: l.props.shape.as_ref().map(|s| s.points.clone()),
                 text_anchor: l.props.text.as_ref().map(|t| t.anchor),
+                smart: l.props.smart.clone(),
                 extent,
             })
         })
@@ -114,6 +116,11 @@ pub fn apply(doc: &mut DocState, rest: &[AtRest], dx: i32, dy: i32) {
         }
         if let (Some(t), Some(a)) = (l.props.text.as_mut(), r.text_anchor) {
             t.anchor = (a.0 + dx, a.1 + dy);
+        }
+        if let Some(s) = &r.smart {
+            let mut s = s.clone();
+            s.translate(dx as f32, dy as f32);
+            l.props.smart = Some(s);
         }
     }
 }

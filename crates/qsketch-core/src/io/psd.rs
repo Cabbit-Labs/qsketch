@@ -204,12 +204,19 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
                     tilemap: None,
                     shape: None,
                     text: None,
+                    smart: None,
                     continuous: false,
                     color: None,
                     notes: String::new(),
                 };
                 next_id += 1;
-                layers.push(Layer { props, raster, mask: mask.map(std::sync::Arc::new), cels: Vec::new() });
+                layers.push(Layer {
+                    props,
+                    raster,
+                    mask: mask.map(std::sync::Arc::new),
+                    cels: Vec::new(),
+                    smart: None,
+                });
             }
             c.p = li_end;
         }

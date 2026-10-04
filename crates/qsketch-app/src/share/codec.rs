@@ -177,7 +177,7 @@ pub fn decode_snapshot(bytes: &[u8]) -> Result<(DocState, String)> {
             }
             Raster::from_rgba(h.w, h.h, &rgba)
         };
-        layers.push(Layer { props: props.clone(), raster, mask: None, cels: Vec::new() });
+        layers.push(Layer { props: props.clone(), raster, mask: None, cels: Vec::new(), smart: None });
     }
     if layers.is_empty() {
         bail!("snapshot has no layers");

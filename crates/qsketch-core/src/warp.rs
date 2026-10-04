@@ -10,6 +10,15 @@ use crate::{IRect, Mask, Pt, Raster};
 /// Four corners in the order top-left, top-right, bottom-right, bottom-left.
 pub type Quad = [Pt; 4];
 
+/// Corners (tl, tr, br, bl) of a `size` box centred on `center`, turned
+/// `angle` radians clockwise on screen.
+pub fn free_quad(center: Pt, size: (f32, f32), angle: f32) -> Quad {
+    let (hw, hh) = (size.0 / 2.0, size.1 / 2.0);
+    let (s, c) = angle.sin_cos();
+    let rot = |x: f32, y: f32| Pt::new(center.x + x * c - y * s, center.y + x * s + y * c);
+    [rot(-hw, -hh), rot(hw, -hh), rot(hw, hh), rot(-hw, hh)]
+}
+
 /// A 3×3 projective transform, row-major.
 #[derive(Clone, Copy, Debug)]
 pub struct Homography(pub [f32; 9]);

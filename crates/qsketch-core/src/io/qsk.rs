@@ -142,6 +142,9 @@ struct LayerEntry {
     /// The mask's off-canvas coverage (grayscale PNG).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mask_outside: Option<OutsideEntry>,
+    /// Smart objects (0.65+): the original pixels, at their own size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    smart_source: Option<String>,
 }
 
 /// Store `r`'s off-canvas pixels as `name`, if it has any.
@@ -247,7 +250,24 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
                 }
                 None => None,
             };
-            entries.push(LayerEntry { props: layer.props.clone(), file, mask, cels, outside, mask_outside });
+            let smart = match &layer.smart {
+                Some(src) if layer.props.smart.is_some() => {
+                    let name = format!("layers/{i:03}.smart.png");
+                    zip.start_file(&name, stored)?;
+                    zip.write_all(&super::image_io::encode_png(src.width(), src.height(), &src.to_rgba())?)?;
+                    Some(name)
+                }
+                _ => None,
+            };
+            entries.push(LayerEntry {
+                props: layer.props.clone(),
+                file,
+                mask,
+                cels,
+                outside,
+                mask_outside,
+                smart_source: smart,
+            });
         }
         let selection = match &doc.selection {
             Some(m) if !m.is_empty() => {
@@ -398,7 +418,19 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
                 cels.push(c);
             }
         }
-        layers.push(Layer { props: entry.props, raster, mask, cels });
+        // A smart object whose originals are missing falls back to pixels.
+        let smart = entry.smart_source.as_deref().and_then(|name| {
+            let mut bytes = Vec::new();
+            zip.by_name(name).ok()?.read_to_end(&mut bytes).ok()?;
+            super::image_io::decode_bytes(&bytes).ok().map(Arc::new)
+        });
+        let mut props = entry.props;
+        if props.kind == crate::layer::LayerKind::Smart && (smart.is_none() || props.smart.is_none()) {
+            props.kind = crate::layer::LayerKind::Raster;
+            props.smart = None;
+        }
+        let smart = smart.filter(|_| props.kind == crate::layer::LayerKind::Smart);
+        layers.push(Layer { props, raster, mask, cels, smart });
     }
     if layers.is_empty() {
         layers.push(Layer::new(1, "Background", w, h));
@@ -625,5 +657,28 @@ mod tests {
         crate::moving::apply(&mut back, &rest, 3, 2);
         assert_eq!(back.layers[0].raster.get_pixel(1, 1), Rgba8::WHITE);
         assert_eq!(back.layers[0].mask.as_ref().unwrap().get(0, 0), 77);
+    }
+
+    #[test]
+    fn smart_objects_survive_a_save() {
+        use crate::color::Rgba8;
+        let mut doc = DocState::new(16, 16, None);
+        doc.layers[0].raster.fill_rect(crate::geom::IRect::new(2, 2, 6, 4), Rgba8::new(9, 8, 7, 255));
+        assert!(crate::smart::convert(&mut doc, 0));
+        doc.layers[0].props.smart.as_mut().unwrap().size = (3.0, 2.0);
+        crate::smart::rerender(&mut doc, 0);
+        let dir = std::env::temp_dir().join(format!("qsk-smart-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s.qsk");
+        save(&path, &doc).unwrap();
+        let mut back = load(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(back.layers[0].is_smart());
+        assert_eq!(back.layers[0].props.smart, doc.layers[0].props.smart);
+        // Grown back to full size from the saved originals: nothing lost.
+        back.layers[0].props.smart.as_mut().unwrap().size = (6.0, 4.0);
+        crate::smart::rerender(&mut back, 0);
+        assert_eq!(back.layers[0].raster.get_pixel(2, 2), Rgba8::new(9, 8, 7, 255));
+        assert_eq!(back.layers[0].raster.get_pixel(7, 5), Rgba8::new(9, 8, 7, 255));
     }
 }

@@ -137,6 +137,12 @@ pub fn compat_warnings(path: &Path, doc: &crate::document::DocState) -> Vec<Stri
         w.push("Aseprite has no layer masks: each mask is applied to its layer's pixels in the file.".into());
     }
     if psd::is_psd(path) {
+        if doc.layers.iter().any(|l| l.is_smart()) {
+            w.push(
+                "Smart objects are saved as pixels: their original pixels and editable transform stay only in .qsk files."
+                    .into(),
+            );
+        }
         if doc.selection.is_some() {
             w.push("The selection isn't stored in Photoshop files.".into());
         }

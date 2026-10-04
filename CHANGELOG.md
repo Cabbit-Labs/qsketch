@@ -2,6 +2,21 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.65.0 — 2026-10-03
+
+- Smart objects. Layer › Smart Object › Convert to Smart Object turns a
+  layer (pixels, shape or text) into a smart object that keeps its
+  original pixels. Ctrl+T reopens its transform box exactly where it was
+  left: scale, rotate, distort or warp it as often as you like, shrink it
+  and grow it back, and it is always drawn fresh from the original, so the
+  pixels never wear down. Edit › Paste as Smart Object (Ctrl+Alt+V) places
+  a picture as a smart object at its full size, however small it is shown.
+  Moving, Canvas Size, Crop, Image Size, and canvas or layer flips and
+  turns all keep smart objects smart. Smart layers show a badge in the
+  Layers panel; painting on one says how to rasterize it first (Layer ›
+  Smart Object › Rasterize Smart Object). `.qsk` files keep the originals;
+  PSD and Aseprite files get the drawn pixels, with a note when saving.
+
 ## 0.64.0 — 2026-10-03
 
 - Workspace layouts for people coming from other programs. Preferences ›

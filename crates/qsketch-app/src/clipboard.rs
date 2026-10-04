@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use qsketch_core::{ClipImage, Layer, Pt};
+use qsketch_core::{ClipImage, IRect, Layer, Pt};
 
 use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
@@ -154,6 +154,48 @@ pub fn paste(state: &mut AppState, doc_id: DocId, in_place: bool) {
     }
     if crate::tools::floating::begin(state, doc_id, clip.to_raster(), x, y, w, h) {
         state.toasts.push(Level::Info, "Drag to move, drag handles to scale. Enter applies, Esc cancels.");
+    }
+}
+
+/// Paste as a smart object: a new layer holding the clipboard picture at its
+/// full size, placed (scaled to fit the canvas if it is bigger) in a
+/// transform box. However small it is shown, the original stays whole.
+pub fn paste_smart(state: &mut AppState, doc_id: DocId) {
+    // Same choice as a plain paste: ours unless the OS holds something newer.
+    let clip = match (from_os(), &state.clipboard) {
+        (Some(o), Some(i)) if !state.clipboard_in_os || i.same_picture(&o) => i.clone(),
+        (Some(o), _) => o,
+        (None, Some(i)) => i.clone(),
+        (None, None) => {
+            state.toasts.push(Level::Info, "Clipboard has no image.");
+            return;
+        }
+    };
+    crate::tools::floating::commit(state);
+    state.cancel_session();
+    let Some(entry) = state.doc_mut(doc_id) else { return };
+    let (dw, dh) = (entry.doc.width(), entry.doc.height());
+    let (mut w, mut h) = (clip.width, clip.height);
+    if w > dw || h > dh {
+        let k = (dw as f32 / w as f32).min(dh as f32 / h as f32);
+        w = ((w as f32 * k).round() as u32).max(1);
+        h = ((h as f32 * k).round() as u32).max(1);
+    }
+    let c: Pt = entry.view.screen_to_doc(entry.view.viewport.center());
+    let (cx, cy) = (c.x.clamp(0.0, dw as f32), c.y.clamp(0.0, dh as f32));
+    let (x, y) = ((cx - w as f32 / 2.0).round() as i32, (cy - h as f32 / 2.0).round() as i32);
+    let s = entry.doc.state_mut();
+    let name = s.unique_layer_name("Smart Object");
+    s.add_layer(name, None);
+    let li = s.active;
+    if crate::tools::floating::begin_smart_paste(
+        state,
+        doc_id,
+        li,
+        clip.to_raster(),
+        IRect::new(x, y, w as i32, h as i32),
+    ) {
+        state.toasts.push(Level::Info, "Place the smart object, then Enter. Ctrl+T reopens it any time, losslessly.");
     }
 }
 

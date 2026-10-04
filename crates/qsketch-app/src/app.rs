@@ -968,6 +968,7 @@ impl QSketchApp {
                 self.menu_item(ui, Action::CopyMerged, has_doc);
                 self.menu_item(ui, Action::Paste, has_doc);
                 self.menu_item(ui, Action::PasteInPlace, has_doc);
+                self.menu_item(ui, Action::PasteAsSmartObject, has_doc);
                 if ui.button("Paste as New Document").clicked() {
                     crate::clipboard::paste_as_new_document(&mut self.state);
                     ui.close();
@@ -1049,6 +1050,28 @@ impl QSketchApp {
                 self.menu_item(ui, Action::LayerProperties, has_doc);
                 let is_shape = self.state.active().is_some_and(|d| d.doc.state().active_layer().is_shape());
                 let is_text = self.state.active().is_some_and(|d| d.doc.state().active_layer().is_text());
+                let is_smart = self.state.active().is_some_and(|d| d.doc.state().active_layer().is_smart());
+                let can_smart = self.state.active().is_some_and(|d| {
+                    let l = d.doc.state().active_layer();
+                    matches!(
+                        l.props.kind,
+                        qsketch_core::layer::LayerKind::Raster
+                            | qsketch_core::layer::LayerKind::Shape
+                            | qsketch_core::layer::LayerKind::Text
+                    )
+                });
+                menus::submenu(ui, false, "Smart Object", |ui| {
+                    self.menu_item(ui, Action::ConvertToSmartObject, can_smart);
+                    self.menu_item(ui, Action::TransformSmartObject, is_smart);
+                    self.menu_item(ui, Action::RasterizeSmartObject, is_smart);
+                    ui.label(
+                        egui::RichText::new(
+                            "Smart objects keep their original pixels: scale, rotate and warp them (Ctrl+T) as often as you like without losing quality",
+                        )
+                        .weak()
+                        .small(),
+                    );
+                });
                 menus::submenu(ui, false, "Text", |ui| {
                     self.menu_item(ui, Action::NewTextLayer, has_doc);
                     self.menu_item(ui, Action::EditText, is_text);
@@ -2220,6 +2243,47 @@ impl QSketchApp {
                     if !crate::tools::text::begin(&mut self.state, id, qsketch_core::Pt::new(0.0, 0.0), true) {
                         self.state.toasts.push(Level::Info, "The active layer isn't a text layer.");
                     }
+                }
+            }
+            Action::ConvertToSmartObject => {
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let li = s.active;
+                    if qsketch_core::smart::convert(s, li) {
+                        d.doc.mark_all_dirty();
+                        d.doc.commit("Convert to Smart Object");
+                        self.state.toasts.push(
+                            Level::Info,
+                            "Smart object: Ctrl+T scales, rotates and warps it from the original pixels, as often as you like.",
+                        );
+                    } else {
+                        self.state
+                            .toasts
+                            .push(Level::Info, "The active layer has no pixels to make a smart object from.");
+                    }
+                }
+            }
+            Action::TransformSmartObject => {
+                if let Some(id) = active {
+                    crate::tools::floating::begin_transform(&mut self.state, id);
+                }
+            }
+            Action::RasterizeSmartObject => {
+                self.state.settle();
+                if let Some(d) = self.state.active_mut() {
+                    let s = d.doc.state_mut();
+                    let li = s.active;
+                    if qsketch_core::smart::rasterize(s, li) {
+                        d.doc.commit("Rasterize Smart Object");
+                    } else {
+                        self.state.toasts.push(Level::Info, "The active layer isn't a smart object.");
+                    }
+                }
+            }
+            Action::PasteAsSmartObject => {
+                if let Some(id) = active {
+                    crate::clipboard::paste_smart(&mut self.state, id);
                 }
             }
             Action::RasterizeText => {

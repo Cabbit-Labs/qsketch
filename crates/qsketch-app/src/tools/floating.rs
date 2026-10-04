@@ -12,6 +12,7 @@ use std::sync::Arc;
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 use qsketch_core::ops::{drop_floating, Floating, Orient};
 use qsketch_core::raster::ResizeFilter;
+use qsketch_core::smart::{SmartMode, SmartObject};
 use qsketch_core::warp::{self, Mesh, Quad};
 use qsketch_core::{IRect, Mask, Pt, Raster};
 
@@ -188,6 +189,13 @@ pub enum Origin {
         /// History step name ("Free Transform", "Move", "Duplicate").
         label: &'static str,
     },
+    /// A smart object being placed: the box edits its placement and the
+    /// pixels are drawn from its originals (`source`). `start` is the
+    /// placement it had (None for a fresh paste as smart object).
+    Smart {
+        start: Option<SmartObject>,
+        label: &'static str,
+    },
 }
 
 pub struct FloatingPaste {
@@ -244,6 +252,49 @@ impl FloatingPaste {
             filter: ResizeFilter::Bilinear,
             dirty: true,
         }
+    }
+
+    /// The box's state as a smart object placement.
+    pub fn placement(&self) -> SmartObject {
+        SmartObject {
+            mode: match self.mode {
+                Mode::Deform => SmartMode::Deform,
+                Mode::Warp => SmartMode::Warp,
+                Mode::Freeform | Mode::Resize | Mode::Rotate => SmartMode::Box,
+            },
+            center: self.center,
+            size: self.size,
+            angle: self.angle,
+            quad: self.corners(),
+            mesh_cols: self.mesh.cols,
+            mesh_rows: self.mesh.rows,
+            mesh: self.mesh.pts.clone(),
+            filter: self.filter,
+        }
+    }
+
+    /// Pick the box up where a smart object's placement left it.
+    fn with_placement(mut self, p: &SmartObject) -> Self {
+        self.center = p.center;
+        self.size = p.size;
+        self.angle = p.angle;
+        self.quad = p.corners();
+        self.filter = p.filter;
+        self.mode = match p.mode {
+            SmartMode::Box => Mode::Freeform,
+            SmartMode::Deform => Mode::Deform,
+            SmartMode::Warp => Mode::Warp,
+        };
+        let mesh = p.render_mesh();
+        if p.mode == SmartMode::Warp {
+            self.warp_div = mesh.cols;
+            self.mesh = mesh;
+        } else {
+            self.mesh = Mesh::from_quad(self.quad, self.warp_div, self.warp_div);
+        }
+        self.home = self.center;
+        self.dirty = true;
+        self
     }
 
     fn with_filter(mut self, filter: ResizeFilter) -> Self {
@@ -482,12 +533,7 @@ fn clamp_size(v: f32) -> f32 {
 }
 
 /// Corners of a rotated rectangle.
-fn free_quad(center: Pt, size: (f32, f32), angle: f32) -> Quad {
-    let (hw, hh) = (size.0 / 2.0, size.1 / 2.0);
-    let (s, c) = angle.sin_cos();
-    let rot = |x: f32, y: f32| Pt::new(center.x + x * c - y * s, center.y + x * s + y * c);
-    [rot(-hw, -hh), rot(hw, -hh), rot(hw, hh), rot(-hw, hh)]
-}
+use qsketch_core::warp::free_quad;
 
 fn point_in_quad(q: Quad, p: Pt) -> bool {
     let mut inside = false;
@@ -537,6 +583,49 @@ pub fn begin(state: &mut AppState, doc_id: DocId, source: Raster, x: i32, y: i32
     true
 }
 
+/// Reopen the active smart object's placement in a transform box, drawing
+/// from its original pixels.
+fn begin_smart(state: &mut AppState, doc_id: DocId) -> bool {
+    let Some(entry) = state.doc_mut(doc_id) else { return false };
+    let s = entry.doc.state_mut();
+    let li = s.active;
+    let l = &s.layers[li];
+    if l.props.locked || !s.effectively_visible(li) {
+        state.toasts.push(Level::Info, "The active layer is locked or hidden.");
+        return false;
+    }
+    let (Some(p), Some(src)) = (l.props.smart.clone(), l.smart.clone()) else { return false };
+    let base = Raster::new(s.width, s.height);
+    s.selection = None;
+    entry.sel_outline = None;
+    let place = IRect::new(0, 0, src.width() as i32, src.height() as i32);
+    let origin = Origin::Smart { start: Some(p.clone()), label: "Transform Smart Object" };
+    state.floating = Some(FloatingPaste::new(doc_id, li, (*src).clone(), base, place, origin).with_placement(&p));
+    refresh(state);
+    true
+}
+
+/// Start placing `source` as a new smart object on layer `li` (a fresh,
+/// empty layer), shown at `x, y, w, h`.
+pub fn begin_smart_paste(state: &mut AppState, doc_id: DocId, li: usize, source: Raster, place: IRect) -> bool {
+    state.settle();
+    let Some(entry) = state.doc_mut(doc_id) else { return false };
+    let s = entry.doc.state_mut();
+    let base = Raster::new(s.width, s.height);
+    s.selection = None;
+    entry.sel_outline = None;
+    let (sw, sh) = (source.width() as i32, source.height() as i32);
+    let mut p = SmartObject::identity(IRect::new(0, 0, sw, sh));
+    p.center = Pt::new(place.x as f32 + place.w as f32 / 2.0, place.y as f32 + place.h as f32 / 2.0);
+    p.size = (place.w.max(1) as f32, place.h.max(1) as f32);
+    p.filter = state.settings.canvas.transform_filter;
+    let origin = Origin::Smart { start: None, label: "Paste as Smart Object" };
+    let src_place = IRect::new(0, 0, sw, sh);
+    state.floating = Some(FloatingPaste::new(doc_id, li, source, base, src_place, origin).with_placement(&p));
+    refresh(state);
+    true
+}
+
 /// Free Transform: lift the selected pixels (or the whole layer when nothing
 /// is selected) and start transforming them. A paste already floating just
 /// keeps floating.
@@ -554,6 +643,9 @@ pub fn begin_transform_with(state: &mut AppState, doc_id: DocId, duplicate: bool
     let Some(entry) = state.doc_mut(doc_id) else { return false };
     let s = entry.doc.state_mut();
     let li = s.active;
+    if s.layers[li].is_smart() {
+        return begin_smart(state, doc_id);
+    }
     if !s.layer_editable(li) {
         state.toasts.push(Level::Info, "The active layer is locked or hidden.");
         return false;
@@ -851,6 +943,25 @@ fn commit_clipped(state: &mut AppState, clip: Option<IRect>) -> bool {
         fp.render_clipped(entry, fp.filter, clip);
         match &fp.origin {
             Origin::Paste => entry.doc.commit("Paste"),
+            Origin::Smart { start, label } => {
+                let p = fp.placement();
+                if start.as_ref().is_some_and(|s| s.same_as(&p)) {
+                    entry.doc.revert_working();
+                    return true;
+                }
+                let s = entry.doc.state_mut();
+                if let Some(l) = s.layers.get_mut(fp.layer) {
+                    l.props.kind = qsketch_core::layer::LayerKind::Smart;
+                    l.props.smart = Some(p);
+                    if start.is_none() {
+                        l.smart = Some(Arc::new(fp.source.clone()));
+                    }
+                }
+                // Drawn whole, past the canvas edge too (the preview stops there).
+                qsketch_core::smart::rerender(s, fp.layer);
+                entry.doc.mark_all_dirty();
+                entry.doc.commit(*label);
+            }
             Origin::Transform { mask, sel_before, label } => {
                 let s = entry.doc.state_mut();
                 let (w, h) = (s.width, s.height);
@@ -1313,5 +1424,64 @@ mod tests {
             .layers
             .iter()
             .any(|l| l.raster.get_pixel(30, 20) == Rgba8::BLACK || l.raster.get_pixel(30, 20).a == 255));
+    }
+
+    #[test]
+    fn smart_object_survives_shrink_and_regrow_through_the_box() {
+        let mut state = AppState::new(crate::settings::Settings::default());
+        let mut doc = qsketch_core::Document::new(64, 64, None, "smart");
+        let s = doc.state_mut();
+        s.layers[0].raster.fill_rect(IRect::new(8, 8, 32, 16), Rgba8::new(10, 200, 30, 255));
+        s.layers[0].raster.set_pixel(8, 8, Rgba8::new(255, 0, 0, 255));
+        let id = state.add_document(doc);
+        let before = state.doc(id).unwrap().doc.state().layers[0].raster.to_rgba();
+        assert!(qsketch_core::smart::convert(state.doc_mut(id).unwrap().doc.state_mut(), 0));
+        // Ctrl+T reopens the placement; shrink it to a few pixels and apply.
+        assert!(begin_transform(&mut state, id));
+        {
+            let fp = state.floating.as_mut().unwrap();
+            assert!(matches!(fp.origin, Origin::Smart { .. }));
+            fp.size = (4.0, 2.0);
+            fp.dirty = true;
+        }
+        assert!(commit(&mut state));
+        let small = state.doc(id).unwrap().doc.state().layers[0].raster.bounds().unwrap();
+        assert!(small.w <= 5 && small.h <= 3, "{small:?}");
+        // Reopen and grow back: drawn from the originals, so nothing is lost.
+        assert!(begin_transform(&mut state, id));
+        {
+            let fp = state.floating.as_mut().unwrap();
+            assert_eq!(fp.size, (4.0, 2.0), "the box picks up where it was left");
+            fp.size = (32.0, 16.0);
+            fp.dirty = true;
+        }
+        assert!(commit(&mut state));
+        let l = &state.doc(id).unwrap().doc.state().layers[0];
+        assert!(l.is_smart());
+        assert_eq!(l.raster.to_rgba(), before);
+        // An untouched reopen adds no history step.
+        let steps = state.doc(id).unwrap().doc.history.len();
+        assert!(begin_transform(&mut state, id));
+        assert!(commit(&mut state));
+        assert_eq!(state.doc(id).unwrap().doc.history.len(), steps);
+    }
+
+    #[test]
+    fn paste_as_smart_object_keeps_the_full_size_original() {
+        let mut state = AppState::new(crate::settings::Settings::default());
+        let id = state.add_document(qsketch_core::Document::new(40, 40, None, "small"));
+        let mut big = Raster::new(400, 200);
+        big.fill_rect(IRect::new(0, 0, 400, 200), Rgba8::new(1, 2, 3, 255));
+        {
+            let s = state.doc_mut(id).unwrap().doc.state_mut();
+            s.add_layer("Smart Object", None);
+        }
+        let li = state.doc(id).unwrap().doc.state().active;
+        assert!(begin_smart_paste(&mut state, id, li, big, IRect::new(0, 10, 40, 20)));
+        assert!(commit(&mut state));
+        let l = &state.doc(id).unwrap().doc.state().layers[li];
+        assert!(l.is_smart());
+        assert_eq!(l.smart.as_ref().unwrap().width(), 400, "original kept at full size");
+        assert_eq!(l.raster.get_pixel(20, 20), Rgba8::new(1, 2, 3, 255));
     }
 }

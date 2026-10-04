@@ -18,6 +18,7 @@ mydrawing.qsk  (a ZIP file)
 │   ├── 000.mask.png      # optional: that layer's mask, 8-bit grayscale
 │   ├── 000.outside.png   # optional (0.62+): pixels kept off the canvas
 │   ├── 000.mask.outside.png  # optional (0.62+): mask coverage off the canvas
+│   ├── 000.smart.png     # optional (0.65+): a smart object's original pixels
 │   ├── 001.png
 │   ├── 001/
 │   │   ├── f0001.png     # optional (0.59+): that layer's own picture in frame 2
@@ -193,6 +194,15 @@ Field notes:
     "anchor": [x, y] }`: the editable text the layer is drawn from. The
     layer PNG holds the rendered glyphs, so readers that ignore text layers
     still see the right pixels.
+  - `smart` (0.65+, `kind` `Smart`) — a smart object's placement:
+    `{ "mode": "Box" | "Deform" | "Warp", "center": [x, y], "size": [w, h],
+    "angle": radians, "quad": [[x, y] ×4], "mesh_cols", "mesh_rows",
+    "mesh": [[x, y], …], "filter" }` (`Box` uses center/size/angle, `Deform`
+    the four corners tl/tr/br/bl, `Warp` the lattice). The original pixels
+    are `layers/NNN.smart.png`, named by the entry's `smart_source`, at
+    their own size; the layer PNG holds the drawn result, so readers that
+    ignore smart objects still see the right pixels. A `Smart` layer whose
+    originals are missing opens as a plain pixel layer.
   - `continuous` (0.59+) — animation: a new frame's cel on this layer links
     to the previous frame's instead of starting empty or as a copy
     (Aseprite's "prefer linked cels"). Omitted when `false`.
@@ -204,7 +214,7 @@ Field notes:
     when the picture is empty), `{ "link": 2 }` for a cel showing frame 2's
     picture, plus optional `opacity` (`0.0..=1.0`, default `1`) and
     `z_index` (default `0`; kept for Aseprite, not drawn).
-  - `kind` — `Raster` (default), `Group`, `Tilemap` (0.57+), `Shape` (0.60+), `Text` (0.61+), or (0.53+) `Adjustment`: a
+  - `kind` — `Raster` (default), `Group`, `Tilemap` (0.57+), `Shape` (0.60+), `Text` (0.61+), `Smart` (0.65+), or (0.53+) `Adjustment`: a
     layer that owns no pixels and applies its `adjustment` (a filter such as
     `{"Levels": {...}}`, `{"Curves": {...}}`, `{"HueSaturation": {...}}`,
     `{"BrightnessContrast": {...}}` or `{"ColorBalance": {...}}`) to

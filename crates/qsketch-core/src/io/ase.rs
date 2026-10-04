@@ -805,6 +805,7 @@ impl AseSprite {
                 tilemap: None,
                 shape: None,
                 text: None,
+                smart: None,
                 continuous: al.flags & LAYER_PREFER_LINKED != 0,
                 color: al.user.color.filter(|c| c[3] > 0),
                 notes: al.user.text.clone(),
@@ -823,7 +824,7 @@ impl AseSprite {
                             "Layer \"{}\" uses a tileset that isn't in the file; it was left empty.",
                             al.name
                         ));
-                        layers.push(Layer { props, raster, mask: None, cels });
+                        layers.push(Layer { props, raster, mask: None, cels, smart: None });
                         continue;
                     };
                     let roots: Vec<Option<usize>> = (0..nframes).map(|f| self.cel_root(f, *fi)).collect();
@@ -909,7 +910,7 @@ impl AseSprite {
                 }
                 cels.clear();
             }
-            layers.push(Layer { props, raster, mask: None, cels });
+            layers.push(Layer { props, raster, mask: None, cels, smart: None });
         }
         if dropped_diag {
             warnings.push("Diagonally flipped tiles aren't supported; they were placed unflipped.".into());
@@ -1083,6 +1084,13 @@ pub fn compat_warnings(doc: &DocState) -> Vec<String> {
     let shapes: Vec<&str> = doc.layers.iter().filter(|l| l.is_shape()).map(|l| l.props.name.as_str()).collect();
     if !shapes.is_empty() {
         w.push(format!("Shape layers are saved as pixels; {} will lose the editable points.", list(&shapes)));
+    }
+    let smarts: Vec<&str> = doc.layers.iter().filter(|l| l.is_smart()).map(|l| l.props.name.as_str()).collect();
+    if !smarts.is_empty() {
+        w.push(format!(
+            "Smart objects are saved as pixels; {} will lose their original pixels and editable transform.",
+            list(&smarts)
+        ));
     }
     let texts: Vec<&str> = doc.layers.iter().filter(|l| l.is_text()).map(|l| l.props.name.as_str()).collect();
     if !texts.is_empty() {
