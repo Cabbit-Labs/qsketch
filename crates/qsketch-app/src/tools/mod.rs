@@ -680,8 +680,8 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         return;
     }
     // Grabbing the box around a selection lifts the selected pixels into a
-    // transform box: drag to move (Ctrl duplicates), handles scale, the band
-    // just outside rotates.
+    // transform box: drag to move (Ctrl duplicates), handles scale. Rotation
+    // waits for the live box (its band), so the idle selection has none.
     if let CanvasEvent::Press(inp) = ev {
         if inp.button == PointerButton::Primary
             && state.session.is_none()

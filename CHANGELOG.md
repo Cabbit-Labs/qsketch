@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- The rotate cursor no longer pops up near the edge of a plain selection
+  (it showed with every tool, even the brush, where a press just paints).
+  It now appears only once a selection is being transformed: lift it by
+  dragging inside or a handle (or Ctrl+T), then the band just outside the
+  live box rotates as before.
+
 ## 0.66.0 — 2026-10-03
 
 - Trace to Vector (Image menu, also Layer › Smart Object). Turns the

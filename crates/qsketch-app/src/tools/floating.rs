@@ -678,9 +678,9 @@ pub fn begin_transform_with(state: &mut AppState, doc_id: DocId, duplicate: bool
     true
 }
 
-/// Screen-space slack around the selection box that still counts as grabbing
-/// it: inside this band but outside the box starts a rotation, exactly as
-/// pressing outside a Freeform box does.
+/// Screen-space band just outside a live Freeform transform box where a press
+/// rotates it. An idle selection has no band: rotating starts only once the
+/// pixels are lifted, so the rotate glyph never shows over a plain selection.
 const SELECTION_BAND: f32 = 20.0;
 
 /// The document-space corners of the box drawn around the current selection
@@ -749,8 +749,7 @@ fn selection_handle_at(state: &AppState, doc_id: DocId, pos: Pos2) -> Option<Han
     nearest_grab(selection_grabs(state, doc_id)?, pos, Handle::is_corner)
 }
 
-/// True when `pos` grabs the idle selection box: a handle, the inside, or the
-/// rotation band just outside it.
+/// True when `pos` grabs the idle selection box: a handle or the inside.
 pub fn selection_hit(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
     if state.floating.is_some() {
         return false;
@@ -761,48 +760,32 @@ pub fn selection_hit(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
     if selection_handle_at(state, doc_id, pos).is_some() {
         return true;
     }
-    if point_in_quad(q, view.screen_to_doc(pos)) {
-        return true;
-    }
-    // Outside: only the band hugging the box counts, so a press well clear of
-    // the selection still starts a new marquee.
-    let mut bb = Rect::NOTHING;
-    for p in q {
-        bb = bb.union(Rect::from_min_size(view.doc_to_screen(p), Vec2::ZERO));
-    }
-    bb.expand(SELECTION_BAND).contains(pos)
+    point_in_quad(q, view.screen_to_doc(pos))
 }
 
 /// True when a primary press at `pos` would ROTATE rather than move, scale,
-/// commit or deselect: the band hugging a Freeform box (or the idle selection
-/// box) that is outside the pixels and off every handle, anywhere while in
-/// Rotate mode, and for as long as a rotation drag is in progress. The canvas
+/// commit or deselect: the band hugging a live Freeform box that is outside
+/// the pixels and off every handle, anywhere while in Rotate mode, and for as
+/// long as a rotation drag is in progress. Never for an idle selection. The canvas
 /// swaps the pointer for a rotate glyph there, so the band — invisible on
 /// its own — is legible before the press (2026-09-19).
 pub fn in_rotation_band(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
     let Some(entry) = state.doc(doc_id) else { return false };
     let view = &entry.view;
-    if let Some(fp) = state.floating.as_ref() {
-        if fp.doc != doc_id {
-            return false;
-        }
-        if fp.drag.is_some() {
-            return matches!(fp.drag, Some(FloatDrag::Rotate { .. }));
-        }
-        return match fp.mode {
-            Mode::Rotate => fp.grab_at(view, pos).is_none(),
-            Mode::Freeform => {
-                fp.grab_at(view, pos).is_none()
-                    && !fp.contains(view.screen_to_doc(pos))
-                    && !outside_box(state, doc_id, pos)
-            }
-            _ => false,
-        };
+    let Some(fp) = state.floating.as_ref() else { return false };
+    if fp.doc != doc_id {
+        return false;
     }
-    let Some(q) = selection_quad(state, doc_id) else { return false };
-    selection_handle_at(state, doc_id, pos).is_none()
-        && !point_in_quad(q, view.screen_to_doc(pos))
-        && selection_hit(state, doc_id, pos)
+    if fp.drag.is_some() {
+        return matches!(fp.drag, Some(FloatDrag::Rotate { .. }));
+    }
+    match fp.mode {
+        Mode::Rotate => fp.grab_at(view, pos).is_none(),
+        Mode::Freeform => {
+            fp.grab_at(view, pos).is_none() && !fp.contains(view.screen_to_doc(pos)) && !outside_box(state, doc_id, pos)
+        }
+        _ => false,
+    }
 }
 
 /// True when `pos` is clear of the floating box and its rotation band, so a
@@ -900,12 +883,7 @@ pub fn selection_cursor(state: &AppState, doc_id: DocId, pos: Option<Pos2>) -> O
     if !selection_hit(state, doc_id, pos) {
         return None;
     }
-    if let Some(h) = selection_handle_at(state, doc_id, pos) {
-        return Some(handle_cursor(h));
-    }
-    let q = selection_quad(state, doc_id)?;
-    let view = &state.doc(doc_id)?.view;
-    Some(if point_in_quad(q, view.screen_to_doc(pos)) { C::Move } else { C::Alias })
+    Some(selection_handle_at(state, doc_id, pos).map_or(C::Move, handle_cursor))
 }
 
 fn handle_cursor(h: Handle) -> egui::CursorIcon {
