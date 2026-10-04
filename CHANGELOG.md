@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.66.1 — 2026-10-04
 
 - The rotate cursor no longer pops up near the edge of a plain selection
   (it showed with every tool, even the brush, where a press just paints).
