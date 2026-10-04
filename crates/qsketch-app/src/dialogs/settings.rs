@@ -386,8 +386,21 @@ fn interface(ui: &mut Ui, state: &mut AppState) {
         });
         ui.end_row();
     });
+    ui.add_space(10.0);
+    ui.label("Workspace layout");
+    ui.horizontal_wrapped(|ui| {
+        for p in crate::settings::LayoutPreset::ALL {
+            let r = ui.selectable_label(u.layout_preset == p, p.label()).on_hover_text(p.blurb());
+            if r.clicked() {
+                u.layout_preset = p;
+                // Applying replaces the current arrangement, as Reset Workspace does.
+                state.layout_reset_requested = true;
+            }
+        }
+    });
+    ui.label(RichText::new(state.settings.ui.layout_preset.blurb()).weak().small());
     ui.add_space(8.0);
-    ui.label(RichText::new("Panels can be dragged by their tabs to dock anywhere or float. Use Window › Reset Workspace to restore the default layout.").weak());
+    ui.label(RichText::new("Picking a layout rearranges the panels right away. Panels can still be dragged by their tabs to dock anywhere or float; Window › Reset Workspace returns to the chosen layout.").weak());
 }
 
 /// Clickable preview card for a theme: a miniature of the chrome with the

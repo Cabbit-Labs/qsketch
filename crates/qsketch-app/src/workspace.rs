@@ -7,6 +7,7 @@ use egui_dock::{DockArea, DockState, NodeIndex, NodePath, SurfaceIndex, TabPath,
 use serde::{Deserialize, Serialize};
 
 use crate::panels;
+use crate::settings::LayoutPreset;
 use crate::state::{AppState, DocId};
 use crate::ui::icons;
 use crate::ui::theme::Section;
@@ -115,6 +116,59 @@ pub enum Arrange {
 }
 
 impl Workspace {
+    /// The arrangement for `preset`.
+    pub fn layout(preset: LayoutPreset) -> DockState<PanelKind> {
+        match preset {
+            LayoutPreset::Qsketch => Self::default_layout(),
+            LayoutPreset::Sai2 => Self::sai2_layout(),
+            LayoutPreset::Photoshop => Self::photoshop_layout(),
+            LayoutPreset::Aseprite => Self::aseprite_layout(),
+        }
+    }
+
+    /// PaintTool SAI's two left-hand columns: navigator over layers, then
+    /// color over tools over the current tool's settings; the canvas gets
+    /// everything to their right.
+    fn sai2_layout() -> DockState<PanelKind> {
+        let mut dock = DockState::new(vec![PanelKind::Home]);
+        let tree = dock.main_surface_mut();
+        let [rest, col1] = tree.split_left(NodeIndex::root(), 0.095, vec![PanelKind::Navigator]);
+        let [_nav, _layers] = tree.split_below(col1, 0.22, vec![PanelKind::Layers, PanelKind::History]);
+        let [_canvas, col2] =
+            tree.split_left(rest, 0.155, vec![PanelKind::Color, PanelKind::Swatches, PanelKind::Palette]);
+        let [_color, tools] = tree.split_below(col2, 0.34, vec![PanelKind::Tools]);
+        let [_tools, _settings] =
+            tree.split_below(tools, 0.36, vec![PanelKind::BrushSettings, PanelKind::Brushes, PanelKind::Info]);
+        dock
+    }
+
+    /// Photoshop's Essentials: a tools strip on the left; on the right a
+    /// narrow column of secondary panels beside the main one (color and
+    /// swatches, then navigator and brushes, then a tall layers panel).
+    fn photoshop_layout() -> DockState<PanelKind> {
+        let mut dock = DockState::new(vec![PanelKind::Home]);
+        let tree = dock.main_surface_mut();
+        let [center, _tools] = tree.split_left(NodeIndex::root(), 0.04, vec![PanelKind::Tools]);
+        let [_canvas, right] =
+            tree.split_right(center, 0.72, vec![PanelKind::Color, PanelKind::Swatches, PanelKind::Palette]);
+        let [right, _narrow] = tree.split_left(right, 0.36, vec![PanelKind::History, PanelKind::Info]);
+        let [_color, mid] = tree.split_below(right, 0.3, vec![PanelKind::Navigator, PanelKind::Brushes]);
+        let [_mid, _layers] = tree.split_below(mid, 0.38, vec![PanelKind::Layers]);
+        dock
+    }
+
+    /// Aseprite: the palette and color picker down the left, the tools on
+    /// the right edge, and the timeline (with layers) under the canvas.
+    fn aseprite_layout() -> DockState<PanelKind> {
+        let mut dock = DockState::new(vec![PanelKind::Home]);
+        let tree = dock.main_surface_mut();
+        let [center, left] = tree.split_left(NodeIndex::root(), 0.13, vec![PanelKind::Palette, PanelKind::Swatches]);
+        let [_palette, _color] = tree.split_below(left, 0.6, vec![PanelKind::Color]);
+        let [center, _tools] = tree.split_right(center, 0.955, vec![PanelKind::Tools]);
+        let [_canvas, _timeline] = tree.split_below(center, 0.7, vec![PanelKind::Timeline, PanelKind::Layers]);
+        dock
+    }
+
     pub fn default_layout() -> DockState<PanelKind> {
         let mut dock = DockState::new(vec![PanelKind::Home]);
         let root = NodeIndex::root();
@@ -130,8 +184,8 @@ impl Workspace {
         dock
     }
 
-    pub fn new() -> Self {
-        Self { dock: Self::default_layout() }
+    pub fn new(preset: LayoutPreset) -> Self {
+        Self { dock: Self::layout(preset) }
     }
 
     pub fn from_json(json: &str) -> Option<Self> {
@@ -162,8 +216,8 @@ impl Workspace {
         serde_json::to_string(&dock).ok().map(|j| j.replace(":null", ":0.0"))
     }
 
-    pub fn reset(&mut self, docs: &[DocId]) {
-        self.dock = Self::default_layout();
+    pub fn reset(&mut self, docs: &[DocId], preset: LayoutPreset) {
+        self.dock = Self::layout(preset);
         for &d in docs {
             self.add_document(d);
         }
@@ -757,7 +811,7 @@ mod tests {
     fn arrangements_keep_every_document_and_a_consistent_tree() {
         for mode in [Arrange::Tabs, Arrange::SideBySide, Arrange::Stacked, Arrange::Grid] {
             for n in 1..=5u64 {
-                let mut ws = Workspace::new();
+                let mut ws = Workspace::new(LayoutPreset::default());
                 let ids: Vec<DocId> = (1..=n).collect();
                 for &d in &ids {
                     ws.add_document(d);
@@ -775,8 +829,31 @@ mod tests {
     }
 
     #[test]
+    fn every_layout_preset_is_whole_and_takes_documents() {
+        for preset in LayoutPreset::ALL {
+            let mut ws = Workspace::new(preset);
+            assert!(tree_is_consistent(ws.dock.main_surface()), "{preset:?}");
+            for k in [PanelKind::Home, PanelKind::Tools, PanelKind::Layers, PanelKind::Color] {
+                assert!(ws.dock.find_tab(&k).is_some(), "{preset:?} has {k:?}");
+            }
+            let ids: Vec<DocId> = (1..=3).collect();
+            for &d in &ids {
+                ws.add_document(d);
+            }
+            ws.arrange_documents(&ids, Some(1), Arrange::SideBySide);
+            assert!(tree_is_consistent(ws.dock.main_surface()), "{preset:?} arranged");
+            // Documents land with Home, not inside a side panel.
+            let home = ws.dock.find_tab(&PanelKind::Home).unwrap();
+            let doc = ws.dock.find_tab(&PanelKind::Document(1)).unwrap();
+            assert_eq!(home.surface, doc.surface, "{preset:?}");
+            let json = ws.to_json().unwrap();
+            assert!(Workspace::from_json(&json).is_some(), "{preset:?} reloads");
+        }
+    }
+
+    #[test]
     fn stripping_documents_leaves_a_layout_that_reloads() {
-        let mut ws = Workspace::new();
+        let mut ws = Workspace::new(LayoutPreset::default());
         let ids: Vec<DocId> = (1..=4).collect();
         for &d in &ids {
             ws.add_document(d);

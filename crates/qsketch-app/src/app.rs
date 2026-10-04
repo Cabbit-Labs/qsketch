@@ -109,7 +109,12 @@ impl QSketchApp {
             log::error!("wgpu render state missing; canvas rendering disabled");
         }
 
-        let workspace = state.settings.layout.as_deref().and_then(Workspace::from_json).unwrap_or_else(Workspace::new);
+        let workspace = state
+            .settings
+            .layout
+            .as_deref()
+            .and_then(Workspace::from_json)
+            .unwrap_or_else(|| Workspace::new(state.settings.ui.layout_preset));
         let cloak = crate::startup_cloak::StartupCloak::install(cc, state.settings.window_maximized);
         crate::win_pointer::install(cc);
         let wintab = if state.settings.tablet.use_wintab { crate::wintab::WinTab::new(cc) } else { None };
@@ -216,7 +221,7 @@ impl QSketchApp {
         }
         if self.state.layout_reset_requested {
             self.state.layout_reset_requested = false;
-            self.workspace.reset(&ids);
+            self.workspace.reset(&ids, self.state.settings.ui.layout_preset);
         }
         // Close requests (with confirmation).
         if let Some(id) = self.state.close_doc_requests.first().copied() {
@@ -979,7 +984,9 @@ impl QSketchApp {
             top_menu(ui, "Image", |ui| {
                 self.menu_item(ui, Action::ImageSize, has_doc);
                 self.menu_item(ui, Action::CanvasSize, has_doc);
-                self.menu_item(ui, Action::CropToSelection, has_sel);
+                // With a paste or transform box up, it fits the canvas to the box.
+                let boxed = self.state.floating.as_ref().is_some_and(|f| Some(f.doc) == self.state.active_doc);
+                self.menu_item(ui, Action::CropToSelection, has_sel || boxed);
                 let aspect = self.state.active().map(|d| d.doc.state().pixel_aspect).unwrap_or([1, 1]);
                 menus::submenu(ui, false, "Pixel Aspect Ratio", |ui| {
                     ui.label(egui::RichText::new("How wide each pixel shows (for pixel art made for old screens)").weak().small());
@@ -1385,6 +1392,16 @@ impl QSketchApp {
                     }
                 }
                 ui.separator();
+                menus::submenu(ui, false, "Workspace", |ui| {
+                    for p in crate::settings::LayoutPreset::ALL {
+                        let on = self.state.settings.ui.layout_preset == p;
+                        if ui.add(menus::button(on, p.label())).on_hover_text(p.blurb()).clicked() {
+                            self.state.settings.ui.layout_preset = p;
+                            self.state.layout_reset_requested = true;
+                            ui.close();
+                        }
+                    }
+                });
                 self.menu_item(ui, Action::ResetLayout, true);
                 ui.separator();
                 let several = self.state.docs.len() > 1;
@@ -1860,6 +1877,11 @@ impl QSketchApp {
             }
             Action::ImageSize => dialogs::open_image_size(&mut self.state),
             Action::CanvasSize => dialogs::open_canvas_size(&mut self.state),
+            Action::CropToSelection
+                if self.state.floating.as_ref().is_some_and(|f| Some(f.doc) == self.state.active_doc) =>
+            {
+                crate::tools::floating::crop_canvas_to_box(&mut self.state);
+            }
             Action::CropToSelection => {
                 if let Some(d) = self.state.active_mut() {
                     if let Some(b) = d.doc.state().selection_mask().map(|m| m.bounds()) {

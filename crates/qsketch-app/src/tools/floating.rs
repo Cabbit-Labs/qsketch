@@ -444,13 +444,20 @@ impl FloatingPaste {
 
     /// Render the preview into the working layer if anything changed.
     fn render_into(&mut self, entry: &mut crate::state::DocEntry, filter: ResizeFilter) {
+        let doc_rect = entry.doc.state().rect();
+        self.render_clipped(entry, filter, doc_rect);
+    }
+
+    /// [`Self::render_into`] drawing everything inside `clip`, which may
+    /// reach past the canvas (that part is kept off it).
+    fn render_clipped(&mut self, entry: &mut crate::state::DocEntry, filter: ResizeFilter, clip: IRect) {
         if !self.dirty {
             return;
         }
         self.dirty = false;
         let doc_rect = entry.doc.state().rect();
         let mesh = self.render_mesh();
-        let (raster, r) = warp::warp_raster(&self.source, &mesh, filter, doc_rect);
+        let (raster, r) = warp::warp_raster(&self.source, &mesh, filter, clip);
         let s = entry.doc.state_mut();
         if self.layer < s.layers.len() {
             s.layers[self.layer].raster = if r.is_empty() {
@@ -831,11 +838,17 @@ pub fn draw_selection_handles(state: &AppState, doc_id: DocId, painter: &egui::P
 
 /// Commit the floating pixels as a history step. Returns true if there were any.
 pub fn commit(state: &mut AppState) -> bool {
+    commit_clipped(state, None)
+}
+
+/// [`commit`] drawing the box within `clip` (default: the canvas).
+fn commit_clipped(state: &mut AppState, clip: Option<IRect>) -> bool {
     let Some(mut fp) = state.floating.take() else { return false };
     fp.drag = None;
     fp.dirty = true;
     if let Some(entry) = state.doc_mut(fp.doc) {
-        fp.render_into(entry, fp.filter);
+        let clip = clip.unwrap_or_else(|| entry.doc.state().rect());
+        fp.render_clipped(entry, fp.filter, clip);
         match &fp.origin {
             Origin::Paste => entry.doc.commit("Paste"),
             Origin::Transform { mask, sel_before, label } => {
@@ -860,6 +873,44 @@ pub fn commit(state: &mut AppState) -> bool {
         }
         entry.sel_outline = None;
     }
+    true
+}
+
+/// The canvas-space rect the box covers (rounded out to whole pixels).
+pub fn box_rect(state: &AppState) -> Option<IRect> {
+    let fp = state.floating.as_ref()?;
+    let q = fp.corners();
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for p in q {
+        (x0, y0, x1, y1) = (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y));
+    }
+    let r = IRect::from_f32_bounds(x0, y0, x1, y1);
+    (r.w > 0 && r.h > 0).then_some(r)
+}
+
+/// Commit the box like [`commit`], but keep every pixel of it, including
+/// what lies past the canvas edge (kept off the canvas), so the canvas can
+/// then be fitted to it. Returns the box's rect.
+pub fn commit_whole(state: &mut AppState) -> Option<IRect> {
+    let rect = box_rect(state)?;
+    let doc = state.floating.as_ref()?.doc;
+    let clip = state.doc(doc)?.doc.state().rect().union(&rect);
+    commit_clipped(state, Some(clip)).then_some(rect)
+}
+
+/// Image › Crop to Selection with a box up: place all of the box (none of
+/// it clipped), then make the canvas exactly the box. A big image dropped
+/// on a small canvas gets a canvas its size in one step. Content of other
+/// layers that falls outside is kept off the canvas, not deleted.
+pub fn crop_canvas_to_box(state: &mut AppState) -> bool {
+    let Some(r) = commit_whole(state) else { return false };
+    let Some(d) = state.active_mut() else { return false };
+    qsketch_core::ops::resize_canvas_at(d.doc.state_mut(), r.w as u32, r.h as u32, -r.x, -r.y);
+    d.doc.resized();
+    d.doc.commit("Crop to Transform Box");
+    d.needs_full_upload = true;
+    d.sel_outline = None;
+    d.view.fit(r.w as u32, r.h as u32);
     true
 }
 
@@ -1230,5 +1281,37 @@ pub fn panel_ui(ui: &mut egui::Ui, state: &mut AppState, doc_id: DocId) {
         commit(state);
     } else if discard {
         cancel(state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qsketch_core::Rgba8;
+
+    #[test]
+    fn crop_to_box_fits_the_canvas_to_a_big_paste() {
+        let mut state = AppState::new(crate::settings::Settings::default());
+        let mut doc = qsketch_core::Document::new(50, 40, None, "small");
+        doc.state_mut().layers[0].raster.set_pixel(0, 0, Rgba8::BLACK);
+        let id = state.add_document(doc);
+        // A 200×100 picture hanging off the top-left of the 50×40 canvas.
+        let mut big = Raster::new(200, 100);
+        big.fill_rect(IRect::new(0, 0, 200, 100), Rgba8::new(10, 20, 30, 255));
+        big.set_pixel(199, 99, Rgba8::WHITE);
+        assert!(begin(&mut state, id, big, -30, -20, 200, 100));
+        assert!(crop_canvas_to_box(&mut state));
+        assert!(state.floating.is_none());
+        let s = state.doc(id).unwrap().doc.state();
+        assert_eq!((s.width, s.height), (200, 100));
+        let top = s.layers.len() - 1;
+        // All of the paste is there, none of it clipped by the old canvas.
+        assert_eq!(s.layers[top].raster.get_pixel(0, 0), Rgba8::new(10, 20, 30, 255));
+        assert_eq!(s.layers[top].raster.get_pixel(199, 99), Rgba8::WHITE);
+        // The old canvas content moved with the canvas origin.
+        assert!(s
+            .layers
+            .iter()
+            .any(|l| l.raster.get_pixel(30, 20) == Rgba8::BLACK || l.raster.get_pixel(30, 20).a == 255));
     }
 }

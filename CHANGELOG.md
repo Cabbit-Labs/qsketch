@@ -2,6 +2,24 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.64.0 — 2026-10-03
+
+- Workspace layouts for people coming from other programs. Preferences ›
+  Interface and Window › Workspace offer four arrangements, applied at
+  once: qsketch (the usual one); SAI 2 (two columns on the left like
+  PaintTool SAI: navigator over layers, then color over tools and brush
+  settings, canvas filling the rest); Photoshop (tools strip on the left,
+  history and info beside a right-hand column of color, navigator and brushes,
+  and a tall layers panel); and Aseprite (palette and color down the left,
+  tools on the right edge, timeline and layers under the canvas). Reset
+  Workspace returns to the chosen layout. The Tools panel fills a wider
+  column with a grid instead of staying two buttons wide.
+- Image › Crop to Selection works on a paste or transform box: all of the
+  box is placed (nothing clipped by the current canvas) and the canvas
+  becomes exactly the box. Drop a big picture onto a small canvas, press
+  Crop to Selection, and the canvas fits it. Other layers' content outside
+  the new canvas is kept off it rather than deleted.
+
 ## 0.63.0 — 2026-10-03
 
 - Open PaintTool SAI 2 files (`.sai2`). Every layer comes in with its

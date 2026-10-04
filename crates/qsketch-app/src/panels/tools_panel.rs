@@ -10,8 +10,10 @@ use crate::ui::widgets::{checkerboard, rgba_to_color32};
 
 pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let width = ui.available_width();
-    let columns = if width >= 64.0 { 2 } else { 1 };
     let btn = 28.0;
+    // A strip holds one or two columns; a wider spot (a SAI-style column)
+    // fills its width with a grid.
+    let columns = if width < 64.0 { 1 } else { (((width - 8.0) / (btn + 2.0)) as usize).clamp(2, 10) };
     let mut last_group = None;
     ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
     let current = state.tool;

@@ -150,7 +150,9 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
 - **A dockable, modern UI** (`egui_dock`): drag, split, float and re-arrange
   the Tools, Layers, History, Color, Swatches, Palette, Navigator, Brushes,
   Brush Settings, Info, Reference, Tileset and Timeline panels however you like; the layout is remembered
-  between sessions. Two open documents can sit side by side, and the
+  between sessions. Coming from another program? Pick a SAI 2, Photoshop or
+  Aseprite-style arrangement in Preferences › Interface or Window ›
+  Workspace. Two open documents can sit side by side, and the
   panels always follow the one you are drawing on. Four monochrome themes
   (Ink, Graphite, Light, Sepia) plus a custom palette, a rounded or angular
   shape language, an optional chrome texture, and a short startup
@@ -251,7 +253,10 @@ file to get a document tab alongside it. The default layout has:
   point in) at the bottom-right.
 
 Every panel is dockable: drag its tab out to float it, drop it on another
-panel's edge to split, or use the Window menu to reopen a closed one. Your
+panel's edge to split, or use the Window menu to reopen a closed one.
+Window › Workspace switches between the qsketch, SAI 2, Photoshop and
+Aseprite layouts (also in Preferences › Interface), and Reset Workspace
+returns to the chosen one. Your
 layout, brush presets, swatches and keyboard shortcuts are all remembered
 between sessions.
 

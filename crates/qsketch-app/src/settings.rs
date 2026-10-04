@@ -281,6 +281,43 @@ impl UiShape {
     }
 }
 
+/// Which arrangement of panels the workspace starts from (and Reset
+/// Workspace returns to): qsketch's own, or one that feels like home to
+/// someone coming from another program.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LayoutPreset {
+    #[default]
+    Qsketch,
+    Sai2,
+    Photoshop,
+    Aseprite,
+}
+
+impl LayoutPreset {
+    pub const ALL: [LayoutPreset; 4] =
+        [LayoutPreset::Qsketch, LayoutPreset::Sai2, LayoutPreset::Photoshop, LayoutPreset::Aseprite];
+    pub fn label(self) -> &'static str {
+        match self {
+            LayoutPreset::Qsketch => "qsketch",
+            LayoutPreset::Sai2 => "SAI 2",
+            LayoutPreset::Photoshop => "Photoshop",
+            LayoutPreset::Aseprite => "Aseprite",
+        }
+    }
+    pub fn blurb(self) -> &'static str {
+        match self {
+            LayoutPreset::Qsketch => "Tools on the left, color, navigator and layers on the right.",
+            LayoutPreset::Sai2 => {
+                "Two columns on the left like PaintTool SAI: navigator over layers, then color over tools and brush settings."
+            }
+            LayoutPreset::Photoshop => {
+                "Tools strip on the left; history beside a right-hand column of color, navigator and a tall layers panel."
+            }
+            LayoutPreset::Aseprite => "Palette and color on the left, tools on the right edge, timeline under the canvas.",
+        }
+    }
+}
+
 /// Which glyphs draw the tools and panel chrome.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum IconSet {
@@ -551,6 +588,8 @@ pub struct UiSettings {
     pub color_sliders: ColorSliders,
     /// Grain/texture over panels and bars.
     pub texture: TextureSettings,
+    /// Panel arrangement the workspace starts from and resets to.
+    pub layout_preset: LayoutPreset,
 }
 
 /// Which chrome texture tile to draw.
@@ -687,6 +726,7 @@ impl Default for UiSettings {
             tool_order: Vec::new(),
             color_sliders: ColorSliders::default(),
             texture: TextureSettings::default(),
+            layout_preset: LayoutPreset::default(),
         }
     }
 }
