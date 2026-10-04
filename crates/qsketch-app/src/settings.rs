@@ -1216,6 +1216,8 @@ pub struct Settings {
     pub paint: PaintSettings,
     /// Animation: onion skin, playback and export preferences.
     pub anim: AnimSettings,
+    /// Image › Trace to Vector's last settings.
+    pub trace: qsketch_core::trace::TraceSettings,
     /// Keymap overrides: action id → shortcuts.
     pub shortcuts: HashMap<String, Vec<String>>,
     /// Serialized egui_dock layout.

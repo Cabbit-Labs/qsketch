@@ -124,6 +124,12 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   rotate, distort and warp it with Ctrl+T as often as you like, shrink it
   and grow it back, and it is always drawn fresh from the original, never
   worn down. Canvas resizes, flips and turns keep it smart too.
+- **Trace to vector.** Image › Trace to Vector turns a layer (posterize
+  first for flat colors) into smooth vector shapes, previewed live: color
+  or black & white, smooth curves, polygons or exact pixel edges, with
+  presets for logos, line art, pixel art and detailed pictures. The result
+  is a vector smart object that Ctrl+T and Image Size redraw crisp at any
+  size, and File › Export as SVG writes it out as a real vector file.
 - **Editable text layers.** The Text tool starts a text layer that stays
   editable: click it again to change the words, font, size, style or color,
   drag it to move it, and rasterize it only when you want pixels.
@@ -323,5 +329,6 @@ qsketch is built on the shoulders of a great Rust graphics ecosystem:
 - [`wgpu`](https://github.com/gfx-rs/wgpu) — the GPU renderer.
 - [`egui_dock`](https://crates.io/crates/egui_dock) — the dockable panel workspace.
 - [Phosphor Icons](https://phosphoricons.com/) (MIT) — the toolbar and panel iconography.
+- [visioncortex](https://github.com/visioncortex/visioncortex) / [VTracer](https://github.com/visioncortex/vtracer) (MIT OR Apache-2.0) — image tracing; [tiny-skia](https://github.com/linebender/tiny-skia) (BSD-3-Clause) — drawing the traced shapes.
 - [libsai](https://github.com/Wunkolo/libsai) (MIT) — the PaintTool SAI 2 pixel bit decoder qsketch's `.sai2` reader is ported from; the [Photopea SAI2 specification](https://github.com/photopea/SAI2-specification) for the container layout. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - [`octotablet`](https://crates.io/crates/octotablet) — optional tablet backend for pressure, tilt and eraser detection.

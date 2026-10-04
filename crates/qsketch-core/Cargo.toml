@@ -22,3 +22,6 @@ gif = "0.14"
 png = "0.18"
 tempfile.workspace = true
 ab_glyph.workspace = true
+# Image tracing (posterized pixels to Bézier shapes) and drawing the shapes.
+visioncortex = "0.8"
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }

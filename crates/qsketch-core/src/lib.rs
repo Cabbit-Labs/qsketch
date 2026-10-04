@@ -42,6 +42,7 @@ pub mod text;
 pub mod tilemap;
 pub mod timelapse;
 pub mod tip;
+pub mod trace;
 pub mod vector;
 pub mod warp;
 

@@ -598,9 +598,10 @@ fn begin_smart(state: &mut AppState, doc_id: DocId) -> bool {
     let base = Raster::new(s.width, s.height);
     s.selection = None;
     entry.sel_outline = None;
-    let place = IRect::new(0, 0, src.width() as i32, src.height() as i32);
+    let (sw, sh) = src.size();
+    let place = IRect::new(0, 0, sw as i32, sh as i32);
     let origin = Origin::Smart { start: Some(p.clone()), label: "Transform Smart Object" };
-    state.floating = Some(FloatingPaste::new(doc_id, li, (*src).clone(), base, place, origin).with_placement(&p));
+    state.floating = Some(FloatingPaste::new(doc_id, li, src.preview_raster(), base, place, origin).with_placement(&p));
     refresh(state);
     true
 }
@@ -954,7 +955,7 @@ fn commit_clipped(state: &mut AppState, clip: Option<IRect>) -> bool {
                     l.props.kind = qsketch_core::layer::LayerKind::Smart;
                     l.props.smart = Some(p);
                     if start.is_none() {
-                        l.smart = Some(Arc::new(fp.source.clone()));
+                        l.smart = Some(Arc::new(qsketch_core::smart::SmartSource::Pixels(fp.source.clone())));
                     }
                 }
                 // Drawn whole, past the canvas edge too (the preview stops there).
@@ -1481,7 +1482,7 @@ mod tests {
         assert!(commit(&mut state));
         let l = &state.doc(id).unwrap().doc.state().layers[li];
         assert!(l.is_smart());
-        assert_eq!(l.smart.as_ref().unwrap().width(), 400, "original kept at full size");
+        assert_eq!(l.smart.as_ref().unwrap().size().0, 400, "original kept at full size");
         assert_eq!(l.raster.get_pixel(20, 20), Rgba8::new(1, 2, 3, 255));
     }
 }

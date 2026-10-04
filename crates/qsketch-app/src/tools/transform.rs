@@ -46,11 +46,12 @@ pub fn handle_move(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             *last_rect = nr;
         }
         CanvasEvent::Release(_) => {
-            let Some(ToolSession::Moving { start, cur, sel_before, .. }) = state.session.take() else { return };
+            let Some(ToolSession::Moving { what, start, cur, sel_before, .. }) = state.session.take() else { return };
             state.session_doc = None;
             let Some(entry) = state.docs.iter_mut().find(|d| d.id == doc_id) else { return };
             let moved = (cur.x - start.x).round() as i32 != 0 || (cur.y - start.y).round() as i32 != 0;
             if moved {
+                finish_move(entry, &what);
                 entry.doc.commit("Move");
             } else {
                 entry.doc.state_mut().selection = sel_before;
@@ -162,6 +163,16 @@ fn apply_move(s: &mut qsketch_core::DocState, what: &MoveWhat, dx: i32, dy: i32)
     }
 }
 
+/// Vector smart objects only had their drawn pixels shifted during the
+/// drag; draw them again so parts that came onto the canvas show.
+fn finish_move(entry: &mut crate::state::DocEntry, what: &MoveWhat) {
+    if let MoveWhat::Layers(rest) = what {
+        let idxs: Vec<usize> = rest.iter().map(|r| r.idx).collect();
+        qsketch_core::smart::rerender_vectors(entry.doc.state_mut(), &idxs);
+        entry.doc.mark_all_dirty();
+    }
+}
+
 fn plural(n: usize, what: &str) -> String {
     if n == 1 {
         format!("1 {what}")
@@ -182,6 +193,7 @@ pub fn nudge(state: &mut AppState, doc_id: DocId, dx: i32, dy: i32) {
     let Some(entry) = state.doc_mut(doc_id) else { return };
     let nr = apply_move(entry.doc.state_mut(), &what, dx, dy);
     entry.doc.mark_dirty_rect(last_rect.union(&nr));
+    finish_move(entry, &what);
     entry.doc.commit("Nudge");
     entry.sel_outline = None;
 }

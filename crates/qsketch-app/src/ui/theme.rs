@@ -193,7 +193,52 @@ pub fn install_fonts(ctx: &egui::Context, filled: bool) {
     }
     fonts.families.insert(FontFamily::Name(ICON_FONT.into()), vec![ICON_FONT.into()]);
     fonts.families.insert(FontFamily::Name(ICON_FONT_FILL.into()), vec![ICON_FONT_FILL.into()]);
+    // Japanese / Chinese / Korean text (layer names from SAI 2 files,
+    // file names) falls back to a system CJK font instead of empty boxes.
+    if let Some(cjk) = cjk_font() {
+        fonts.font_data.insert(CJK_FONT.into(), cjk);
+        for fam in [FontFamily::Proportional, FontFamily::Monospace] {
+            fonts.families.entry(fam).or_default().push(CJK_FONT.into());
+        }
+    }
     ctx.set_fonts(fonts);
+}
+
+const CJK_FONT: &str = "cjk-fallback";
+
+/// The first CJK-capable system font found, read once.
+fn cjk_font() -> Option<std::sync::Arc<FontData>> {
+    static FONT: std::sync::OnceLock<Option<std::sync::Arc<FontData>>> = std::sync::OnceLock::new();
+    FONT.get_or_init(|| {
+        let windir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
+        let candidates: Vec<std::path::PathBuf> = [
+            // Windows: Japanese first (SAI users), then Chinese, Korean.
+            format!("{windir}\\Fonts\\YuGothM.ttc"),
+            format!("{windir}\\Fonts\\YuGothR.ttc"),
+            format!("{windir}\\Fonts\\meiryo.ttc"),
+            format!("{windir}\\Fonts\\msgothic.ttc"),
+            format!("{windir}\\Fonts\\msyh.ttc"),
+            format!("{windir}\\Fonts\\malgun.ttf"),
+            // Linux.
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc".into(),
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc".into(),
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc".into(),
+            "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf".into(),
+            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf".into(),
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc".into(),
+            // macOS.
+            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc".into(),
+            "/System/Library/Fonts/Hiragino Sans GB.ttc".into(),
+        ]
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+        candidates
+            .iter()
+            .find_map(|p| std::fs::read(p).ok())
+            .map(|bytes| std::sync::Arc::new(FontData::from_owned(bytes)))
+    })
+    .clone()
 }
 
 /// Secondary ("dim") text color: the palette's `text_dim`, which every theme

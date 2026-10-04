@@ -903,6 +903,7 @@ impl QSketchApp {
                 self.menu_item(ui, Action::Save, has_doc);
                 self.menu_item(ui, Action::SaveAs, has_doc);
                 self.menu_item(ui, Action::ExportImage, has_doc);
+                self.menu_item(ui, Action::ExportSvg, has_doc);
                 self.menu_item(ui, Action::QuickExport, has_doc);
                 menus::submenu(ui, false, "Export Scaled", |ui| {
                     ui.label(egui::RichText::new("Nearest-neighbor, for pixel art").weak().small());
@@ -988,6 +989,7 @@ impl QSketchApp {
                 // With a paste or transform box up, it fits the canvas to the box.
                 let boxed = self.state.floating.as_ref().is_some_and(|f| Some(f.doc) == self.state.active_doc);
                 self.menu_item(ui, Action::CropToSelection, has_sel || boxed);
+                self.menu_item(ui, Action::TraceToVector, has_doc);
                 let aspect = self.state.active().map(|d| d.doc.state().pixel_aspect).unwrap_or([1, 1]);
                 menus::submenu(ui, false, "Pixel Aspect Ratio", |ui| {
                     ui.label(egui::RichText::new("How wide each pixel shows (for pixel art made for old screens)").weak().small());
@@ -1064,6 +1066,7 @@ impl QSketchApp {
                     self.menu_item(ui, Action::ConvertToSmartObject, can_smart);
                     self.menu_item(ui, Action::TransformSmartObject, is_smart);
                     self.menu_item(ui, Action::RasterizeSmartObject, is_smart);
+                    self.menu_item(ui, Action::TraceToVector, has_doc);
                     ui.label(
                         egui::RichText::new(
                             "Smart objects keep their original pixels: scale, rotate and warp them (Ctrl+T) as often as you like without losing quality",
@@ -1717,6 +1720,12 @@ impl QSketchApp {
                     crate::files::save_as(&mut self.state, id);
                 }
             }
+            Action::ExportSvg => {
+                if let Some(id) = active {
+                    crate::files::export_svg(&mut self.state, id);
+                }
+            }
+            Action::TraceToVector => crate::dialogs::trace::open(&mut self.state),
             Action::ExportImage => {
                 if let Some(id) = active {
                     crate::files::export(&mut self.state, id);

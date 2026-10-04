@@ -4,8 +4,9 @@
 //! the layer from the originals, so scaling down and back up, or rotating
 //! again and again, never wears the pixels down.
 //!
-//! The originals live in `Layer::smart` (shared, so copies of the layer
-//! are cheap); the placement in `LayerProps::smart`; the layer's `raster`
+//! The originals (pixels, or traced vector art that stays crisp at any
+//! size) live in `Layer::smart` (shared, so copies of the layer are
+//! cheap); the placement in `LayerProps::smart`; the layer's `raster`
 //! is the drawn result, which is what the compositor and every format that
 //! can't hold a smart object see.
 
@@ -19,6 +20,39 @@ use crate::layer::LayerKind;
 use crate::ops::{drop_floating, Floating};
 use crate::raster::{Raster, ResizeFilter};
 use crate::warp::{self, Mesh, Quad};
+
+/// What a smart object is drawn from.
+#[derive(Clone)]
+pub enum SmartSource {
+    /// Original pixels, resampled through the placement.
+    Pixels(Raster),
+    /// Vector art (see [`crate::trace`]): its outlines go through the
+    /// placement, so it is drawn crisp at any size.
+    Vector(crate::trace::VectorArt),
+}
+
+impl SmartSource {
+    /// Size of the source space the placement maps from.
+    pub fn size(&self) -> (u32, u32) {
+        match self {
+            SmartSource::Pixels(r) => (r.width(), r.height()),
+            SmartSource::Vector(a) => (a.width.max(1), a.height.max(1)),
+        }
+    }
+
+    /// The source as pixels at its own size (for a transform box's live
+    /// preview).
+    pub fn preview_raster(&self) -> Raster {
+        match self {
+            SmartSource::Pixels(r) => r.clone(),
+            SmartSource::Vector(a) => a.render(),
+        }
+    }
+
+    pub fn is_vector(&self) -> bool {
+        matches!(self, SmartSource::Vector(_))
+    }
+}
 
 /// How the placement is described.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -158,9 +192,51 @@ impl SmartObject {
         }
     }
 
-    /// Draw `source` through the placement onto a `width`×`height` raster,
-    /// keeping whatever lands past the canvas edge outside it.
-    pub fn render(&self, source: &Raster, width: u32, height: u32) -> Raster {
+    /// Draw `source` through the placement onto a `width`×`height` raster.
+    /// Pixels keep whatever lands past the canvas edge outside it; vector
+    /// art is drawn on the canvas only (it can always be drawn again).
+    pub fn render(&self, source: &SmartSource, width: u32, height: u32) -> Raster {
+        match source {
+            SmartSource::Pixels(src) => self.render_pixels(src, width, height),
+            SmartSource::Vector(art) => {
+                let mut out = Raster::new(width, height);
+                let (sw, sh) = (art.width.max(1) as f32, art.height.max(1) as f32);
+                let map = self.unit_map();
+                let scale = (self.size.0 / sw).max(self.size.1 / sh).max(0.05);
+                art.render_into(&mut out, &|p: Pt| map(Pt::new(p.x / sw, p.y / sh)), scale);
+                out
+            }
+        }
+    }
+
+    /// Where a point of the source's unit square lands on the canvas.
+    pub fn unit_map(&self) -> Box<dyn Fn(Pt) -> Pt> {
+        match (self.mode, self.warp_mesh()) {
+            (SmartMode::Warp, Some(m)) => {
+                let (c, r) = (m.cols as f32, m.rows as f32);
+                Box::new(move |p: Pt| m.surface(p.x * c, p.y * r))
+            }
+            _ => {
+                let h = warp::Homography::unit_to_quad(self.corners());
+                Box::new(move |p: Pt| h.as_ref().map(|h| h.apply(p)).unwrap_or(p))
+            }
+        }
+    }
+
+    /// The placement as an SVG `matrix(a b c d e f)` from source space, when
+    /// it is one (a box: moved, scaled, turned).
+    pub fn affine(&self, source_size: (u32, u32)) -> Option<[f32; 6]> {
+        if self.mode != SmartMode::Box {
+            return None;
+        }
+        let (sw, sh) = (source_size.0.max(1) as f32, source_size.1.max(1) as f32);
+        let (sx, sy) = (self.size.0 / sw, self.size.1 / sh);
+        let (s, c) = self.angle.sin_cos();
+        let q = self.corners();
+        Some([c * sx, s * sx, -s * sy, c * sy, q[0].x, q[0].y])
+    }
+
+    fn render_pixels(&self, source: &Raster, width: u32, height: u32) -> Raster {
         let mesh = self.render_mesh();
         let canvas = IRect::new(0, 0, width as i32, height as i32);
         // Everything the placement covers, within reason.
@@ -198,7 +274,7 @@ pub fn convert(doc: &mut DocState, li: usize) -> bool {
         return false;
     }
     let Some(b) = l.raster.full_bounds() else { return false };
-    l.smart = Some(Arc::new(l.raster.crop(b)));
+    l.smart = Some(Arc::new(SmartSource::Pixels(l.raster.crop(b))));
     l.props.smart = Some(SmartObject::identity(b));
     l.props.kind = LayerKind::Smart;
     l.props.shape = None;
@@ -209,7 +285,7 @@ pub fn convert(doc: &mut DocState, li: usize) -> bool {
 
 /// A new smart object from `source`, placed by `placement`, drawn into
 /// layer `li` (which becomes the smart object).
-pub fn install(doc: &mut DocState, li: usize, source: Raster, placement: SmartObject) {
+pub fn install(doc: &mut DocState, li: usize, source: SmartSource, placement: SmartObject) {
     if let Some(l) = doc.layers.get_mut(li) {
         l.props.kind = LayerKind::Smart;
         l.props.smart = Some(placement);
@@ -219,6 +295,17 @@ pub fn install(doc: &mut DocState, li: usize, source: Raster, placement: SmartOb
         l.cels.clear();
     }
     rerender(doc, li);
+}
+
+/// Redraw the vector smart objects among `layers` (after a move, which
+/// only shifted their drawn pixels: parts that came back onto the canvas
+/// need drawing).
+pub fn rerender_vectors(doc: &mut DocState, layers: &[usize]) {
+    for &li in layers {
+        if doc.layers.get(li).and_then(|l| l.smart.as_ref()).is_some_and(|s| s.is_vector()) {
+            rerender(doc, li);
+        }
+    }
 }
 
 /// Turn a smart object into a plain pixel layer, keeping its pixels.
@@ -313,5 +400,35 @@ mod tests {
         crate::moving::apply(&mut d, &rest, 5, -3);
         rerender(&mut d, 0);
         assert_eq!(d.layers[0].raster.get_pixel(15, 7), Rgba8::new(0, 0, 255, 255));
+    }
+
+    #[test]
+    fn vector_smart_objects_redraw_crisp_when_enlarged() {
+        let mut d = DocState::new(32, 32, None);
+        for y in 0..32 {
+            for x in 0..32 {
+                let (dx, dy) = (x as f32 - 15.5, y as f32 - 15.5);
+                if dx * dx + dy * dy < 100.0 {
+                    d.layers[0].raster.set_pixel(x, y, Rgba8::new(20, 20, 200, 255));
+                }
+            }
+        }
+        let art = crate::trace::trace(&d.layers[0].raster, &crate::trace::TraceSettings::default());
+        install(&mut d, 0, SmartSource::Vector(art), SmartObject::identity(IRect::new(0, 0, 32, 32)));
+        assert!(d.layers[0].is_smart());
+        crate::ops::resize_image(&mut d, 256, 256, ResizeFilter::Nearest);
+        // Nearest-neighbor resampling would give hard 8×8 steps; the vector
+        // redraw has a soft one-pixel rim instead.
+        let row: Vec<u8> = (0..256).map(|x| d.layers[0].raster.get_pixel(x, 128).a).collect();
+        assert!(row.iter().any(|&a| a > 0 && a < 255), "anti-aliased rim");
+        assert_eq!(d.layers[0].raster.get_pixel(128, 128), Rgba8::new(20, 20, 200, 255));
+        // Saved and reopened, it's still vector.
+        let dir = std::env::temp_dir().join(format!("qsk-vector-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v.qsk");
+        crate::io::qsk::save(&path, &d).unwrap();
+        let back = crate::io::qsk::load(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(back.layers[0].smart.as_ref().is_some_and(|s| s.is_vector()));
     }
 }

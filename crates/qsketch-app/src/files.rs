@@ -353,3 +353,53 @@ pub fn export_slices(state: &mut AppState, doc_id: DocId) -> bool {
         }
     }
 }
+
+/// File › Export as SVG: every visible vector layer (traced art) as real
+/// vector paths, in stacking order. Boxes keep their curves exact; distorted
+/// or warped ones are written as fine polylines through the distortion.
+pub fn export_svg(state: &mut AppState, doc_id: DocId) {
+    let Some(entry) = state.doc(doc_id) else { return };
+    let s = entry.doc.state();
+    let mut body = String::new();
+    let mut count = 0;
+    for (i, l) in s.layers.iter().enumerate() {
+        let (Some(p), Some(src)) = (&l.props.smart, &l.smart) else { continue };
+        let qsketch_core::smart::SmartSource::Vector(art) = &**src else { continue };
+        if !s.effectively_visible(i) {
+            continue;
+        }
+        let (sw, sh) = (art.width.max(1) as f32, art.height.max(1) as f32);
+        let unit = p.unit_map();
+        let map = move |q: qsketch_core::Pt| unit(qsketch_core::Pt::new(q.x / sw, q.y / sh));
+        let scale = (p.size.0 / sw).max(p.size.1 / sh).max(0.05);
+        let paths = art.svg_paths(&map, p.affine(src.size()), scale);
+        let opacity = l.props.opacity;
+        let name: String = l.props.name.chars().filter(|c| !matches!(c, '<' | '>' | '&' | '"')).collect();
+        if opacity < 1.0 {
+            body.push_str(&format!("  <g id=\"{name}\" opacity=\"{opacity:.3}\">\n{paths}  </g>\n"));
+        } else {
+            body.push_str(&format!("  <g id=\"{name}\">\n{paths}  </g>\n"));
+        }
+        count += 1;
+    }
+    if count == 0 {
+        state.toasts.push(Level::Info, "No vector layers to export: Image › Trace to Vector turns a layer into one.");
+        return;
+    }
+    let (w, h) = (entry.doc.width(), entry.doc.height());
+    let stem = entry.doc.path.as_ref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().to_string());
+    let name = format!("{}.svg", stem.unwrap_or_else(|| entry.doc.title.trim_end_matches('*').to_string()));
+    let Some(path) = rfd::FileDialog::new().add_filter("SVG", &["svg"]).set_file_name(name).save_file() else {
+        return;
+    };
+    match std::fs::write(&path, qsketch_core::trace::svg_document(w, h, &body)) {
+        Ok(()) => {
+            let n = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            state.status_msg = Some((
+                format!("Exported {n} ({count} vector layer{})", if count == 1 { "" } else { "s" }),
+                std::time::Instant::now(),
+            ));
+        }
+        Err(e) => state.toasts.push(Level::Error, format!("Couldn't write the SVG: {e}")),
+    }
+}

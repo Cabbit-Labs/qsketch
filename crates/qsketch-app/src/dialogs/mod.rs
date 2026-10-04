@@ -8,6 +8,7 @@ pub mod layer_style;
 pub mod liquify;
 pub mod settings;
 pub mod share;
+pub mod trace;
 
 use egui::{Context, RichText, Ui};
 use qsketch_core::ops::{self, Anchor};
@@ -214,6 +215,7 @@ pub struct Dialogs {
     pub new_doc: Option<NewDocDialog>,
     pub canvas_size: Option<CanvasSizeDialog>,
     pub modify: Option<ModifyDialog>,
+    pub trace: Option<trace::TraceDialog>,
     pub image_size: Option<ImageSizeDialog>,
     pub filter: Option<filter::FilterDialog>,
     pub layer_props: Option<LayerPropsDialog>,
@@ -240,6 +242,7 @@ impl Dialogs {
         self.new_doc.is_some()
             || self.canvas_size.is_some()
             || self.modify.is_some()
+            || self.trace.is_some()
             || self.image_size.is_some()
             || self.filter.is_some()
             || self.layer_style.is_some()
@@ -294,6 +297,7 @@ pub fn show_all(ctx: &Context, state: &mut AppState) {
     show_new_doc(ctx, state);
     show_canvas_size(ctx, state);
     show_modify(ctx, state);
+    trace::show(ctx, state);
     show_image_size(ctx, state);
     filter::show(ctx, state);
     show_layer_props(ctx, state);

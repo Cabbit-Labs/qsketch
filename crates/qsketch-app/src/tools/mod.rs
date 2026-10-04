@@ -595,7 +595,8 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     if (state.dialogs.filter.is_some()
         || state.dialogs.layer_style.is_some()
         || state.dialogs.adjustment.is_some()
-        || state.dialogs.modify.is_some())
+        || state.dialogs.modify.is_some()
+        || state.dialogs.trace.is_some())
         && !matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)
     {
         return;

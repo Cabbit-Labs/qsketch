@@ -145,6 +145,9 @@ struct LayerEntry {
     /// Smart objects (0.65+): the original pixels, at their own size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     smart_source: Option<String>,
+    /// Vector smart objects (0.66+): the traced art, as JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    smart_vector: Option<String>,
 }
 
 /// Store `r`'s off-canvas pixels as `name`, if it has any.
@@ -250,15 +253,22 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
                 }
                 None => None,
             };
-            let smart = match &layer.smart {
-                Some(src) if layer.props.smart.is_some() => {
+            let (mut smart, mut smart_vector) = (None, None);
+            match layer.smart.as_deref().filter(|_| layer.props.smart.is_some()) {
+                Some(crate::smart::SmartSource::Pixels(src)) => {
                     let name = format!("layers/{i:03}.smart.png");
                     zip.start_file(&name, stored)?;
                     zip.write_all(&super::image_io::encode_png(src.width(), src.height(), &src.to_rgba())?)?;
-                    Some(name)
+                    smart = Some(name);
                 }
-                _ => None,
-            };
+                Some(crate::smart::SmartSource::Vector(art)) => {
+                    let name = format!("layers/{i:03}.vector.json");
+                    zip.start_file(&name, deflated)?;
+                    zip.write_all(&serde_json::to_vec(art)?)?;
+                    smart_vector = Some(name);
+                }
+                None => {}
+            }
             entries.push(LayerEntry {
                 props: layer.props.clone(),
                 file,
@@ -267,6 +277,7 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
                 outside,
                 mask_outside,
                 smart_source: smart,
+                smart_vector,
             });
         }
         let selection = match &doc.selection {
@@ -419,11 +430,20 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
             }
         }
         // A smart object whose originals are missing falls back to pixels.
-        let smart = entry.smart_source.as_deref().and_then(|name| {
+        let mut read = |name: &str| -> Option<Vec<u8>> {
             let mut bytes = Vec::new();
             zip.by_name(name).ok()?.read_to_end(&mut bytes).ok()?;
-            super::image_io::decode_bytes(&bytes).ok().map(Arc::new)
-        });
+            Some(bytes)
+        };
+        let smart = match (&entry.smart_source, &entry.smart_vector) {
+            (Some(name), _) => read(name)
+                .and_then(|b| super::image_io::decode_bytes(&b).ok())
+                .map(|r| Arc::new(crate::smart::SmartSource::Pixels(r))),
+            (None, Some(name)) => read(name)
+                .and_then(|b| serde_json::from_slice::<crate::trace::VectorArt>(&b).ok())
+                .map(|a| Arc::new(crate::smart::SmartSource::Vector(a))),
+            _ => None,
+        };
         let mut props = entry.props;
         if props.kind == crate::layer::LayerKind::Smart && (smart.is_none() || props.smart.is_none()) {
             props.kind = crate::layer::LayerKind::Raster;

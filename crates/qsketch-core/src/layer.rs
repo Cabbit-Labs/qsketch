@@ -115,7 +115,7 @@ pub struct Layer {
     /// Smart objects only: the original pixels the layer is drawn from
     /// through `LayerProps::smart` (see [`crate::smart`]). Shared, so copies
     /// of the layer cost a pointer.
-    pub smart: Option<Arc<Raster>>,
+    pub smart: Option<Arc<crate::smart::SmartSource>>,
 }
 
 impl Layer {

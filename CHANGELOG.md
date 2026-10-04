@@ -2,6 +2,25 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.66.0 — 2026-10-03
+
+- Trace to Vector (Image menu, also Layer › Smart Object). Turns the
+  active layer into smooth vector shapes, the "posterize, then trace" route
+  to edges that stay clean at any size. A floating panel previews the trace
+  live on the canvas (traced in the background, so big images don't freeze
+  the app): color or black & white, color detail and layer merging,
+  smooth curves (with a corner angle), polygons or exact pixel edges,
+  smoothness, and a speck filter, plus Logo, Black & white, Pixel art and
+  Detailed presets. OK replaces the layer or adds a new one above. The
+  result is a vector smart object: Ctrl+T, Image Size, canvas flips and
+  turns redraw it crisp from the vector outlines at any size (scale a
+  traced logo up 8× and the edges stay smooth). .qsk files keep the vector.
+- Export as SVG (File menu, and from the trace panel). Writes every
+  visible vector layer as real SVG paths, curves exact for moved, scaled
+  or turned layers.
+- Japanese, Chinese and Korean text (such as SAI 2 layer names) now shows
+  in the interface, using a system CJK font, instead of empty boxes.
+
 ## 0.65.0 — 2026-10-03
 
 - Smart objects. Layer › Smart Object › Convert to Smart Object turns a
