@@ -61,7 +61,7 @@ if [ -f "$THUMB_DLL" ]; then
 else
   echo "warning: $THUMB_DLL not built; the installer will skip Explorer thumbnails" >&2
 fi
-cp LICENSE-MIT LICENSE-APACHE "$DIST_DIR/"
+cp LICENSE-MIT LICENSE-APACHE THIRD_PARTY_NOTICES.md "$DIST_DIR/"
 if [ -f README.md ]; then
   cp README.md "$DIST_DIR/"
 fi

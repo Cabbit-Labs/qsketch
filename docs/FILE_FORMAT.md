@@ -260,6 +260,22 @@ record's rect and an Aseprite cel's position may reach past the canvas, so
 qsketch writes each layer's full extent there (a PSD mask that reaches off
 the canvas gets its own rect with default color 0) and reads it back
 outside the canvas. Only the flat image exports are canvas-sized.
+`.sai2` (PaintTool SAI 2, `io::sai2`) opens but is not written. Its
+layout, as qsketch reads it: a 64-byte header (`SAI-CANVAS-TYPE0`, flags,
+width, height, …, chunk count at byte 32), a table of 16-byte entries
+(four-letter type, object id, 64-bit offset), then the chunks. `layr`
+records hold the kind, the pixel area in 32-pixel blocks (left, top,
+width, height, at bytes 28-43), blend tag, opacity 0-100, flags (`0x10000`
+= visible) and `name` (UTF-16); they are listed top to bottom. `lpix`
+holds a layer's pixels: `dpcm`, one length per 32-pixel strip, then the
+strips, each a run of 16-bit tagged records (low byte `0xff`, bits 8-11 the
+block's canvas column mod 16, bits 12-15 the kind: `0` skip n+1 blocks,
+`5` a block of one color as four 16-bit values, `a` a 32×32 block of n
+bytes, `f` end). A block is four planes (B, G, R, A, premultiplied,
+`0x4000` = full) of bit-packed differences from the gradient prediction
+left + up − up-left clamped to `0..=0x4000`. `intg` is the merged image
+(8-bit, 256-pixel tiles, rows filtered against the row above), used when
+the layers can't be read.
 `io::ase::parse` keeps every frame, cel, tag, tileset and user
 data chunk of a sprite in `AseSprite`; `AseSprite::to_doc()` builds the
 document with all of its frames (an animated tilemap layer becomes a pixel

@@ -15,6 +15,7 @@ fn image_filter_exts() -> Vec<&'static str> {
 
 pub fn open_dialog(state: &mut AppState) {
     let mut all: Vec<&str> = io::DOCUMENT_EXTENSIONS.to_vec();
+    all.extend(io::OPEN_ONLY_EXTENSIONS);
     all.extend(image_filter_exts());
     let dlg = rfd::FileDialog::new()
         .set_title("Open")
@@ -22,6 +23,7 @@ pub fn open_dialog(state: &mut AppState) {
         .add_filter("qsketch document", &[io::NATIVE_EXTENSION])
         .add_filter("Aseprite", io::ase::EXTENSIONS)
         .add_filter("Photoshop", &[io::psd::EXTENSION])
+        .add_filter("PaintTool SAI 2", &[io::sai2::EXTENSION])
         .add_filter("Images", &image_filter_exts());
     let dlg = match state.settings.general.recent_files.first().and_then(|p| p.parent()) {
         Some(dir) if dir.exists() => dlg.set_directory(dir),

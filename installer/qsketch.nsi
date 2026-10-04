@@ -98,6 +98,7 @@ Section "qsketch (required)" SecMain
   File "${STAGE_DIR}\${APP_EXE}"
   File /nonfatal "${STAGE_DIR}\LICENSE-MIT"
   File /nonfatal "${STAGE_DIR}\LICENSE-APACHE"
+  File /nonfatal "${STAGE_DIR}\THIRD_PARTY_NOTICES.md"
   File /nonfatal "${STAGE_DIR}\README.md"
 
   ; The thumbnail DLL may be loaded by Explorer's surrogate process during an
@@ -169,6 +170,7 @@ Section "Uninstall"
   Delete "$INSTDIR\${APP_EXE}"
   Delete "$INSTDIR\LICENSE-MIT"
   Delete "$INSTDIR\LICENSE-APACHE"
+  Delete "$INSTDIR\THIRD_PARTY_NOTICES.md"
   Delete "$INSTDIR\README.md"
   Delete /REBOOTOK "$INSTDIR\${THUMB_DLL}"
   Delete /REBOOTOK "$INSTDIR\${THUMB_DLL}.old"

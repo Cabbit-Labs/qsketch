@@ -641,6 +641,12 @@ impl Raster {
         }
     }
 
+    /// Write straight RGBA pixels along a row from `(x, y)`, on or off the
+    /// canvas (transparent ones included).
+    pub fn write_row_any(&mut self, x: i32, y: i32, px: &[u8]) {
+        self.put_row(x, y, px);
+    }
+
     /// Set the pixel at `(x, y)`, keeping it outside the canvas if it lies
     /// there (plain `set_pixel` clips it away).
     pub fn set_pixel_any(&mut self, x: i32, y: i32, c: Rgba8) {

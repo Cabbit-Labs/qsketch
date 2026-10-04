@@ -6,6 +6,7 @@ pub mod brush_formats;
 pub mod image_io;
 pub mod psd;
 pub mod qsk;
+pub mod sai2;
 
 use std::path::Path;
 
@@ -18,6 +19,9 @@ pub const NATIVE_EXTENSION: &str = "qsk";
 /// Layered formats we can open and save: native `.qsk`, Aseprite
 /// `.ase`/`.aseprite` and Photoshop `.psd`.
 pub const DOCUMENT_EXTENSIONS: &[&str] = &[NATIVE_EXTENSION, "ase", "aseprite", psd::EXTENSION];
+
+/// Formats we can open but not write: PaintTool SAI 2.
+pub const OPEN_ONLY_EXTENSIONS: &[&str] = &[sai2::EXTENSION];
 
 /// Save a layered document in the format implied by the extension.
 pub fn save_document(path: &Path, doc: &crate::document::DocState) -> anyhow::Result<()> {
@@ -84,6 +88,7 @@ pub fn format_name(path: &Path) -> String {
         "qsk" => "qsketch document".into(),
         "ase" | "aseprite" => "Aseprite".into(),
         "psd" => "Photoshop".into(),
+        "sai2" => "PaintTool SAI 2".into(),
         "png" => "PNG".into(),
         "jpg" | "jpeg" => "JPEG".into(),
         "webp" => "WebP".into(),
@@ -186,6 +191,9 @@ pub fn open_full(path: &Path) -> anyhow::Result<(crate::document::DocState, crat
         Ok((psd::load(path)?, fresh(), Vec::new()))
     } else if ase::is_ase(path) {
         let (doc, warnings) = ase::load_with_warnings(path)?;
+        Ok((doc, fresh(), warnings))
+    } else if sai2::is_sai2(path) {
+        let (doc, warnings) = sai2::load_with_warnings(path)?;
         Ok((doc, fresh(), warnings))
     } else {
         if anim_io::might_be_animated(path) {

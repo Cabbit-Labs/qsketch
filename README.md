@@ -71,6 +71,10 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   sheets. Export as an animated GIF with an exact palette, APNG, a PNG
   sequence, a sprite sheet with Aseprite-style JSON, or MP4 / WebM video
   through ffmpeg.
+- **PaintTool SAI 2 `.sai2` open** with every layer: pixels (including
+  what reaches past the canvas), names, opacity, blend mode and visibility,
+  in SAI 2's stacking order. Save back as `.psd` to take the layers into
+  SAI 2 again. Folders, text and shape layers come in as plain layers.
 - **Aseprite `.ase`/`.aseprite` open and save** with full fidelity: RGBA,
   grayscale and indexed sprites; every frame with durations, linked cels,
   cel opacity, tags, continuous layers, layer colors and notes, tilesets
@@ -309,4 +313,5 @@ qsketch is built on the shoulders of a great Rust graphics ecosystem:
 - [`wgpu`](https://github.com/gfx-rs/wgpu) — the GPU renderer.
 - [`egui_dock`](https://crates.io/crates/egui_dock) — the dockable panel workspace.
 - [Phosphor Icons](https://phosphoricons.com/) (MIT) — the toolbar and panel iconography.
+- [libsai](https://github.com/Wunkolo/libsai) (MIT) — the PaintTool SAI 2 pixel bit decoder qsketch's `.sai2` reader is ported from; the [Photopea SAI2 specification](https://github.com/photopea/SAI2-specification) for the container layout. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - [`octotablet`](https://crates.io/crates/octotablet) — optional tablet backend for pressure, tilt and eraser detection.

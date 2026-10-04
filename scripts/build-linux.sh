@@ -36,7 +36,7 @@ mkdir -p "$STAGE_DIR/bin"
 cp "$BUILT_BIN" "$STAGE_DIR/bin/$BIN_NAME"
 
 # Docs/licenses
-cp LICENSE-MIT LICENSE-APACHE "$STAGE_DIR/"
+cp LICENSE-MIT LICENSE-APACHE THIRD_PARTY_NOTICES.md "$STAGE_DIR/"
 if [ -f README.md ]; then
   cp README.md "$STAGE_DIR/"
 fi

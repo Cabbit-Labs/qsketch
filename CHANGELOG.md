@@ -2,6 +2,19 @@
 
 All notable changes to qSketch are documented in this file.
 
+## 0.63.0 — 2026-10-03
+
+- Open PaintTool SAI 2 files (`.sai2`). Every layer comes in with its
+  pixels, name, opacity, blend mode and visibility, stacked as in SAI 2,
+  and parts that reach past the canvas edge are kept. A canvas with
+  opaque paper gets a locked white Paper layer at the bottom so it looks
+  the same. Folders are left out (their layers open on their own), and
+  text, shape and linework layers open as plain pixels. If a file's layers
+  can't be read, it opens as its merged image with a note. Open from
+  File › Open, drag and drop, or the recent files list. qsketch can't save
+  `.sai2`; Save goes to a new `.qsk`, and `.psd` takes the layers back into
+  SAI 2.
+
 ## 0.62.2 — 2026-10-03
 
 - Merge Down now looks the same before and after. It used to paint the
