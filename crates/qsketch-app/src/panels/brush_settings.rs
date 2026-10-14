@@ -699,6 +699,17 @@ fn shape_dynamics_page(ui: &mut Ui, b: &mut BrushSettings) {
     ui.add_enabled_ui(b.pressure_size, |ui| {
         heading(ui, "Minimum Diameter");
         percent_slider(ui, "", &mut b.min_size);
+        heading(ui, "Pressure Taper");
+        crate::ui::widgets::percent_slider_tip(
+            ui,
+            "",
+            &mut b.pressure_taper,
+            "Smart taper: pressure can only change so fast along the stroke, so a sudden \
+             drop from medium to nothing eases out into a gradual taper instead of a blunt \
+             step or a needle, and a stroke that ends on such a drop runs out to a fine \
+             point. Deliberate, gradual pressure changes are left alone. 0% = raw pressure; \
+             higher = longer tapers.",
+        );
     });
     ui.add_space(6.0);
     ui.separator();

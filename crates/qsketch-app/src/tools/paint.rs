@@ -363,7 +363,9 @@ pub(super) fn feed(state: &mut AppState, doc_id: DocId, sample: StrokeSample) {
     let snapped = {
         let st = engine.settings();
         if !st.antialias && st.is_round() {
-            qsketch_core::brush::pixel_snap(sample.pos, st.dab_radius(sample.pressure))
+            // The width the engine just painted with, after any pressure taper.
+            let pressure = engine.painted_pressure().unwrap_or(sample.pressure);
+            qsketch_core::brush::pixel_snap(sample.pos, st.dab_radius(pressure))
         } else {
             sample.pos
         }
