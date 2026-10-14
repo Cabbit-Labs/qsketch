@@ -114,7 +114,11 @@ impl BrushLibrary {
         };
         if w.max(h) > MAX_USER_PX {
             let k = MAX_USER_PX as f32 / w.max(h) as f32;
-            t = t.resized(((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1));
+            let (nw, nh) = (((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1));
+            t = match kind {
+                LibraryKind::Tip => t.resized_tip(nw, nh),
+                LibraryKind::Texture => t.resized(nw, nh),
+            };
         }
         t
     }
@@ -192,7 +196,11 @@ impl BrushLibrary {
                 let mut img = TipImage::from_alpha(t.name, t.width, t.height, t.alpha);
                 if t.width.max(t.height) > MAX_USER_PX {
                     let k = MAX_USER_PX as f32 / t.width.max(t.height) as f32;
-                    img = img.resized(((t.width as f32 * k) as u32).max(1), ((t.height as f32 * k) as u32).max(1));
+                    let (nw, nh) = (((t.width as f32 * k) as u32).max(1), ((t.height as f32 * k) as u32).max(1));
+                    img = match kind {
+                        LibraryKind::Tip => img.resized_tip(nw, nh),
+                        LibraryKind::Texture => img.resized(nw, nh),
+                    };
                 }
                 let name = self.add(kind, img)?;
                 first.get_or_insert(name);
@@ -279,30 +287,40 @@ fn sanitize(name: &str) -> String {
     }
 }
 
-/// Fit a tip into a `px × px` square with the mask as alpha (textures are shown
-/// as their tile, tips are centered with a small margin).
+/// Texels of a texture shown in its thumbnail: a crop at close to real size,
+/// because the whole tile squeezed into a thumbnail averages weaves and
+/// grain away to flat gray.
+const TILE_PREVIEW_TEXELS: f32 = 80.0;
+
+/// Fit a tip into a `px × px` square with the mask as alpha (textures are
+/// shown as a crop of their tile, tips are centered with a small margin).
+/// Each thumbnail pixel averages a small grid of samples, so a big, grainy
+/// source does not alias.
 fn tip_thumb(t: &TipImage, px: usize, tile: bool) -> ColorImage {
-    let mut out = Vec::with_capacity(px * px);
     let (w, h) = (t.width as f32, t.height as f32);
     let margin = if tile { 0.0 } else { 0.06 };
-    let scale = if tile { 1.0 } else { w.max(h) };
+    // How many source texels one side of the thumbnail covers, and where it starts.
+    let span = if tile { w.min(h).min(TILE_PREVIEW_TEXELS) } else { w.max(h) / (1.0 - margin * 2.0) };
+    let (ox, oy) = ((w - span) / 2.0, (h - span) / 2.0);
+    let ss = ((span / px as f32).ceil() as usize).clamp(1, 4);
+    let mut out = Vec::with_capacity(px * px);
     for y in 0..px {
         for x in 0..px {
-            let nx = (x as f32 + 0.5) / px as f32;
-            let ny = (y as f32 + 0.5) / px as f32;
-            let a = if tile {
-                t.sample_wrap(nx * w, ny * h)
-            } else {
-                // Center the image inside the square, preserving aspect.
-                let u = ((nx - 0.5) / (1.0 - margin * 2.0)) * scale + w / 2.0;
-                let v = ((ny - 0.5) / (1.0 - margin * 2.0)) * scale + h / 2.0;
-                if u < 0.0 || v < 0.0 || u >= w || v >= h {
-                    0.0
-                } else {
-                    t.sample_wrap(u - 0.5, v - 0.5)
+            let mut sum = 0.0;
+            for j in 0..ss {
+                for i in 0..ss {
+                    let u = ox + (x as f32 + (i as f32 + 0.5) / ss as f32) / px as f32 * span;
+                    let v = oy + (y as f32 + (j as f32 + 0.5) / ss as f32) / px as f32 * span;
+                    sum += if tile {
+                        t.sample_wrap(u - 0.5, v - 0.5)
+                    } else if u < 0.0 || v < 0.0 || u >= w || v >= h {
+                        0.0
+                    } else {
+                        t.sample_wrap(u - 0.5, v - 0.5)
+                    };
                 }
-            };
-            let a8 = (a.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            }
+            let a8 = ((sum / (ss * ss) as f32).clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
             out.push(egui::Color32::from_rgba_premultiplied(a8, a8, a8, a8));
         }
     }

@@ -619,13 +619,19 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                             .on_hover_text("Drop the doubled corner pixels of hand-drawn lines (round tips)");
                     }
                 }
+                if b.is_round() {
+                    ui.horizontal(|ui| {
+                        ui.label("Edge softness");
+                        super::brush_settings::edge_softness_slider(ui, b);
+                    });
+                }
                 if tool.is_paint() && b.stabilizer == qsketch_core::StabilizerMode::Rope {
                     ui.checkbox(&mut b.stabilizer_catch_up, "Stabilizer catches up on release")
                         .on_hover_text("Finish the stroke at the pointer when released");
                 }
             })
             .response
-            .on_hover_text("Smoothing, spacing, anti-aliasing");
+            .on_hover_text("Smoothing, spacing, anti-aliasing, edge softness");
             b.clamp();
         }
     });
