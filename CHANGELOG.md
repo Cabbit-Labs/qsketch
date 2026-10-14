@@ -11,6 +11,28 @@ All notable changes to qSketch are documented in this file.
   to the center, corners and edge midpoints (hold Alt to place it freely),
   rides along when the box is moved, and the X / Y fields and the angle
   field in the options bar now refer to it.
+- The default brush edge is softer, and the softness is adjustable. A new
+  "Edge softness" slider (Brush Settings, under Hardness, and in the tool
+  options' More menu) sets the width of the feathered rim from 1 px (the
+  old crisp edge) to 16 px; the default is 2.5 px. Brushes you saved keep
+  their old crisp rim, and an untouched default brush moves to the new
+  one. Pencil, Ink Pen, Pixel and the selection brush stay crisp, and
+  nothing changes with Anti-aliasing off.
+- 42 new round, soft brush tips (52 in all): soft rounds from 0% to 90%
+  hardness, falloff curves (linear, quadratic, cosine, Gaussian, airbrush
+  tail, glow, dome), rings and halos, and natural rounds (charcoal, pastel,
+  chalk, sand, spray, stipple, watercolor bleed, dry brush, sponge, torn
+  edge, splatter, ink blot). The tip and texture pickers are grouped under
+  headings, small dabs stay smooth instead of shimmering, and imported
+  tips no longer wrap at the edge.
+- 56 new grain textures (64 in all), all seamless: paper, fabric, wet and
+  dry media, brush marks, halftone, lines, stone and surfaces. Diagonal
+  Lines and Crosshatch, which left half the tile bare, are fixed.
+- Brush tips with unintended hard edges are fixed: Charcoal (cut flat top
+  and bottom), Splotch (clipped by its tile), Leaf (touched the border),
+  Flat Marker (aliased rim), Scratchy (hard line ends) and Chalk. A test
+  now fails for any built-in tip whose edge is hard unless it is meant to
+  be (Square, Hard Round AA and a few grainy ones).
 - Smart pressure taper for pen strokes. Pressure that falls suddenly (a pen
   flicked off the tablet, a sensor dip) used to take the stroke from a
   medium width straight to a hair-thin needle, which looked wrong. Now the
