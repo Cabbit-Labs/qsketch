@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.67.0 — 2026-10-14
 
 - The rotation anchor can be moved, like Photoshop's reference point. In
   Free Transform (Freeform and Rotate modes, and a lifted selection's box)
