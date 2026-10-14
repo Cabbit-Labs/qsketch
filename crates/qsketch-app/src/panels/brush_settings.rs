@@ -705,10 +705,9 @@ fn shape_dynamics_page(ui: &mut Ui, b: &mut BrushSettings) {
             "",
             &mut b.pressure_taper,
             "Smart taper: pressure can only change so fast along the stroke, so a sudden \
-             drop from medium to nothing eases out into a gradual taper instead of a blunt \
-             step or a needle, and a stroke that ends on such a drop runs out to a fine \
-             point. Deliberate, gradual pressure changes are left alone. 0% = raw pressure; \
-             higher = longer tapers.",
+             drop from medium to nothing eases out into a gradual taper instead of a step \
+             or a needle. Deliberate, gradual pressure changes are left alone, and the \
+             stroke always stops where you stopped. 0% = raw pressure; higher = longer tapers.",
         );
     });
     ui.add_space(6.0);

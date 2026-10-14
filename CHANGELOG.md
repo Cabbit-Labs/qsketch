@@ -14,14 +14,14 @@ All notable changes to qSketch are documented in this file.
 - Smart pressure taper for pen strokes. Pressure that falls suddenly (a pen
   flicked off the tablet, a sensor dip) used to take the stroke from a
   medium width straight to a hair-thin needle, which looked wrong. Now the
-  curved pressure can only change so fast along the stroke: a sudden drop
-  eases out into a gradual taper, and a stroke that ends on such a drop
-  runs out a short way along its heading to finish in a fine point (never
-  when the pen stood still while lifting). Rises are allowed twice as
-  fast so a stroke can still swell quickly, and deliberate, gradual
-  pressure changes, mouse strokes and straight lines are untouched.
-  Brush Settings ▸ Shape Dynamics ▸ Pressure Taper sets how long the
-  tapers are (40% by default; 0% gives the raw pressure back).
+  curved pressure can only change so fast along the stroke, so a sudden
+  drop eases out into a gradual taper. Rises are allowed twice as fast so a
+  stroke can still swell quickly, and deliberate, gradual pressure
+  changes, mouse strokes and straight lines are untouched. The stroke
+  always stops exactly where you stopped: the taper only reshapes the part
+  you drew and never extends past it. Brush Settings ▸ Shape Dynamics ▸
+  Pressure Taper sets how long the tapers are (40% by default; 0% gives the
+  raw pressure back).
 - The zone that rotates a transform box now hugs its outline. It used to be
   a 20 px margin around the box's bounding rectangle, which for a turned
   box reached far into empty corners, so a press that was merely near the

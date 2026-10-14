@@ -81,10 +81,10 @@ pub struct BrushSettings {
     /// Smart pressure taper, 0..=1 (0 = pressure goes through untouched). The
     /// pressure may only change so fast per distance drawn, so a sudden drop
     /// from medium to nothing (a pen flicked off the tablet, a sensor dip)
-    /// eases out into a gradual taper instead of a blunt step or a needle, and
-    /// a stroke that ends on such a drop runs out along its heading to finish
-    /// the taper. Higher = longer, gentler tapers. Gradual, deliberate
-    /// pressure changes are never touched. Works on the curved pressure.
+    /// eases out into a gradual taper instead of a step or a needle. Gradual,
+    /// deliberate pressure changes are never touched, and the stroke never
+    /// goes past where the pen stopped. Higher = longer, gentler tapers. Works
+    /// on the curved pressure.
     pub pressure_taper: f32,
     /// Position smoothing 0..=1 (0 = raw input).
     pub smoothing: f32,
@@ -611,15 +611,6 @@ pub struct StrokeEngine {
     last: Option<StrokeSample>,
     /// The latest pressure the device actually reported (before tapering).
     taper_target: Option<f32>,
-    /// A point trailing the pen along its path, so the stroke's heading is
-    /// the direction of travel over the last stretch, not of one jittery step.
-    trail: Option<Pt>,
-    /// Where the painted pressure first got ahead of the device reading (the
-    /// taper limit holding the width back), until it catches up again. A drop
-    /// with the pen standing still never runs out: nothing was drawn to taper.
-    debt_origin: Option<Pt>,
-    /// Finishing a taper: the run-out places its own pressure ramp.
-    running_out: bool,
     smooth_pos: Option<Pt>,
     /// The last raw (unsmoothed) input position, so the stroke can finish
     /// exactly where the pointer stopped.
@@ -685,9 +676,6 @@ impl StrokeEngine {
             pp_pending: None,
             last: None,
             taper_target: None,
-            trail: None,
-            debt_origin: None,
-            running_out: false,
             smooth_pos: None,
             last_raw: None,
             smooth_len,
@@ -827,16 +815,6 @@ impl StrokeEngine {
         };
         self.smooth_pos = Some(pos);
         let pressure = self.tapered(reported, pos);
-        match pressure - reported {
-            // The drop began on the way here, from the previous sample.
-            d if d > 0.05 => {
-                let from = self.last.map_or(pos, |l| l.pos);
-                self.debt_origin.get_or_insert(from);
-            }
-            d if d < 0.02 => self.debt_origin = None,
-            _ => {}
-        }
-        self.follow_trail(pos);
         let cur = StrokeSample { pos, pressure };
 
         let Some(last) = self.last else {
@@ -900,10 +878,6 @@ impl StrokeEngine {
                 catch_up = self.extend(raster, StrokeSample { pos: raw, pressure: reported });
             }
         }
-        let ran_out = self.run_out(raster);
-        if !ran_out.is_empty() {
-            catch_up = if catch_up.is_empty() { ran_out } else { catch_up.union(&ran_out) };
-        }
         if let Some((b, bp)) = self.pp_pending.take() {
             let r = self.dab_group(raster, b, bp);
             catch_up = if catch_up.is_empty() { r } else { catch_up.union(&r) };
@@ -945,7 +919,7 @@ impl StrokeEngine {
     /// width at the lowest setting and five widths at the highest.
     fn taper_len(&self) -> Option<f32> {
         let t = self.settings.pressure_taper;
-        if t <= 0.0 || self.running_out {
+        if t <= 0.0 {
             return None;
         }
         Some(((0.25 + 4.75 * t) * self.settings.size).max(2.0))
@@ -961,59 +935,9 @@ impl StrokeEngine {
         target.clamp(last.pressure - step, last.pressure + 2.0 * step)
     }
 
-    /// Move the heading trail toward the pen: it closes the gap by a fraction
-    /// that grows with the distance travelled, about half a brush width of lag.
-    fn follow_trail(&mut self, pos: Pt) {
-        let lag = (self.settings.size * 0.5).max(3.0);
-        self.trail = Some(match (self.trail, self.last) {
-            (Some(t), Some(last)) => t.lerp(pos, 1.0 - (-last.pos.dist(pos) / lag).exp()),
-            _ => pos,
-        });
-    }
-
     /// The pressure the last sample was painted with, after tapering.
     pub fn painted_pressure(&self) -> Option<f32> {
         self.last.map(|l| l.pressure)
-    }
-
-    /// Finish a taper the pen cut short: when the stroke ends with the device
-    /// reading well below what was painted (the taper limit held the width
-    /// back), carry on along the stroke's heading for the distance the taper
-    /// needs and ease down to the reading, instead of ending blunt.
-    fn run_out(&mut self, raster: &mut Raster) -> IRect {
-        let Some(len) = self.taper_len() else { return IRect::EMPTY };
-        if !matches!(self.mode, PaintMode::Paint | PaintMode::Erase) {
-            return IRect::EMPTY;
-        }
-        let (Some(last), Some(target), Some(trail), Some(origin)) =
-            (self.last, self.taper_target, self.trail, self.debt_origin)
-        else {
-            return IRect::EMPTY;
-        };
-        let debt = last.pressure - target;
-        let (hx, hy) = (last.pos.x - trail.x, last.pos.y - trail.y);
-        let heading = hx.hypot(hy);
-        // Reach 1.5× the debt in taper lengths: the ramp below then starts at
-        // exactly the slope the limiter was already following.
-        let run = (1.5 * debt * len).min(1.5 * self.settings.size);
-        if debt < 0.1 || heading < 0.5 || run < 1.0 || last.pos.dist(origin) < 2.0 {
-            return IRect::EMPTY;
-        }
-        let (ux, uy) = (hx / heading, hy / heading);
-        let step = (self.settings.size * 0.25).max(1.0);
-        let n = ((run / step).ceil() as usize).clamp(1, 48);
-        self.running_out = true;
-        self.smooth_len = 0.0;
-        let mut dirty = IRect::EMPTY;
-        for i in 1..=n {
-            let t = i as f32 / n as f32;
-            let pressure = target + debt * (1.0 - t).powf(1.5);
-            let pos = Pt::new(last.pos.x + ux * run * t, last.pos.y + uy * run * t);
-            let r = self.extend(raster, StrokeSample { pos, pressure });
-            dirty = if dirty.is_empty() { r } else { dirty.union(&r) };
-        }
-        self.running_out = false;
-        dirty
     }
 
     fn spacing_px(&self, pressure: f32) -> f32 {
@@ -1637,24 +1561,26 @@ mod tests {
     }
 
     #[test]
-    fn a_stroke_cut_off_by_a_drop_runs_out_to_a_point() {
+    fn a_taper_never_goes_past_where_the_pen_stopped() {
+        // Cut off by a drop while moving, and a pen that stood still while
+        // the pressure eased away: the ink stops at the last position (plus
+        // the widest radius of the stroke) either way.
+        let mut stood_still: Vec<_> = (2..=12).map(|i| (i as f32 * 5.0, 64.0, 0.8)).collect();
+        stood_still.extend([(60.0, 64.0, 0.5), (60.0, 64.0, 0.2), (60.3, 64.0, 0.02)]);
+        for (samples, stop) in [(flick_off(), 65.0), (stood_still, 60.3)] {
+            for taper in [0.0, 0.4, 1.0] {
+                let (r, _) = taper_stroke(taper, &samples);
+                // A dab at the stop is at most as wide as the steady stretch.
+                let reach = stop + 20.0 * 0.8 / 2.0 + 1.5;
+                let furthest = (0..128).rev().find(|&x| ink_height(&r, x) > 0).unwrap();
+                assert!(furthest as f32 <= reach, "taper {taper}: ink reaches {furthest}, stop {stop}, limit {reach}");
+            }
+        }
+        // And the cut-off is no needle: the end keeps a width in between
+        // (a rounded cap) instead of a hair.
         let (blunt, _) = taper_stroke(0.0, &flick_off());
-        let (tapered, _) = taper_stroke(0.4, &flick_off());
-        // Without the taper the ink stops at the last sample; with it the
-        // stroke carries on along its heading and narrows to a point.
-        assert_eq!(ink_height(&blunt, 80), 0);
-        let (a, b, c) = (ink_height(&tapered, 70), ink_height(&tapered, 82), ink_height(&tapered, 92));
-        assert!(a > b && b > c && c >= 1, "{a} {b} {c}");
-        assert_eq!(ink_height(&tapered, 100), 0, "and stops");
-    }
-
-    #[test]
-    fn a_pen_that_stood_still_while_lifting_does_not_run_out() {
-        let mut v: Vec<_> = (2..=12).map(|i| (i as f32 * 5.0, 64.0, 0.8)).collect();
-        // Stopped at x = 60; the pressure then eases off with no travel.
-        v.extend([(60.0, 64.0, 0.5), (60.0, 64.0, 0.2), (60.3, 64.0, 0.02)]);
-        let (r, _) = taper_stroke(0.4, &v);
-        assert_eq!(ink_height(&r, 80), 0);
+        let (eased, _) = taper_stroke(0.4, &flick_off());
+        assert!(ink_height(&eased, 68) > ink_height(&blunt, 68) + 6);
     }
 
     #[test]
