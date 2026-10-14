@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use qsketch_core::brush::{DEFAULT_EDGE_FEATHER, LEGACY_EDGE_FEATHER};
 use qsketch_core::{BrushSettings, Rgba8};
 use serde::{Deserialize, Serialize};
 
@@ -1144,6 +1145,7 @@ impl Default for PaintSettings {
                 name: "Selection".into(),
                 size: 24.0,
                 hardness: 1.0,
+                edge_feather: LEGACY_EDGE_FEATHER,
                 opacity: 1.0,
                 flow: 1.0,
                 ..BrushSettings::preset("Hard Round")
@@ -1234,8 +1236,9 @@ pub struct Settings {
     pub schema: u32,
 }
 
-/// Current settings schema. 1 = right-click picks a color; 2 = smaller loupe.
-pub const SCHEMA: u32 = 2;
+/// Current settings schema. 1 = right-click picks a color; 2 = smaller loupe;
+/// 3 = softer default brush edge.
+pub const SCHEMA: u32 = 3;
 
 impl Settings {
     pub fn config_dir() -> Option<PathBuf> {
@@ -1246,8 +1249,14 @@ impl Settings {
         Self::config_dir().map(|d| d.join("settings.toml"))
     }
 
+    /// Defaults for a first run: already current, so `migrate` never rewrites
+    /// what a new user sets (a derived `default()` is schema 0).
+    fn fresh() -> Self {
+        Self { schema: SCHEMA, ..Self::default() }
+    }
+
     pub fn load() -> Self {
-        let Some(path) = Self::path() else { return Self::default() };
+        let Some(path) = Self::path() else { return Self::fresh() };
         match std::fs::read_to_string(&path) {
             Ok(s) => match toml::from_str::<Settings>(&s) {
                 Ok(mut settings) => {
@@ -1258,10 +1267,10 @@ impl Settings {
                 }
                 Err(e) => {
                     log::warn!("settings parse error ({}): {e}; using defaults", path.display());
-                    Self::default()
+                    Self::fresh()
                 }
             },
-            Err(_) => Self::default(),
+            Err(_) => Self::fresh(),
         }
     }
 
@@ -1294,6 +1303,17 @@ impl Settings {
         // 1 → 2: the pick loupe shrank; carry it over unless resized by hand.
         if self.schema < 2 && (self.canvas.pick_loupe_size - 132.0).abs() < 0.5 {
             self.canvas.pick_loupe_size = 86.0;
+        }
+        // 2 → 3: new brushes get a feathered rim. A brush whose edge was never
+        // touched (round, anti-aliased, the old 0.9 hardness, the old 1 px rim)
+        // moves to it; one whose hardness or rim was set by hand keeps its edge.
+        if self.schema < 3 {
+            let paint = &mut self.paint;
+            for b in [&mut paint.brush, &mut paint.eraser].into_iter().chain(paint.presets.iter_mut()) {
+                if b.is_round() && b.antialias && b.hardness == 0.9 && b.edge_feather == LEGACY_EDGE_FEATHER {
+                    b.edge_feather = DEFAULT_EDGE_FEATHER;
+                }
+            }
         }
         self.schema = SCHEMA;
     }
@@ -1350,5 +1370,39 @@ mod tests {
         let text = toml::to_string_pretty(&s).unwrap();
         let back: Settings = toml::from_str(&text).unwrap();
         assert_eq!(back, s);
+    }
+
+    /// Settings written before the brush rim was adjustable: untouched brushes
+    /// take the new soft rim, hand-tuned ones keep their edge.
+    #[test]
+    fn softer_brush_edge_reaches_untouched_brushes_only() {
+        let old = |hardness: f32, antialias: bool| BrushSettings {
+            size: 41.0,
+            hardness,
+            antialias,
+            edge_feather: LEGACY_EDGE_FEATHER,
+            ..BrushSettings::default()
+        };
+        let mut s = Settings { schema: 2, ..Settings::default() };
+        s.paint.brush = old(0.9, true);
+        s.paint.eraser = old(0.9, true);
+        s.paint.presets = vec![old(0.9, true), old(0.5, true), old(0.9, false), old(1.0, true)];
+        s.migrate();
+        assert_eq!(s.schema, SCHEMA);
+        assert_eq!(s.paint.brush.edge_feather, DEFAULT_EDGE_FEATHER);
+        assert_eq!(s.paint.eraser.edge_feather, DEFAULT_EDGE_FEATHER);
+        let rims: Vec<f32> = s.paint.presets.iter().map(|p| p.edge_feather).collect();
+        assert_eq!(rims, [DEFAULT_EDGE_FEATHER, 1.0, 1.0, 1.0]);
+        // Already current: a rim chosen by hand is not touched again.
+        s.paint.brush.edge_feather = LEGACY_EDGE_FEATHER;
+        s.migrate();
+        assert_eq!(s.paint.brush.edge_feather, LEGACY_EDGE_FEATHER);
+    }
+
+    #[test]
+    fn a_first_run_starts_current() {
+        assert_eq!(Settings::fresh().schema, SCHEMA);
+        assert_eq!(Settings::fresh().paint.brush.edge_feather, DEFAULT_EDGE_FEATHER);
+        assert_eq!(Settings::fresh().paint.select_brush.edge_feather, LEGACY_EDGE_FEATHER);
     }
 }

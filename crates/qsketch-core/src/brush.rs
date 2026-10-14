@@ -60,14 +60,34 @@ pub enum StabilizerMode {
     Average,
 }
 
+/// `edge_feather` of a plain 1 px anti-aliased rim: what every brush saved
+/// before the setting existed was painted with.
+pub const LEGACY_EDGE_FEATHER: f32 = 1.0;
+/// `edge_feather` of a new brush: a 2.5 px eased rim, enough that the edge no
+/// longer reads as stair-stepped without visibly blurring it.
+pub const DEFAULT_EDGE_FEATHER: f32 = 2.5;
+/// Widest rim the Brush Settings slider offers, in pixels.
+pub const MAX_EDGE_FEATHER: f32 = 16.0;
+
+fn legacy_edge_feather() -> f32 {
+    LEGACY_EDGE_FEATHER
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BrushSettings {
     pub name: String,
     /// Diameter in pixels.
     pub size: f32,
-    /// 0 = fully soft, 1 = hard edge (still 1px anti-aliased if `antialias`).
+    /// 0 = fully soft, 1 = hard edge (still feathered by `edge_feather` if `antialias`).
     pub hardness: f32,
+    /// Width in pixels of the soft rim around a round dab, on top of `hardness`
+    /// (1 = a plain anti-aliased edge; wider rims fade the outermost pixels so
+    /// the edge reads soft instead of stair-stepped). Only used with
+    /// `antialias`, and only by the analytic round tip. Brushes saved before
+    /// this existed load as 1, which is exactly how they always painted.
+    #[serde(default = "legacy_edge_feather")]
+    pub edge_feather: f32,
     /// Stroke opacity cap, 0..=1.
     pub opacity: f32,
     /// Per-dab flow, 0..=1.
@@ -170,6 +190,7 @@ impl Default for BrushSettings {
             name: "Hard Round".into(),
             size: 23.0,
             hardness: 0.9,
+            edge_feather: DEFAULT_EDGE_FEATHER,
             opacity: 1.0,
             flow: 0.7,
             spacing: 0.1,
@@ -233,6 +254,7 @@ impl BrushSettings {
                 name: "Pencil".into(),
                 size: 3.0,
                 hardness: 1.0,
+                edge_feather: LEGACY_EDGE_FEATHER,
                 flow: 1.0,
                 spacing: 0.05,
                 pressure_size: true,
@@ -245,6 +267,7 @@ impl BrushSettings {
                 name: "Ink Pen".into(),
                 size: 8.0,
                 hardness: 1.0,
+                edge_feather: LEGACY_EDGE_FEATHER,
                 flow: 1.0,
                 spacing: 0.05,
                 pressure_size: true,
@@ -276,6 +299,7 @@ impl BrushSettings {
                 name: "Pixel".into(),
                 size: 1.0,
                 hardness: 1.0,
+                edge_feather: LEGACY_EDGE_FEATHER,
                 flow: 1.0,
                 spacing: 0.1,
                 pressure_size: false,
@@ -382,6 +406,7 @@ impl BrushSettings {
     pub fn clamp(&mut self) {
         self.size = self.size.clamp(1.0, 2000.0);
         self.hardness = self.hardness.clamp(0.0, 1.0);
+        self.edge_feather = self.edge_feather.clamp(LEGACY_EDGE_FEATHER, MAX_EDGE_FEATHER);
         self.opacity = self.opacity.clamp(0.0, 1.0);
         self.flow = self.flow.clamp(0.01, 1.0);
         self.spacing = self.spacing.clamp(0.01, 5.0);
@@ -512,7 +537,7 @@ impl BrushSettings {
                 let px = x as f32 + 0.5 - center.x;
                 let lx = (px * cos + py * sin) * fx;
                 let ly = (-px * sin + py * cos) * inv_round * fy;
-                let fall = falloff((lx * lx + ly * ly).sqrt(), r, self.hardness, self.antialias);
+                let fall = falloff((lx * lx + ly * ly).sqrt(), r, self.hardness, self.antialias, self.edge_feather);
                 if fall * alpha >= MIN_ALPHA {
                     // A dab is convex, so each row is one run.
                     if b <= a {
@@ -1016,6 +1041,7 @@ impl StrokeEngine {
             return IRect::EMPTY;
         }
         let hardness = self.settings.hardness;
+        let feather = self.settings.edge_feather;
         let aa = self.settings.antialias;
         let sel = self.selection.clone();
         let alpha_lock = self.alpha_lock;
@@ -1025,7 +1051,7 @@ impl StrokeEngine {
             for y in rect.y..rect.bottom() {
                 for x in rect.x..rect.right() {
                     let (px, py) = (x as f32 + 0.5 - center.x, y as f32 + 0.5 - center.y);
-                    let mut f = falloff((px * px + py * py).sqrt(), r, hardness, aa) * strength;
+                    let mut f = falloff((px * px + py * py).sqrt(), r, hardness, aa, feather) * strength;
                     if f <= 0.0 {
                         continue;
                     }
@@ -1100,6 +1126,7 @@ impl StrokeEngine {
         }
         let s = &self.settings;
         let hardness = s.hardness;
+        let feather = s.edge_feather;
         let aa = s.antialias;
         let (sin, cos) = shape.angle.sin_cos();
         let fx = if s.flip_x { -1.0 } else { 1.0 };
@@ -1158,7 +1185,7 @@ impl StrokeEngine {
                     let mut fall = match &tip {
                         None => {
                             let dist = (lx * lx + ly * ly).sqrt();
-                            falloff(dist, r, hardness, aa)
+                            falloff(dist, r, hardness, aa, feather)
                         }
                         Some(t) => {
                             let v = t.sample_tip(lx / r, ly / r);
@@ -1382,16 +1409,27 @@ pub fn pixel_snap(center: Pt, r: f32) -> Pt {
 }
 
 /// Dab intensity at `dist` from the center for radius `r`.
+///
+/// The rim is `feather` px wide and ends at the dab's outer edge (`r + 0.5`),
+/// so softening it eats into the dab rather than growing it. A 1 px rim is
+/// plain coverage anti-aliasing, the linear ramp every brush used to have;
+/// wider rims ease in and out so they read as soft rather than as a blurred
+/// step. A rim is never wider than the radius (floor 1 px), or tiny brushes
+/// would never reach full strength at their center.
 #[inline]
-fn falloff(dist: f32, r: f32, hardness: f32, antialias: bool) -> f32 {
+fn falloff(dist: f32, r: f32, hardness: f32, antialias: bool, feather: f32) -> f32 {
     if !antialias {
         return if dist <= r { 1.0 } else { 0.0 };
     }
-    // 1px anti-aliased rim.
-    let edge = (r - dist + 0.5).clamp(0.0, 1.0);
-    if edge <= 0.0 {
+    let width = feather.min(r).max(1.0);
+    let t = ((r - dist + 0.5) / width).clamp(0.0, 1.0);
+    if t <= 0.0 {
         return 0.0;
     }
+    // Ease in over the first extra pixel of width so the slider has no jump
+    // at 1 px, where the ramp is exactly the old linear one.
+    let eased = t * t * (3.0 - 2.0 * t);
+    let edge = t + (eased - t) * (width - 1.0).min(1.0);
     if hardness >= 0.999 {
         return edge;
     }
@@ -1426,6 +1464,8 @@ pub fn render_preview(
         s.size = max_size;
         // Keep tile-space grain proportional so the preview reads like the canvas.
         s.texture_scale = (s.texture_scale * k).max(0.1);
+        // The rim shrinks with the brush so the edge keeps its proportions.
+        s.edge_feather = (s.edge_feather * k).max(LEGACY_EDGE_FEATHER);
     }
     s.smoothing = 0.0;
     let layer = Layer::new(1, "preview", w, h);
@@ -1503,20 +1543,24 @@ mod tests {
     /// at whatever sub-pixel position the pointer sits.
     #[test]
     fn dab_spans_match_what_a_click_paints() {
-        // size, anti-aliasing, hardness, opacity — the knobs that decide which
-        // pixels a press actually marks.
+        // size, anti-aliasing, hardness, opacity, edge feather — the knobs that
+        // decide which pixels a press actually marks.
         let cases = [
-            (1.0, false, 1.0, 1.0),
-            (3.0, false, 1.0, 1.0),
-            (4.0, false, 1.0, 1.0),
-            (7.0, false, 1.0, 1.0),
-            (6.0, true, 1.0, 1.0),
-            (9.0, true, 0.5, 1.0),
-            (12.0, true, 0.2, 1.0),
-            (11.0, true, 0.9, 0.3),
-            (5.0, true, 1.0, 0.02),
+            (1.0, false, 1.0, 1.0, 1.0),
+            (3.0, false, 1.0, 1.0, 2.0),
+            (4.0, false, 1.0, 1.0, 1.0),
+            (7.0, false, 1.0, 1.0, 6.0),
+            (6.0, true, 1.0, 1.0, 1.0),
+            (6.0, true, 1.0, 1.0, 2.0),
+            (9.0, true, 0.5, 1.0, 1.0),
+            (9.0, true, 0.5, 1.0, 4.0),
+            (12.0, true, 0.2, 1.0, 2.0),
+            (11.0, true, 0.9, 0.3, 2.0),
+            (11.0, true, 1.0, 1.0, 8.0),
+            (3.0, true, 1.0, 1.0, 12.0),
+            (5.0, true, 1.0, 0.02, 3.0),
         ];
-        for (size, aa, hardness, opacity) in cases {
+        for (size, aa, hardness, opacity, feather) in cases {
             for (ox, oy) in [(0.0, 0.0), (0.5, 0.5), (0.3, 0.8)] {
                 let l = layer();
                 let mut raster = l.raster.clone();
@@ -1525,6 +1569,7 @@ mod tests {
                     flow: 1.0,
                     opacity,
                     hardness,
+                    edge_feather: feather,
                     antialias: aa,
                     pressure_size: false,
                     smoothing: 0.0,
@@ -1535,7 +1580,7 @@ mod tests {
                 let mut e = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
                 e.extend(&mut raster, StrokeSample { pos: at, pressure: 1.0 });
                 e.finish(&mut raster);
-                let case = format!("size {size} aa {aa} hard {hardness} op {opacity} at {ox},{oy}");
+                let case = format!("size {size} aa {aa} hard {hardness} op {opacity} feather {feather} at {ox},{oy}");
                 for y in 40..60 {
                     for x in 40..60 {
                         let (a, b) = spans.row(y);
@@ -1756,6 +1801,8 @@ mod tests {
         s.size = 4.0;
         s.opacity = 1.0;
         s.flow = 1.0;
+        // A plain 1 px rim, so the pixel under the pointer is covered in full.
+        s.edge_feather = LEGACY_EDGE_FEATHER;
         let mut e = StrokeEngine::new(s.clone(), PaintMode::Clone, Rgba8::BLACK, &l, None).with_clone_source(
             Arc::new(src),
             -30,
@@ -1865,6 +1912,161 @@ mod tests {
         assert!(b.is_round());
         assert_eq!(b.roundness, 1.0);
         assert!(!b.texture_enabled);
+        // A brush saved before the rim was adjustable keeps its 1 px rim, even
+        // though a new brush starts softer.
+        assert_eq!(b.edge_feather, LEGACY_EDGE_FEATHER);
+        assert_eq!(BrushSettings::default().edge_feather, DEFAULT_EDGE_FEATHER);
+        let back: BrushSettings =
+            serde_json::from_str(&serde_json::to_string(&BrushSettings::default()).unwrap()).unwrap();
+        assert_eq!(back.edge_feather, DEFAULT_EDGE_FEATHER);
+    }
+
+    /// The old fixed rim: a linear 1 px ramp ending half a pixel past the radius.
+    fn legacy_falloff(dist: f32, r: f32, hardness: f32) -> f32 {
+        let edge = (r - dist + 0.5).clamp(0.0, 1.0);
+        if edge <= 0.0 {
+            return 0.0;
+        }
+        if hardness >= 0.999 {
+            return edge;
+        }
+        let d = dist / r;
+        let soft = if d <= hardness {
+            1.0
+        } else {
+            let t = ((d - hardness) / (1.0 - hardness)).clamp(0.0, 1.0);
+            1.0 - t * t * (3.0 - 2.0 * t)
+        };
+        edge * soft
+    }
+
+    #[test]
+    fn a_1px_feather_is_exactly_the_old_rim() {
+        for r in [0.5, 1.0, 1.7, 3.0, 11.5, 80.0] {
+            for hardness in [0.0, 0.3, 0.9, 1.0] {
+                for i in 0..=400 {
+                    let dist = (r + 2.0) * i as f32 / 400.0;
+                    assert_eq!(
+                        falloff(dist, r, hardness, true, LEGACY_EDGE_FEATHER),
+                        legacy_falloff(dist, r, hardness),
+                        "r {r} hardness {hardness} dist {dist}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wider_feathers_soften_the_rim_without_growing_the_dab() {
+        let r = 12.0;
+        let mut last_mid = 1.0;
+        for feather in [1.0, 2.0, 3.0, 6.0, 12.0] {
+            // Nothing outside the legacy outer edge, full strength at the center.
+            assert_eq!(falloff(r + 0.5, r, 1.0, true, feather), 0.0);
+            assert_eq!(falloff(r + 3.0, r, 1.0, true, feather), 0.0);
+            assert_eq!(falloff(0.0, r, 1.0, true, feather), 1.0);
+            // Falls monotonically, with no step anywhere.
+            let mut prev = 1.0;
+            for i in 0..=1000 {
+                let f = falloff(r * 1.1 * i as f32 / 1000.0, r, 1.0, true, feather);
+                assert!(f <= prev + 1e-6, "feather {feather}: rises at step {i}");
+                assert!(prev - f < 0.5 / feather.max(1.0), "feather {feather}: steps at {i}");
+                prev = f;
+            }
+            // A wider rim has already faded further one pixel inside the edge.
+            let mid = falloff(r - 0.5, r, 1.0, true, feather);
+            assert!(mid <= last_mid + 1e-6, "feather {feather}: not softer ({mid} > {last_mid})");
+            last_mid = mid;
+        }
+        assert!(last_mid < 0.2);
+    }
+
+    #[test]
+    fn feather_never_dims_the_center_of_a_small_brush() {
+        for r in [0.5, 1.0, 1.5, 2.5, 4.0] {
+            for feather in [1.0, 2.0, 8.0, MAX_EDGE_FEATHER] {
+                assert_eq!(falloff(0.0, r, 1.0, true, feather), 1.0, "r {r} feather {feather}");
+            }
+        }
+    }
+
+    #[test]
+    fn feather_does_not_touch_aliased_brushes() {
+        for feather in [1.0, 2.0, MAX_EDGE_FEATHER] {
+            assert_eq!(falloff(4.9, 5.0, 0.3, false, feather), 1.0);
+            assert_eq!(falloff(5.1, 5.0, 0.3, false, feather), 0.0);
+        }
+        // Through the engine: an aliased dab paints the same pixels at any feather.
+        let paint = |feather: f32| {
+            let l = layer();
+            let mut raster = l.raster.clone();
+            let s = BrushSettings {
+                size: 9.0,
+                flow: 1.0,
+                antialias: false,
+                edge_feather: feather,
+                pressure_size: false,
+                ..Default::default()
+            };
+            let mut e = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
+            e.extend(&mut raster, StrokeSample { pos: Pt::new(50.0, 50.0), pressure: 1.0 });
+            e.finish(&mut raster);
+            raster.to_rgba()
+        };
+        assert!(paint(1.0) == paint(MAX_EDGE_FEATHER));
+    }
+
+    #[test]
+    fn default_brush_edge_is_softer_than_the_old_one_and_crisp_presets_are_not() {
+        let default = BrushSettings::default();
+        assert!(default.edge_feather > LEGACY_EDGE_FEATHER);
+        for name in ["Pencil", "Ink Pen", "Pixel"] {
+            assert_eq!(BrushSettings::preset(name).edge_feather, LEGACY_EDGE_FEATHER, "{name}");
+        }
+        // Counts the pixels along a row through the dab center that are neither
+        // empty nor full: the width of the visible edge.
+        let partial = |s: BrushSettings| {
+            let l = layer();
+            let mut raster = l.raster.clone();
+            let mut e = StrokeEngine::new(s, PaintMode::Paint, Rgba8::BLACK, &l, None);
+            e.extend(&mut raster, StrokeSample { pos: Pt::new(64.5, 64.5), pressure: 1.0 });
+            e.finish(&mut raster);
+            (64..128).filter(|&x| (1..255).contains(&raster.get_pixel(x, 64).a)).count()
+        };
+        let base = BrushSettings { size: 40.0, flow: 1.0, hardness: 1.0, pressure_size: false, ..default };
+        let old = partial(BrushSettings { edge_feather: LEGACY_EDGE_FEATHER, ..base.clone() });
+        let new = partial(base);
+        let wide = partial(BrushSettings { edge_feather: 6.0, ..BrushSettings { size: 40.0, ..Default::default() } });
+        assert!(old <= 2, "old rim is {old} px");
+        assert!(new > old, "default rim ({new} px) is not softer than the old one ({old} px)");
+        assert!(wide > new, "6 px rim ({wide} px) is not wider than the default ({new} px)");
+    }
+
+    #[test]
+    fn preview_follows_the_feather_and_ignores_it_when_aliased() {
+        let render = |aa: bool, feather: f32| {
+            let s = BrushSettings {
+                size: 60.0,
+                hardness: 1.0,
+                antialias: aa,
+                edge_feather: feather,
+                pressure_size: false,
+                ..Default::default()
+            };
+            render_preview(&s, None, None, Rgba8::BLACK, Rgba8::WHITE, 120, 40)
+        };
+        assert!(render(true, 1.0) != render(true, 6.0));
+        assert!(render(false, 1.0) == render(false, 6.0));
+    }
+
+    #[test]
+    fn clamp_keeps_the_feather_in_range() {
+        let mut b = BrushSettings { edge_feather: 0.0, ..Default::default() };
+        b.clamp();
+        assert_eq!(b.edge_feather, LEGACY_EDGE_FEATHER);
+        b.edge_feather = 99.0;
+        b.clamp();
+        assert_eq!(b.edge_feather, MAX_EDGE_FEATHER);
     }
 
     #[test]
@@ -1980,6 +2182,8 @@ mod tests {
             size: 4.0,
             flow: 1.0,
             hardness: 1.0,
+            // Small dabs only reach full alpha with the plain 1 px rim.
+            edge_feather: LEGACY_EDGE_FEATHER,
             pressure_size: false,
             spacing: 2.0,
             smoothing: 0.0,

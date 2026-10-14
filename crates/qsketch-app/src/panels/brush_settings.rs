@@ -2,6 +2,7 @@
 //! selected section's controls on the right, and a live stroke preview below.
 
 use egui::{Color32, Sense, Ui, Vec2};
+use qsketch_core::brush::{LEGACY_EDGE_FEATHER, MAX_EDGE_FEATHER};
 use qsketch_core::{AngleControl, BrushSettings, Rgba8, TextureMode, TipImage};
 
 use crate::brush_library::{BrushLibrary, LibraryKind};
@@ -370,6 +371,26 @@ fn control_combo(ui: &mut Ui, id: &str, on: &mut bool) -> bool {
     changed
 }
 
+const EDGE_SOFTNESS_TIP: &str = "Width of the feathered rim around the dab, in pixels, on top of Hardness.\n\
+    1 px is a plain anti-aliased edge; higher values fade the outermost pixels so the edge reads softer.\n\
+    Round tips with anti-aliasing only.";
+
+/// Slider for a round dab's edge feather (rim width in px). Greyed out for
+/// aliased brushes, which have no rim. Returns true while it is being changed.
+pub fn edge_softness_slider(ui: &mut Ui, b: &mut BrushSettings) -> bool {
+    let r = ui.add_enabled(
+        b.antialias,
+        egui::Slider::new(&mut b.edge_feather, LEGACY_EDGE_FEATHER..=MAX_EDGE_FEATHER)
+            .logarithmic(true)
+            .suffix(" px")
+            .fixed_decimals(1)
+            .clamping(egui::SliderClamping::Always),
+    );
+    let changed = r.changed();
+    r.on_hover_text(EDGE_SOFTNESS_TIP).on_disabled_hover_text("Turn on Anti-aliasing to soften the edge");
+    changed
+}
+
 fn heading(ui: &mut Ui, text: &str) {
     ui.add_space(2.0);
     ui.label(egui::RichText::new(text).strong());
@@ -542,6 +563,9 @@ fn tip_page(
     if b.is_round() {
         heading(ui, "Hardness");
         percent_slider(ui, "", &mut b.hardness);
+        ui.add_space(2.0);
+        ui.label(egui::RichText::new("Edge softness").strong()).on_hover_text(EDGE_SOFTNESS_TIP);
+        edge_softness_slider(ui, b);
     } else if tool != ToolKind::Pencil {
         ui.label(egui::RichText::new("Hardness applies to the round tip only.").weak().small());
     }
