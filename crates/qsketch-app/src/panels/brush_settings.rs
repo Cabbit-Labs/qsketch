@@ -396,7 +396,13 @@ fn heading(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text).strong());
 }
 
-/// Thumbnail grid of tips or textures; returns a clicked name ("" = Round).
+/// A heading and its items in the tip/texture picker: name and whether it is
+/// built in, `None` being the analytic round tip.
+type Group = (&'static str, Vec<Option<(String, bool)>>);
+
+/// Thumbnail grid of tips or textures, built-ins grouped under small headings
+/// (soft rounds first) and the user's own last; returns a clicked name
+/// ("" = Round).
 fn image_grid(
     ui: &mut Ui,
     library: &mut BrushLibrary,
@@ -407,80 +413,103 @@ fn image_grid(
 ) -> Option<String> {
     let cell = 46.0;
     let mut picked = None;
-    let names: Vec<(String, bool)> = library.list(kind).iter().map(|t| (t.name.clone(), t.builtin)).collect();
-    let cols = ((ui.available_width() + 4.0) / (cell + 4.0)).floor().max(1.0) as usize;
-    let mut items: Vec<Option<(String, bool)>> = Vec::new();
-    if include_round {
-        items.push(None);
+    // (heading, items); `None` is the analytic round tip.
+    let mut groups: Vec<Group> = Vec::new();
+    for t in library.list(kind) {
+        let heading = if t.builtin { library_category(kind, &t.name).unwrap_or("Built-in") } else { "Imported" };
+        if groups.last().is_none_or(|g| g.0 != heading) {
+            groups.push((heading, Vec::new()));
+        }
+        groups.last_mut().expect("just pushed").1.push(Some((t.name.clone(), t.builtin)));
     }
-    items.extend(names.into_iter().map(Some));
+    if include_round {
+        match groups.first_mut() {
+            Some(first) => first.1.insert(0, None),
+            None => groups.push(("Round", vec![None])),
+        }
+    }
+    let cols = ((ui.available_width() + 4.0) / (cell + 4.0)).floor().max(1.0) as usize;
     egui::Frame::new()
         .fill(ui.visuals().extreme_bg_color)
         .inner_margin(4.0)
         .corner_radius(crate::ui::theme::radius(4))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            egui::Grid::new(("tip_grid", kind.dir_name())).spacing([4.0, 4.0]).show(ui, |ui| {
-                for (i, item) in items.iter().enumerate() {
-                    let (name, builtin) = match item {
-                        None => (String::new(), true),
-                        Some((n, b)) => (n.clone(), *b),
-                    };
-                    let selected = if name.is_empty() {
-                        current.is_empty() || current == qsketch_core::brush::ROUND_TIP
-                    } else {
-                        current == name
-                    };
-                    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(cell), Sense::click());
-                    let v = ui.visuals();
-                    let fill = if selected {
-                        v.selection.bg_fill
-                    } else if resp.hovered() {
-                        v.widgets.hovered.bg_fill
-                    } else {
-                        v.faint_bg_color
-                    };
-                    crate::ui::chrome::fill_box(ui.painter(), rect, 4.0, fill);
-                    if name.is_empty() {
-                        ui.painter().circle_filled(rect.center(), cell * 0.32, v.text_color());
-                    } else if let Some(tex) = library.preview(ui.ctx(), kind, &name, 64) {
-                        let inner = rect.shrink(3.0);
-                        ui.painter().image(
-                            tex.id(),
-                            inner,
-                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                            v.text_color(),
-                        );
-                    }
-                    if selected {
-                        ui.painter().rect_stroke(
-                            rect,
-                            4,
-                            egui::Stroke::new(1.5, v.selection.stroke.color),
-                            egui::StrokeKind::Inside,
-                        );
-                    }
-                    let label =
-                        if name.is_empty() { "Round (soft/hard by Hardness)".to_string() } else { name.clone() };
-                    let resp = resp.on_hover_text(label);
-                    if resp.clicked() {
-                        picked = Some(name.clone());
-                    }
-                    if !builtin {
-                        resp.context_menu(|ui| {
-                            if ui.button(format!("{} Delete \"{}\"", icons::TRASH, name)).clicked() {
-                                deferred.push(Deferred::Remove(kind, name.clone()));
-                                ui.close();
-                            }
-                        });
-                    }
-                    if (i + 1) % cols == 0 {
-                        ui.end_row();
-                    }
+            for (g, (heading, items)) in groups.iter().enumerate() {
+                if groups.len() > 1 {
+                    ui.add_space(if g == 0 { 0.0 } else { 4.0 });
+                    ui.label(egui::RichText::new(*heading).weak().small());
                 }
-            });
+                egui::Grid::new(("tip_grid", kind.dir_name(), g)).spacing([4.0, 4.0]).show(ui, |ui| {
+                    for (i, item) in items.iter().enumerate() {
+                        let (name, builtin) = match item {
+                            None => (String::new(), true),
+                            Some((n, b)) => (n.clone(), *b),
+                        };
+                        let selected = if name.is_empty() {
+                            current.is_empty() || current == qsketch_core::brush::ROUND_TIP
+                        } else {
+                            current == name
+                        };
+                        let (rect, resp) = ui.allocate_exact_size(Vec2::splat(cell), Sense::click());
+                        let v = ui.visuals();
+                        let fill = if selected {
+                            v.selection.bg_fill
+                        } else if resp.hovered() {
+                            v.widgets.hovered.bg_fill
+                        } else {
+                            v.faint_bg_color
+                        };
+                        crate::ui::chrome::fill_box(ui.painter(), rect, 4.0, fill);
+                        if name.is_empty() {
+                            ui.painter().circle_filled(rect.center(), cell * 0.32, v.text_color());
+                        } else if let Some(tex) = library.preview(ui.ctx(), kind, &name, 64) {
+                            let inner = rect.shrink(3.0);
+                            ui.painter().image(
+                                tex.id(),
+                                inner,
+                                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                                v.text_color(),
+                            );
+                        }
+                        if selected {
+                            ui.painter().rect_stroke(
+                                rect,
+                                4,
+                                egui::Stroke::new(1.5, v.selection.stroke.color),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                        let label =
+                            if name.is_empty() { "Round (soft/hard by Hardness)".to_string() } else { name.clone() };
+                        let resp = resp.on_hover_text(label);
+                        if resp.clicked() {
+                            picked = Some(name.clone());
+                        }
+                        if !builtin {
+                            resp.context_menu(|ui| {
+                                if ui.button(format!("{} Delete \"{}\"", icons::TRASH, name)).clicked() {
+                                    deferred.push(Deferred::Remove(kind, name.clone()));
+                                    ui.close();
+                                }
+                            });
+                        }
+                        if (i + 1) % cols == 0 {
+                            ui.end_row();
+                        }
+                    }
+                });
+            }
         });
     picked
+}
+
+/// The heading a built-in tip or texture is listed under.
+fn library_category(kind: LibraryKind, name: &str) -> Option<&'static str> {
+    match kind {
+        LibraryKind::Tip => qsketch_core::tip::tip_category(name),
+        LibraryKind::Texture => qsketch_core::tip::texture_category(name),
+    }
 }
 
 fn library_buttons(ui: &mut Ui, kind: LibraryKind, deferred: &mut Vec<Deferred>) {

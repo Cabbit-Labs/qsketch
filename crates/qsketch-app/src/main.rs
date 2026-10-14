@@ -35,6 +35,9 @@ fn main() -> eframe::Result<()> {
     .format_timestamp_millis()
     .init();
 
+    // The brush tips and grain textures are drawn procedurally; start now so
+    // they are ready by the time the window is.
+    qsketch_core::tip::prewarm_builtins();
     let icon = load_icon();
     // The app draws its own title strip unless the user asked for the OS one.
     let saved = settings::Settings::load();

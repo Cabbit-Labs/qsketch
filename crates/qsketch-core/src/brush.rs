@@ -1133,6 +1133,12 @@ impl StrokeEngine {
         let fy = if s.flip_y { -1.0 } else { 1.0 };
         let inv_round = 1.0 / shape.roundness;
         let tip = if s.is_round() { None } else { self.tip.clone() };
+        // A small dab reads a prefiltered copy of a big tip, so its grain
+        // averages out instead of aliasing; hard-edged dabs keep the crisp one.
+        let tip_lod = match &tip {
+            Some(t) if aa => t.lod_for_radius(r),
+            _ => 0.0,
+        };
         let texture = if s.texture_enabled { self.texture.clone() } else { None };
         let tex_scale = s.texture_scale;
         let tex_depth = s.texture_depth;
@@ -1188,7 +1194,7 @@ impl StrokeEngine {
                             falloff(dist, r, hardness, aa, feather)
                         }
                         Some(t) => {
-                            let v = t.sample_tip(lx / r, ly / r);
+                            let v = t.sample_tip_lod(lx / r, ly / r, tip_lod);
                             if aa {
                                 v
                             } else if v >= 0.5 {
@@ -1525,6 +1531,8 @@ mod tests {
             size: 6.0,
             flow: 1.0,
             hardness: 1.0,
+            // A plain 1 px rim, so a pixel under the pointer is covered in full.
+            edge_feather: LEGACY_EDGE_FEATHER,
             pressure_size: false,
             smoothing: 0.5,
             ..Default::default()
