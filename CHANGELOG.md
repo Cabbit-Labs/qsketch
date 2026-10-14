@@ -11,6 +11,13 @@ All notable changes to qSketch are documented in this file.
   to the center, corners and edge midpoints (hold Alt to place it freely),
   rides along when the box is moved, and the X / Y fields and the angle
   field in the options bar now refer to it.
+- The zone that rotates a transform box now hugs its outline. It used to be
+  a 20 px margin around the box's bounding rectangle, which for a turned
+  box reached far into empty corners, so a press that was merely near the
+  edge could spin the pixels when the aim was to move them. It is now a
+  10 px strip measured from the outline itself. A press beyond it no longer
+  rotates anything: it lets go of the box and goes to the active tool (the
+  cursor there was already the tool's own, not the rotate glyph).
 - Moving a selection keeps it visible. The marching ants stay up and follow
   the pixels while the box is dragged, scaled or turned, and the Select menu
   (Deselect, Modify ▸ Feather / Expand / Contract / Border / Smooth ...)

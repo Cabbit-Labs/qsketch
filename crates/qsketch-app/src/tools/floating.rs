@@ -817,10 +817,26 @@ pub fn begin_transform_with(state: &mut AppState, doc_id: DocId, duplicate: bool
     true
 }
 
-/// Screen-space band just outside a live Freeform transform box where a press
-/// rotates it. An idle selection has no band: rotating starts only once the
-/// pixels are lifted, so the rotate glyph never shows over a plain selection.
-const SELECTION_BAND: f32 = 20.0;
+/// How far outside a live Freeform transform box's outline (screen pixels,
+/// measured from the outline itself, not from a box around it) a press still
+/// rotates it. Kept thin so a press that is merely near the edge is not
+/// mistaken for a turn when the aim was to move the pixels. An idle selection
+/// has no band: rotating starts only once the pixels are lifted, so the rotate
+/// glyph never shows over a plain selection.
+const ROTATE_BAND: f32 = 10.0;
+
+/// Distance from `p` to the nearest point on the closed outline `pts`.
+fn dist_to_outline(pts: &[Pos2], p: Pos2) -> f32 {
+    let mut best = f32::INFINITY;
+    for i in 0..pts.len() {
+        let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+        let ab = b - a;
+        let len2 = ab.length_sq();
+        let t = if len2 > 0.0 { ((p - a).dot(ab) / len2).clamp(0.0, 1.0) } else { 0.0 };
+        best = best.min((a + ab * t).distance(p));
+    }
+    best
+}
 
 /// The document-space corners of the box drawn around the current selection
 /// (its bounds), when there is one.
@@ -930,8 +946,9 @@ pub fn in_rotation_band(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
     }
 }
 
-/// True when `pos` is clear of the floating box and its rotation band, so a
-/// selection tool should commit and start a fresh marquee there.
+/// True when `pos` is clear of the floating box and its rotation band (the
+/// thin strip hugging its outline), so a press there should commit and carry
+/// on with the active tool, a fresh marquee for a selection tool.
 pub fn outside_box(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
     let Some(fp) = state.floating.as_ref() else { return true };
     if fp.doc != doc_id {
@@ -942,11 +959,8 @@ pub fn outside_box(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
     if fp.grab_at(view, pos).is_some() || fp.pivot_hit(view, pos) || fp.contains(view.screen_to_doc(pos)) {
         return false;
     }
-    let mut bb = Rect::NOTHING;
-    for p in fp.corners() {
-        bb = bb.union(Rect::from_min_size(view.doc_to_screen(p), Vec2::ZERO));
-    }
-    !bb.expand(SELECTION_BAND).contains(pos)
+    let outline: Vec<Pos2> = fp.corners().iter().map(|p| view.doc_to_screen(*p)).collect();
+    dist_to_outline(&outline, pos) > ROTATE_BAND
 }
 
 /// Aseprite-style selection drag: grabbing the box around the selection lifts
@@ -1162,6 +1176,20 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) -> bool {
         return false;
     }
     let Some(view) = state.docs.iter().find(|d| d.id == doc_id).map(|d| d.view.clone()) else { return false };
+    // Freeform turns the box only from the thin band hugging it. A press
+    // further out lets go of the box (the cursor there is the tool's own, not
+    // the rotate glyph) and goes to the active tool.
+    if let CanvasEvent::Press(inp) = ev {
+        if inp.button == egui::PointerButton::Primary
+            && fp.mode == Mode::Freeform
+            && fp.drag.is_none()
+            && outside_box(state, doc_id, inp.screen)
+        {
+            commit(state);
+            return false;
+        }
+    }
+    let Some(fp) = state.floating.as_mut() else { return false };
     match ev {
         CanvasEvent::Press(inp) => {
             if inp.button != egui::PointerButton::Primary {
@@ -1653,7 +1681,7 @@ mod tests {
     fn input(x: f32, y: f32) -> super::super::CanvasInput {
         super::super::CanvasInput {
             doc: Pt::new(x, y),
-            screen: Pos2::new(-1.0e6, -1.0e6),
+            screen: Pos2::new(x, y),
             pressure: 1.0,
             mods: egui::Modifiers::NONE,
             button: egui::PointerButton::Primary,
@@ -1668,10 +1696,10 @@ mod tests {
     fn moving_a_selection_copies_its_pixels_exactly() {
         for (sel, grab, to, filter) in [
             // Odd and even box sizes, fractional pointer coordinates.
-            (IRect::new(11, 7, 21, 13), (16.3f32, 13.7), (23.9, 5.2), ResizeFilter::Bilinear),
-            (IRect::new(10, 8, 20, 12), (15.0f32, 14.0), (19.5, 20.5), ResizeFilter::Bilinear),
-            (IRect::new(11, 7, 21, 13), (16.3f32, 13.7), (23.9, 5.2), ResizeFilter::Nearest),
-            (IRect::new(11, 7, 21, 13), (16.3f32, 13.7), (23.9, 5.2), ResizeFilter::RotSprite),
+            (IRect::new(8, 6, 40, 30), (22.3f32, 14.7), (29.9, 6.2), ResizeFilter::Bilinear),
+            (IRect::new(9, 7, 41, 29), (23.0f32, 15.0), (27.5, 23.5), ResizeFilter::Bilinear),
+            (IRect::new(8, 6, 40, 30), (22.3f32, 14.7), (29.9, 6.2), ResizeFilter::Nearest),
+            (IRect::new(8, 6, 40, 30), (22.3f32, 14.7), (29.9, 6.2), ResizeFilter::RotSprite),
         ] {
             let mut state = AppState::new(crate::settings::Settings::default());
             state.settings.canvas.transform_filter = filter;
@@ -1732,14 +1760,14 @@ mod tests {
 
     #[test]
     fn the_selection_stays_up_and_follows_while_its_pixels_float() {
-        let sel = IRect::new(11, 7, 21, 13);
+        let sel = IRect::new(8, 6, 40, 30);
         let (mut state, id) = selected_noise(sel);
         assert!(begin_transform_with(&mut state, id, false, "Move"));
         assert_eq!(sel_bounds(&state, id), Some(sel), "up the moment the pixels lift");
-        assert!(handle(&mut state, id, CanvasEvent::Press(input(16.0, 13.0))));
-        assert!(handle(&mut state, id, CanvasEvent::Drag(input(24.0, 4.0))));
+        assert!(handle(&mut state, id, CanvasEvent::Press(input(22.0, 14.0))));
+        assert!(handle(&mut state, id, CanvasEvent::Drag(input(30.0, 5.0))));
         refresh(&mut state);
-        assert_eq!(sel_bounds(&state, id), Some(IRect::new(19, -2, 21, 13).intersect(&IRect::new(0, 0, 64, 48))));
+        assert_eq!(sel_bounds(&state, id), Some(IRect::new(16, -3, 40, 30).intersect(&IRect::new(0, 0, 64, 48))));
         // Cancelling puts the original selection back.
         assert!(cancel(&mut state));
         assert_eq!(sel_bounds(&state, id), Some(sel));
@@ -1774,21 +1802,21 @@ mod tests {
 
     #[test]
     fn rotating_about_a_moved_anchor_keeps_the_anchor_put() {
-        let (mut state, id) = selected_noise(IRect::new(11, 7, 21, 13));
+        let (mut state, id) = selected_noise(IRect::new(20, 15, 30, 20));
         assert!(begin_transform(&mut state, id));
         // Anchor on the top-left corner of the box.
         state.floating.as_mut().unwrap().pivot = (0.0, 0.0);
         let anchor = state.floating.as_ref().unwrap().pivot_pos();
-        assert_eq!((anchor.x, anchor.y), (11.0, 7.0));
+        assert_eq!((anchor.x, anchor.y), (20.0, 15.0));
         // Press left of the box (its rotation band) and swing a quarter turn.
-        assert!(handle(&mut state, id, CanvasEvent::Press(input(5.0, 7.0))));
-        assert!(handle(&mut state, id, CanvasEvent::Drag(input(11.0, 1.0))));
+        assert!(handle(&mut state, id, CanvasEvent::Press(input(12.0, 25.0))));
+        assert!(handle(&mut state, id, CanvasEvent::Drag(input(10.0, 7.0))));
         let fp = state.floating.as_ref().unwrap();
         let after = fp.pivot_pos();
         assert!((after.x - anchor.x).abs() < 1e-3 && (after.y - anchor.y).abs() < 1e-3, "{after:?}");
         assert!((fp.angle.rem_euclid(std::f32::consts::TAU) - std::f32::consts::FRAC_PI_2).abs() < 1e-3);
-        // The center swung from (21.5, 13.5) to (4.5, 17.5) about the anchor.
-        assert!((fp.center.x - 4.5).abs() < 1e-3 && (fp.center.y - 17.5).abs() < 1e-3, "{:?}", fp.center);
+        // The center swung from (35, 25) to (10, 30) about the anchor.
+        assert!((fp.center.x - 10.0).abs() < 1e-3 && (fp.center.y - 30.0).abs() < 1e-3, "{:?}", fp.center);
     }
 
     #[test]
@@ -1812,5 +1840,35 @@ mod tests {
         assert!(handle(&mut state, id, CanvasEvent::Press(input_on(now.x, now.y, none))));
         assert!(handle(&mut state, id, CanvasEvent::Drag(input_on(54.0, 40.0, none))));
         assert_eq!(state.floating.as_ref().unwrap().pivot, (1.0, 1.0));
+    }
+
+    #[test]
+    fn the_rotation_band_hugs_the_outline() {
+        let (mut state, id) = selected_noise(IRect::new(20, 15, 30, 20));
+        assert!(begin_transform(&mut state, id));
+        let at = |x: f32, y: f32| Pos2::new(x, y);
+        // A few pixels off the edge turns the box; well clear of it does not.
+        assert!(in_rotation_band(&state, id, at(11.0, 25.0)));
+        assert!(!outside_box(&state, id, at(11.0, 25.0)));
+        assert!(!in_rotation_band(&state, id, at(5.0, 25.0)));
+        assert!(outside_box(&state, id, at(5.0, 25.0)));
+        // Turned 45°, the corner of the box around it is empty space, not band.
+        state.floating.as_mut().unwrap().angle = std::f32::consts::FRAC_PI_4;
+        assert!(outside_box(&state, id, at(51.0, 9.0)));
+        // Inside the box and on its outline's near side nothing rotates.
+        assert!(!in_rotation_band(&state, id, at(35.0, 25.0)));
+    }
+
+    #[test]
+    fn a_press_clear_of_the_band_lets_go_instead_of_rotating() {
+        let (mut state, id) = selected_noise(IRect::new(20, 15, 30, 20));
+        assert!(begin_transform(&mut state, id));
+        // In the band: the box takes the press and starts a turn.
+        assert!(handle(&mut state, id, CanvasEvent::Press(input(11.0, 25.0))));
+        assert!(matches!(state.floating.as_ref().unwrap().drag, Some(FloatDrag::Rotate { .. })));
+        assert!(handle(&mut state, id, CanvasEvent::Release(input(11.0, 25.0))));
+        // Clear of it: the box is committed and the press goes on to the tool.
+        assert!(!handle(&mut state, id, CanvasEvent::Press(input(5.0, 25.0))));
+        assert!(state.floating.is_none());
     }
 }
