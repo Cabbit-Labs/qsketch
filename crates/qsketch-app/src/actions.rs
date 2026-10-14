@@ -113,6 +113,7 @@ actions! {
     ShareCanvas => (File, "Share via Leyline…", []),
     StopSharing => (File, "Stop Sharing", []),
     CloseDocument => (File, "Close", ["Ctrl+W"]),
+    ReopenClosed => (File, "Reopen Closed", ["Ctrl+Shift+T"]),
     Quit => (File, "Quit", ["Ctrl+Q"]),
     // Edit
     Undo => (Edit, "Undo", ["Ctrl+Z"]),

@@ -958,6 +958,8 @@ impl QSketchApp {
                 self.menu_item(ui, Action::StopSharing, shared);
                 ui.separator();
                 self.menu_item(ui, Action::CloseDocument, has_doc);
+                let can_reopen = !self.state.closed.is_empty();
+                self.menu_item(ui, Action::ReopenClosed, can_reopen);
                 self.menu_item(ui, Action::Quit, true);
             });
             top_menu(ui, "Edit", |ui| {
@@ -1811,6 +1813,10 @@ impl QSketchApp {
                     self.state.close_doc_requests.push(id);
                 }
             }
+            Action::ReopenClosed => match self.state.reopen_closed() {
+                Some(name) => self.state.toasts.push(Level::Info, format!("Reopened {name}.")),
+                None => self.state.toasts.push(Level::Info, "Nothing to reopen."),
+            },
             Action::Quit => self.state.quit_requested = true,
             Action::Undo => {
                 self.state.cancel_session();
@@ -2561,6 +2567,7 @@ impl QSketchApp {
             Action::ShowTimeline => {
                 if self.workspace.is_panel_open(&PanelKind::Timeline) {
                     self.workspace.close_panel(&PanelKind::Timeline);
+                    self.state.remember_closed(crate::state::Closed::Panel(PanelKind::Timeline));
                 } else {
                     self.state.show_panel_requests.push(PanelKind::Timeline);
                 }

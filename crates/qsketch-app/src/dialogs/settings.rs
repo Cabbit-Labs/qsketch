@@ -795,6 +795,10 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             ui.selectable_value(&mut c.brush_cursor, BrushCursor::Hidden, "Hidden");
         });
         ui.end_row();
+        ui.label("Pixel cursor");
+        ui.checkbox(&mut c.pixel_cursor, "Outline the pixel under the pointer")
+            .on_hover_text("Every tool outlines the canvas pixel it would act on, so a click lands where you aim.");
+        ui.end_row();
         ui.label("Fine angle snap");
         ui.add(egui::DragValue::new(&mut c.fine_angle_step).range(1.0..=90.0).speed(0.5).suffix("°"))
             .on_hover_text("Shift snaps lines to 45°; Shift+Ctrl snaps to this step (line, gradient, Shift+click brush lines).");

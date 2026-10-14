@@ -775,6 +775,9 @@ pub struct CanvasSettings {
     pub invert_wheel_zoom: bool,
     pub zoom_to_cursor: bool,
     pub brush_cursor: BrushCursor,
+    /// Outline the document pixel under the pointer, where a click would use
+    /// the tool.
+    pub pixel_cursor: bool,
     pub smooth_zoom_out: bool,
     /// While `Q` is held the view follows the pointer (no click needed).
     pub quick_rotate_follow_pointer: bool,
@@ -838,6 +841,7 @@ impl Default for CanvasSettings {
             invert_wheel_zoom: false,
             zoom_to_cursor: true,
             brush_cursor: BrushCursor::Outline,
+            pixel_cursor: true,
             smooth_zoom_out: true,
             quick_rotate_follow_pointer: true,
             quick_rotate_double_tap_reset: true,

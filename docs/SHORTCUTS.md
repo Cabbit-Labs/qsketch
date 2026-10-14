@@ -30,6 +30,7 @@ reachable from its menu until you assign one.
 | Quick Export (re-export to the last export path, no dialog) | `Ctrl+Alt+E` |
 | Timelapse ▸ Record Timelapse / Export as GIF… / Export Frames… / Clear | — |
 | Close | `Ctrl+W` |
+| Reopen Closed (the last closed document or panel, unsaved edits included) | `Ctrl+Shift+T` |
 | Quit | `Ctrl+Q` |
 
 ## Edit

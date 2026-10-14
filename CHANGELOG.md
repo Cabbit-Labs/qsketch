@@ -2,6 +2,39 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- The rotation anchor can be moved, like Photoshop's reference point. In
+  Free Transform (Freeform and Rotate modes, and a lifted selection's box)
+  the crosshair at the center is now a handle: drag it anywhere, even
+  outside the box, and rotating turns the pixels about that point. It snaps
+  to the center, corners and edge midpoints (hold Alt to place it freely),
+  rides along when the box is moved, and the X / Y fields and the angle
+  field in the options bar now refer to it.
+- Moving a selection keeps it visible. The marching ants stay up and follow
+  the pixels while the box is dragged, scaled or turned, and the Select menu
+  (Deselect, Modify ▸ Feather / Expand / Contract / Border / Smooth ...)
+  stays enabled: choosing one settles the move first and then works on the
+  selection where you left it, instead of the menu being greyed out until
+  the move was confirmed.
+- Moving a selection never softens its pixels. A box that is only moved
+  (same size, not turned) now always lands on whole pixels, even when a
+  fractional position sneaks in, and scaling or turning a box previews with
+  the same smooth filter as the final result instead of jagged
+  nearest-neighbor pixels until you let go (only very large areas and
+  RotSprite still use the cheap preview mid-drag).
+- Every tool outlines the canvas pixel under the pointer, the one a click
+  would act on, so Fill, Eyedropper, Magic Wand, the selection tools, shapes
+  and brushes can be aimed exactly. The pencil and eraser keep their full
+  footprint outline. Preferences ▸ Canvas ▸ Pixel cursor turns it off.
+- Ctrl+Shift+T (File ▸ Reopen Closed) reopens the last thing you closed: a
+  document comes back exactly as it was, unsaved edits and undo history
+  included (the last five are kept), and a closed panel such as Layers or
+  History returns to the dock.
+- The Feather / Expand / Contract / Border / Smooth Selection dialog no
+  longer stretches from the top of the window to the bottom of the screen;
+  it is only as tall as its controls.
+
 ## 0.66.1 — 2026-10-04
 
 - The rotate cursor no longer pops up near the edge of a plain selection

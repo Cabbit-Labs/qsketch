@@ -573,6 +573,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             None => painter.clone(),
         };
         draw_brush_cursor(&cursor_painter, state, doc_id, cursor_pos, cursor_tool);
+        draw_pixel_cursor(&cursor_painter, state, doc_id, cursor_pos, cursor_tool);
         if state.brush_popup.is_none() && mods.shift {
             draw_shift_line_preview(&painter, state, doc_id, hover_pos, tool);
         }
@@ -877,6 +878,42 @@ fn draw_shift_line_preview(
     painter.line_segment([a, b], Stroke::new(1.0, Color32::from_white_alpha(230)));
     let r = (brush.size / 2.0 * view.zoom).max(1.5);
     painter.circle_stroke(a, r, Stroke::new(1.0, Color32::from_white_alpha(160)));
+}
+
+/// Outline the document pixel under the pointer: the one a click would act
+/// on, whichever tool is active. The pencil and eraser already outline their
+/// whole footprint, and the view tools, Move and Crop have no pixel to name.
+fn draw_pixel_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, hover: Option<Pos2>, tool: ToolKind) {
+    let Some(pos) = hover else { return };
+    if !state.settings.canvas.pixel_cursor
+        || state.floating.as_ref().is_some_and(|f| f.doc == doc_id)
+        || state.text_edit.is_some()
+        || state.pick_preview.is_some()
+    {
+        return;
+    }
+    let mode = state.settings.canvas.brush_cursor;
+    let shows_footprint =
+        matches!(tool, ToolKind::Pencil | ToolKind::Eraser) && matches!(mode, BrushCursor::Outline | BrushCursor::Both);
+    if shows_footprint
+        || matches!(tool, ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView | ToolKind::Move | ToolKind::Crop)
+        || (tool.uses_brush() && mode == BrushCursor::Hidden)
+    {
+        return;
+    }
+    let Some(entry) = state.doc(doc_id) else { return };
+    let view = &entry.view;
+    let at = view.screen_to_doc(pos);
+    let (x, y) = (at.x.floor(), at.y.floor());
+    if x < 0.0 || y < 0.0 || x >= entry.doc.width() as f32 || y >= entry.doc.height() as f32 {
+        return;
+    }
+    let corners: Vec<Pos2> = [(x, y), (x + 1.0, y), (x + 1.0, y + 1.0), (x, y + 1.0)]
+        .iter()
+        .map(|&(cx, cy)| view.doc_to_screen(Pt::new(cx, cy)))
+        .collect();
+    painter.add(egui::Shape::closed_line(corners.clone(), Stroke::new(2.0, Color32::from_black_alpha(150))));
+    painter.add(egui::Shape::closed_line(corners, Stroke::new(1.0, Color32::from_white_alpha(230))));
 }
 
 fn draw_brush_cursor(painter: &egui::Painter, state: &AppState, doc_id: DocId, hover: Option<Pos2>, tool: ToolKind) {

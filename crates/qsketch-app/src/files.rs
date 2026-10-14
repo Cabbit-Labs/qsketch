@@ -322,7 +322,14 @@ pub fn force_close(state: &mut AppState, doc_id: DocId) {
     }
     state.thumbs.retain(|k| k.0 != doc_id);
     state.autosave.forget(doc_id);
-    state.remove_document(doc_id);
+    if let Some(mut entry) = state.remove_document(doc_id) {
+        // Only what a reopened document can use again: no GPU handles, no
+        // live collaboration, no flash.
+        entry.sel_tint = None;
+        entry.layer_flash = None;
+        entry.share = None;
+        state.remember_closed(crate::state::Closed::Document(Box::new(entry)));
+    }
     state.close_doc_requests.retain(|d| *d != doc_id);
 }
 

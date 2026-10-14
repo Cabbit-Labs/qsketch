@@ -693,7 +693,10 @@ impl TabViewer for Viewer<'_> {
                 OnCloseResponse::Ignore
             }
             PanelKind::Home => OnCloseResponse::Ignore,
-            _ => OnCloseResponse::Close,
+            _ => {
+                self.state.remember_closed(crate::state::Closed::Panel(tab.clone()));
+                OnCloseResponse::Close
+            }
         }
     }
 

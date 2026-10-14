@@ -348,14 +348,15 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
             }
             match f.mode {
                 Mode::Freeform | Mode::Resize | Mode::Rotate => {
-                    let c = f.center;
+                    // X / Y place the rotation anchor (the center until it is moved).
+                    let c = f.pivot_pos();
                     let (mut cx, mut cy) = (c.x, c.y);
                     ui.label("X");
                     let rx = ui.add(egui::DragValue::new(&mut cx).speed(1.0).fixed_decimals(0));
                     ui.label("Y");
                     let ry = ui.add(egui::DragValue::new(&mut cy).speed(1.0).fixed_decimals(0));
                     if rx.changed() || ry.changed() {
-                        f.set_center(qsketch_core::Pt::new(cx, cy));
+                        f.set_anchor(qsketch_core::Pt::new(cx, cy));
                     }
                     let (pw, ph) = f.scale_pct();
                     let (mut w, mut h) = (pw, ph);

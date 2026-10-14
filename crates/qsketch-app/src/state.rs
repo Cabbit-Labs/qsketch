@@ -18,6 +18,14 @@ pub type DocId = u64;
 /// How many recently used colors the Color panel keeps.
 pub const COLOR_HISTORY_LEN: usize = 20;
 
+/// Something the user closed that Ctrl+Shift+T can bring back.
+pub enum Closed {
+    /// A document with all its in-memory state.
+    Document(Box<DocEntry>),
+    /// A panel (Layers, History, ...).
+    Panel(crate::workspace::PanelKind),
+}
+
 pub struct DocEntry {
     pub id: DocId,
     pub doc: Document,
@@ -285,6 +293,8 @@ pub struct AppState {
     /// Panels asking to be closed when they are on a floating window (Escape).
     pub close_floating_requests: Vec<crate::workspace::PanelKind>,
     pub close_doc_requests: Vec<DocId>,
+    /// What was closed lately, newest last, for File ▸ Reopen Closed.
+    pub closed: Vec<Closed>,
     pub open_file_requests: Vec<PathBuf>,
     /// Backups picked from File ▸ Restore Previous Version: (original, backup).
     pub restore_requests: Vec<(PathBuf, crate::backups::Backup)>,
@@ -393,6 +403,7 @@ impl AppState {
             close_floating_requests: Vec::new(),
             status_msg: None,
             close_doc_requests: Vec::new(),
+            closed: Vec::new(),
             open_file_requests: Vec::new(),
             restore_requests: Vec::new(),
             hover_doc_pos: None,
@@ -522,7 +533,8 @@ impl AppState {
         Some(self.docs[((at + steps).rem_euclid(n)) as usize].id)
     }
 
-    pub fn remove_document(&mut self, id: DocId) {
+    /// Take a document out of the app, handing back what it was.
+    pub fn remove_document(&mut self, id: DocId) -> Option<DocEntry> {
         crate::share::stop(self, id);
         if self.session_doc == Some(id) {
             self.session = None;
@@ -534,10 +546,52 @@ impl AppState {
         if self.text_edit.as_ref().is_some_and(|t| t.doc == id) {
             self.text_edit = None;
         }
-        self.docs.retain(|d| d.id != id);
+        let entry = self.docs.iter().position(|d| d.id == id).map(|at| self.docs.remove(at));
         if self.active_doc == Some(id) {
             self.active_doc = self.docs.last().map(|d| d.id);
         }
+        entry
+    }
+
+    /// Keep a closed document or panel for Reopen Closed. Documents keep
+    /// everything (unsaved edits and undo history too), so only the last few
+    /// are held on to.
+    pub fn remember_closed(&mut self, item: Closed) {
+        const MAX_CLOSED: usize = 16;
+        const MAX_CLOSED_DOCS: usize = 5;
+        self.closed.push(item);
+        let docs = self.closed.iter().filter(|c| matches!(c, Closed::Document(_))).count();
+        if docs > MAX_CLOSED_DOCS {
+            if let Some(at) = self.closed.iter().position(|c| matches!(c, Closed::Document(_))) {
+                self.closed.remove(at);
+            }
+        }
+        if self.closed.len() > MAX_CLOSED {
+            self.closed.remove(0);
+        }
+    }
+
+    /// Bring back the most recently closed document or panel (Ctrl+Shift+T).
+    /// Returns what it was, for the toast; documents get their tab from the
+    /// per-frame tab sync.
+    pub fn reopen_closed(&mut self) -> Option<String> {
+        Some(match self.closed.pop()? {
+            Closed::Document(entry) => {
+                let mut entry = *entry;
+                entry.needs_full_upload = true;
+                entry.generation += 1;
+                let (id, title) = (entry.id, entry.doc.title.clone());
+                self.docs.push(entry);
+                self.active_doc = Some(id);
+                self.focus_doc_request = Some(id);
+                title
+            }
+            Closed::Panel(kind) => {
+                let name = kind.static_title().to_string();
+                self.show_panel_requests.push(kind);
+                name
+            }
+        })
     }
 
     /// Brush settings used by the current painting tool.
@@ -627,5 +681,58 @@ impl AppState {
         let t = &self.settings.tablet;
         let p = if raw <= t.min_pressure { 0.0 } else { (raw - t.min_pressure) / (1.0 - t.min_pressure) };
         qsketch_core::brush::pressure_curve(p, t.pressure_gamma)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qsketch_core::Rgba8;
+
+    fn app_with_docs(n: usize) -> (AppState, Vec<DocId>) {
+        let mut state = AppState::new(crate::settings::Settings::default());
+        let ids =
+            (0..n).map(|i| state.add_document(qsketch_core::Document::new(8, 8, None, format!("doc{i}")))).collect();
+        (state, ids)
+    }
+
+    #[test]
+    fn reopen_closed_brings_back_the_last_document_with_its_edits() {
+        let (mut state, ids) = app_with_docs(2);
+        let d = state.doc_mut(ids[1]).unwrap();
+        d.doc.state_mut().layers[0].raster.set_pixel(3, 4, Rgba8::new(9, 8, 7, 255));
+        d.doc.commit("Paint");
+        crate::files::force_close(&mut state, ids[1]);
+        assert!(state.doc(ids[1]).is_none());
+        assert_eq!(state.active_doc, Some(ids[0]));
+        let name = state.reopen_closed().expect("something to reopen");
+        assert_eq!(name, "doc1");
+        let back = state.doc(ids[1]).expect("the document is back");
+        assert_eq!(back.doc.state().layers[0].raster.get_pixel(3, 4), Rgba8::new(9, 8, 7, 255));
+        assert!(back.doc.can_undo(), "undo history survives");
+        assert_eq!(state.active_doc, Some(ids[1]));
+        assert!(state.reopen_closed().is_none(), "nothing left");
+    }
+
+    #[test]
+    fn reopen_closed_goes_newest_first_across_documents_and_panels() {
+        let (mut state, ids) = app_with_docs(2);
+        crate::files::force_close(&mut state, ids[0]);
+        state.remember_closed(Closed::Panel(crate::workspace::PanelKind::Layers));
+        crate::files::force_close(&mut state, ids[1]);
+        assert_eq!(state.reopen_closed().as_deref(), Some("doc1"));
+        assert_eq!(state.reopen_closed().as_deref(), Some("Layers"));
+        assert_eq!(state.show_panel_requests, vec![crate::workspace::PanelKind::Layers]);
+        assert_eq!(state.reopen_closed().as_deref(), Some("doc0"));
+    }
+
+    #[test]
+    fn only_the_last_few_closed_documents_are_kept() {
+        let (mut state, ids) = app_with_docs(8);
+        for id in &ids {
+            crate::files::force_close(&mut state, *id);
+        }
+        assert_eq!(state.closed.len(), 5);
+        assert_eq!(state.reopen_closed().as_deref(), Some("doc7"));
     }
 }

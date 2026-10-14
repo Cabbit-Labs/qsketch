@@ -52,7 +52,8 @@ Ink, WinTab, Wayland) and a fully remappable keyboard.
   dithered, re-indexable pixel art.
 - **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
   live on the canvas, committed as one undo step.
-- **Free Transform.** Move, scale, rotate, deform (corner pull) and warp
+- **Free Transform.** Move, scale, rotate (about an anchor you can drag
+  anywhere), deform (corner pull) and warp
   a floating selection or layer with on-canvas handles before it is
   committed. The warp grid is a smooth spline surface, so pulling one node
   eases into its neighbors with no seams; Smooth mode anti-aliases the

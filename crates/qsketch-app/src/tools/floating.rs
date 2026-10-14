@@ -98,6 +98,14 @@ impl Handle {
     }
 }
 
+/// The default rotation anchor: the middle of the box.
+const PIVOT_CENTER: (f32, f32) = (0.5, 0.5);
+/// Screen-space reach of the anchor mark when grabbing it.
+const PIVOT_HIT: f32 = 7.0;
+/// Dragging the anchor within this many screen pixels of the center, a corner
+/// or an edge midpoint snaps it there (Alt turns that off).
+const PIVOT_SNAP: f32 = 6.0;
+
 /// How the box is being edited.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Mode {
@@ -156,9 +164,18 @@ pub enum FloatDrag {
         start_center: Pt,
         start_size: (f32, f32),
     },
+    /// Turn about `pivot` (document space): the box's angle follows the pointer
+    /// around it, and the center swings along, so the anchor stays put.
     Rotate {
         start_angle: f32,
         start_pointer_angle: f32,
+        pivot: Pt,
+        start_center: Pt,
+    },
+    /// Drag the rotation anchor itself (Photoshop's reference point).
+    Pivot {
+        start: Pt,
+        start_pos: Pt,
     },
     Corner {
         corner: usize,
@@ -217,6 +234,10 @@ pub struct FloatingPaste {
     /// Warp-mode lattice.
     pub mesh: Mesh,
     pub warp_div: u32,
+    /// The rotation anchor in the box's own frame, `(0, 0)` its top-left
+    /// corner to `(1, 1)` the bottom-right (it may lie outside). It rides along
+    /// with the box and defaults to the center.
+    pub pivot: (f32, f32),
     /// Where the pixels started (identity placement).
     home: Pt,
     pub drag: Option<FloatDrag>,
@@ -245,6 +266,7 @@ impl FloatingPaste {
             quad,
             mesh: Mesh::from_quad(quad, 3, 3),
             warp_div: 3,
+            pivot: PIVOT_CENTER,
             home: center,
             drag: None,
             last_dirty: IRect::EMPTY,
@@ -292,6 +314,7 @@ impl FloatingPaste {
         } else {
             self.mesh = Mesh::from_quad(self.quad, self.warp_div, self.warp_div);
         }
+        self.pivot = PIVOT_CENTER;
         self.home = self.center;
         self.dirty = true;
         self
@@ -332,7 +355,44 @@ impl FloatingPaste {
     fn render_mesh(&self) -> Mesh {
         match self.mode {
             Mode::Warp => self.mesh.clone(),
-            _ => Mesh::from_quad(self.corners(), 1, 1),
+            _ => Mesh::from_quad(self.render_quad(), 1, 1),
+        }
+    }
+
+    /// The corners the pixels are drawn at. A box that was only moved (same
+    /// size, not turned) lands on whole pixels: any finer offset would run every
+    /// pixel through the resampler, and a selection that was just moved must
+    /// come out exactly as it went in, never softened or jagged.
+    fn render_quad(&self) -> Quad {
+        let only_moved = self.mode.is_box() && !matches!(self.origin, Origin::Smart { .. }) && self.is_identity();
+        if !only_moved {
+            return self.corners();
+        }
+        let (w, h) = (self.source.width() as f32, self.source.height() as f32);
+        let x = (self.center.x - w / 2.0).round();
+        let y = (self.center.y - h / 2.0).round();
+        [Pt::new(x, y), Pt::new(x + w, y), Pt::new(x + w, y + h), Pt::new(x, y + h)]
+    }
+
+    /// The resampling filter for the live preview. A drag used to preview with
+    /// nearest-neighbor, so a box being scaled or turned showed jagged pixels
+    /// until the button came up; now it shows the real result. Only a very big
+    /// area, or the slow RotSprite, falls back to the cheap filter mid-drag.
+    fn preview_filter(&self) -> ResizeFilter {
+        const BIG_PREVIEW_PX: f32 = 6_000_000.0;
+        if matches!(self.drag, None | Some(FloatDrag::Move { .. } | FloatDrag::Pivot { .. })) {
+            return self.filter;
+        }
+        let q = self.corners();
+        let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for p in q {
+            (x0, y0, x1, y1) = (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y));
+        }
+        let area = (x1 - x0).max(0.0) * (y1 - y0).max(0.0);
+        if self.filter == ResizeFilter::RotSprite || area > BIG_PREVIEW_PX {
+            ResizeFilter::Nearest
+        } else {
+            self.filter
         }
     }
 
@@ -376,6 +436,7 @@ impl FloatingPaste {
                 self.center = c;
                 self.size = (w.max(1.0), h.max(1.0));
                 self.angle = (quad[1].y - quad[0].y).atan2(quad[1].x - quad[0].x);
+                self.pivot = PIVOT_CENTER;
             }
             Mode::Deform => self.quad = quad,
             Mode::Warp => self.mesh = Mesh::from_quad(quad, self.warp_div, self.warp_div),
@@ -404,14 +465,82 @@ impl FloatingPaste {
         self.dirty = true;
     }
 
+    /// Turn the box to `deg`, about the rotation anchor.
     pub fn set_angle(&mut self, deg: f32) {
-        self.angle = deg.to_radians();
+        let new = deg.to_radians();
+        let (pivot, from) = (self.pivot_pos(), self.center);
+        self.swing_center(pivot, from, new - self.angle);
+        self.angle = new;
         self.dirty = true;
     }
 
-    pub fn set_center(&mut self, c: Pt) {
-        let d = Pt::new(c.x - self.center.x, c.y - self.center.y);
-        self.translate(d.x, d.y);
+    /// Put the box's center where turning `from` by `delta` about `pivot`
+    /// leaves it.
+    fn swing_center(&mut self, pivot: Pt, from: Pt, delta: f32) {
+        let (s, c) = delta.sin_cos();
+        let (rx, ry) = (from.x - pivot.x, from.y - pivot.y);
+        self.center = if delta == 0.0 { from } else { Pt::new(pivot.x + rx * c - ry * s, pivot.y + rx * s + ry * c) };
+    }
+
+    /// Whether the box has a rotation anchor to show and grab.
+    pub fn has_pivot(&self) -> bool {
+        matches!(self.mode, Mode::Freeform | Mode::Rotate)
+    }
+
+    /// The rotation anchor in document space (the center until it is moved).
+    pub fn pivot_pos(&self) -> Pt {
+        let (u, v) = self.pivot;
+        let q = free_quad(self.center, self.size, self.angle);
+        q[0].lerp(q[1], u).lerp(q[3].lerp(q[2], u), v)
+    }
+
+    /// Move the rotation anchor to document point `p`.
+    fn set_pivot_pos(&mut self, p: Pt) {
+        let (s, c) = self.angle.sin_cos();
+        let (dx, dy) = (p.x - self.center.x, p.y - self.center.y);
+        let (lx, ly) = (dx * c + dy * s, -dx * s + dy * c);
+        self.pivot = (0.5 + lx / self.size.0.max(1.0), 0.5 + ly / self.size.1.max(1.0));
+    }
+
+    /// Pull the anchor onto the center, a corner or an edge midpoint when it is
+    /// within a few screen pixels of one.
+    fn snap_pivot(&mut self, view: &crate::canvas::view::CanvasView) {
+        let at = view.doc_to_screen(self.pivot_pos());
+        let near = Handle::ALL
+            .iter()
+            .map(|h| h.uv())
+            .chain(std::iter::once(PIVOT_CENTER))
+            .map(|uv| {
+                let saved = std::mem::replace(&mut self.pivot, uv);
+                let d = view.doc_to_screen(self.pivot_pos()).distance(at);
+                self.pivot = saved;
+                (uv, d)
+            })
+            .filter(|(_, d)| *d <= PIVOT_SNAP)
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some((uv, _)) = near {
+            self.pivot = uv;
+        }
+    }
+
+    /// Move the box so its rotation anchor sits at `p` (the X / Y fields).
+    pub fn set_anchor(&mut self, p: Pt) {
+        let a = self.pivot_pos();
+        self.translate(p.x - a.x, p.y - a.y);
+    }
+
+    /// True when `pos` (screen) is on the rotation anchor's mark. A default
+    /// anchor on a box so small that its handles crowd the center is left to
+    /// those handles.
+    pub fn pivot_hit(&self, view: &crate::canvas::view::CanvasView, pos: Pos2) -> bool {
+        if !self.has_pivot() {
+            return false;
+        }
+        let at = view.doc_to_screen(self.pivot_pos());
+        if !at.x.is_finite() || at.distance(pos) > PIVOT_HIT {
+            return false;
+        }
+        self.pivot != PIVOT_CENTER || self.raw_grabs(view).iter().all(|(_, p)| p.distance(at) >= 2.0 * PIVOT_HIT)
     }
 
     fn translate(&mut self, dx: f32, dy: f32) {
@@ -438,6 +567,7 @@ impl FloatingPaste {
             (c.x - self.size.0 / 2.0).round() + self.size.0 / 2.0,
             (c.y - self.size.1 / 2.0).round() + self.size.1 / 2.0,
         );
+        self.pivot = PIVOT_CENTER;
         self.quad = self.corners();
         self.mesh = Mesh::from_quad(self.quad, self.warp_div, self.warp_div);
         self.drag = None;
@@ -446,6 +576,7 @@ impl FloatingPaste {
 
     /// Rotate / flip the floating pixels about their center.
     pub fn orient(&mut self, o: Orient) {
+        self.pivot = PIVOT_CENTER;
         self.source = o.apply_raster(&self.source);
         if let Origin::Transform { mask: Some(m), .. } = &mut self.origin {
             *m = o.apply_mask(m);
@@ -517,6 +648,19 @@ impl FloatingPaste {
                 drop_floating(&self.base, &Floating { raster, origin: (r.x, r.y), mask: None }, 0, 0)
             };
         }
+        // The lifted selection travels with its pixels: the marching ants stay
+        // up while the box is dragged, and the Select menu keeps working.
+        if let Origin::Transform { mask: Some(m), sel_before, .. } = &self.origin {
+            s.selection = if self.is_untouched() {
+                sel_before.clone()
+            } else {
+                let moved = warp::warp_mask(m, &mesh, s.width, s.height);
+                (!moved.is_empty()).then(|| Arc::new(moved))
+            };
+            // The outline cache is keyed by the mask's address, which a
+            // fresh mask can reuse: say outright that it is stale.
+            entry.sel_outline = None;
+        }
         let dirty = r.union(&self.last_dirty).intersect(&doc_rect);
         entry.doc.mark_dirty_rect(dirty);
         self.last_dirty = r;
@@ -552,10 +696,7 @@ fn point_in_quad(q: Quad, p: Pt) -> bool {
 /// or after any change). Uses nearest-neighbor while a drag is active.
 pub fn refresh(state: &mut AppState) {
     let Some(mut fp) = state.floating.take() else { return };
-    let filter = match fp.drag {
-        Some(FloatDrag::Move { .. }) | None => fp.filter,
-        _ => ResizeFilter::Nearest,
-    };
+    let filter = fp.preview_filter();
     if let Some(entry) = state.doc_mut(fp.doc) {
         fp.render_into(entry, filter);
     }
@@ -668,9 +809,7 @@ pub fn begin_transform_with(state: &mut AppState, doc_id: DocId, duplicate: bool
     };
     let place =
         IRect::new(lifted.origin.0, lifted.origin.1, lifted.raster.width() as i32, lifted.raster.height() as i32);
-    // Hide the marching ants while transforming; the selection follows on commit.
-    s.selection = None;
-    entry.sel_outline = None;
+    // The selection stays up and follows the pixels (see `render_clipped`).
     let origin = Origin::Transform { mask: lifted.mask, sel_before, label };
     let filter = state.settings.canvas.transform_filter;
     state.floating = Some(FloatingPaste::new(doc_id, li, lifted.raster, base, place, origin).with_filter(filter));
@@ -779,6 +918,9 @@ pub fn in_rotation_band(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
     if fp.drag.is_some() {
         return matches!(fp.drag, Some(FloatDrag::Rotate { .. }));
     }
+    if fp.pivot_hit(view, pos) {
+        return false;
+    }
     match fp.mode {
         Mode::Rotate => fp.grab_at(view, pos).is_none(),
         Mode::Freeform => {
@@ -797,7 +939,7 @@ pub fn outside_box(state: &AppState, doc_id: DocId, pos: Pos2) -> bool {
     }
     let Some(entry) = state.doc(doc_id) else { return true };
     let view = &entry.view;
-    if fp.grab_at(view, pos).is_some() || fp.contains(view.screen_to_doc(pos)) {
+    if fp.grab_at(view, pos).is_some() || fp.pivot_hit(view, pos) || fp.contains(view.screen_to_doc(pos)) {
         return false;
     }
     let mut bb = Rect::NOTHING;
@@ -941,9 +1083,8 @@ fn commit_clipped(state: &mut AppState, clip: Option<IRect>) -> bool {
                 entry.doc.mark_all_dirty();
                 entry.doc.commit(*label);
             }
-            Origin::Transform { mask, sel_before, label } => {
+            Origin::Transform { sel_before, label, .. } => {
                 let s = entry.doc.state_mut();
-                let (w, h) = (s.width, s.height);
                 if fp.is_untouched() {
                     // Nothing happened: leave the document untouched.
                     s.selection = sel_before.clone();
@@ -951,10 +1092,7 @@ fn commit_clipped(state: &mut AppState, clip: Option<IRect>) -> bool {
                     entry.sel_outline = None;
                     return true;
                 }
-                if let Some(m) = mask {
-                    let nm = warp::warp_mask(m, &fp.render_mesh(), w, h);
-                    s.selection = if nm.is_empty() { None } else { Some(Arc::new(nm)) };
-                }
+                // The selection was moved along with the pixels just above.
                 // A box that started as a plain move but was scaled, rotated
                 // or bent deserves a truthful history label.
                 let label = if *label == "Move" && !fp.is_identity() { "Transform" } else { *label };
@@ -1031,11 +1169,15 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) -> bool {
             }
             let grab = fp.grab_at(&view, inp.screen);
             let start_quad = fp.corners();
+            let pivot = fp.pivot_pos();
             let rotate = FloatDrag::Rotate {
                 start_angle: fp.angle,
-                start_pointer_angle: (inp.doc.y - fp.center.y).atan2(inp.doc.x - fp.center.x),
+                start_pointer_angle: (inp.doc.y - pivot.y).atan2(inp.doc.x - pivot.x),
+                pivot,
+                start_center: fp.center,
             };
             fp.drag = Some(match (fp.mode, grab) {
+                _ if fp.pivot_hit(&view, inp.screen) => FloatDrag::Pivot { start: inp.doc, start_pos: pivot },
                 (Mode::Freeform, Some(Grab::Box(handle))) if inp.mods.command => {
                     // Ctrl+handle: jump into Deform and drag that corner / edge.
                     fp.set_mode(Mode::Deform);
@@ -1154,15 +1296,24 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) -> bool {
                     fp.size = (nw, nh);
                     fp.dirty = true;
                 }
-                FloatDrag::Rotate { start_angle, start_pointer_angle } => {
-                    let now = (inp.doc.y - fp.center.y).atan2(inp.doc.x - fp.center.x);
+                FloatDrag::Rotate { start_angle, start_pointer_angle, pivot, start_center } => {
+                    let now = (inp.doc.y - pivot.y).atan2(inp.doc.x - pivot.x);
                     let mut a = start_angle + now - start_pointer_angle;
                     if inp.mods.shift {
                         let step = 15f32.to_radians();
                         a = (a / step).round() * step;
                     }
+                    // The anchor stays where it is: the center swings around it.
+                    fp.swing_center(pivot, start_center, a - start_angle);
                     fp.angle = a;
                     fp.dirty = true;
+                }
+                FloatDrag::Pivot { start, start_pos } => {
+                    let p = Pt::new(start_pos.x + inp.doc.x - start.x, start_pos.y + inp.doc.y - start.y);
+                    fp.set_pivot_pos(p);
+                    if !inp.mods.alt {
+                        fp.snap_pivot(&view);
+                    }
                 }
                 FloatDrag::Corner { corner, start, start_quad } => {
                     let d = Pt::new(inp.doc.x - start.x, inp.doc.y - start.y);
@@ -1214,7 +1365,7 @@ pub fn takes_from_view_tool(state: &AppState, doc_id: DocId, pos: Option<Pos2>) 
         return true;
     }
     let Some(view) = state.doc(doc_id).map(|d| &d.view) else { return false };
-    state.temp_tool.is_none() && pos.is_some_and(|p| fp.grab_at(view, p).is_some())
+    state.temp_tool.is_none() && pos.is_some_and(|p| fp.grab_at(view, p).is_some() || fp.pivot_hit(view, p))
 }
 
 pub fn cursor(state: &AppState, doc_id: DocId, pos: Option<Pos2>) -> Option<egui::CursorIcon> {
@@ -1228,9 +1379,14 @@ pub fn cursor(state: &AppState, doc_id: DocId, pos: Option<Pos2>) -> Option<egui
         Some(FloatDrag::Scale { handle, .. }) => handle_cursor(*handle),
         Some(FloatDrag::Move { .. }) => C::Grabbing,
         Some(FloatDrag::Rotate { .. }) => C::Alias,
-        Some(FloatDrag::Corner { .. } | FloatDrag::Edge { .. } | FloatDrag::Node { .. }) => C::Grabbing,
+        Some(FloatDrag::Corner { .. } | FloatDrag::Edge { .. } | FloatDrag::Node { .. } | FloatDrag::Pivot { .. }) => {
+            C::Grabbing
+        }
         None => {
             let Some(p) = pos else { return Some(C::Move) };
+            if fp.pivot_hit(view, p) {
+                return Some(C::Grab);
+            }
             match fp.grab_at(view, p) {
                 _ if fp.mode == Mode::Rotate => C::Alias,
                 Some(Grab::Box(h)) if matches!(fp.mode, Mode::Freeform | Mode::Resize) => handle_cursor(h),
@@ -1289,11 +1445,20 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
             painter.add(egui::Shape::line(line, thin));
         }
     }
-    // Center mark (rotation pivot).
-    if matches!(fp.mode, Mode::Freeform | Mode::Rotate) {
-        let c = to_s(fp.center);
-        painter.circle_stroke(c, 4.0, Stroke::new(2.0, Color32::from_black_alpha(140)));
-        painter.circle_stroke(c, 4.0, Stroke::new(1.0, accent));
+    // The rotation anchor: a ringed crosshair, draggable anywhere.
+    if fp.has_pivot() {
+        let c = to_s(fp.pivot_pos());
+        let active = matches!(fp.drag, Some(FloatDrag::Pivot { .. }));
+        let arm = 8.0;
+        for (stroke, grow) in [(Stroke::new(3.0, Color32::from_black_alpha(140)), 1.0), (Stroke::new(1.0, accent), 0.0)]
+        {
+            painter.circle_stroke(c, 4.5, stroke);
+            painter.line_segment([c - Vec2::new(arm + grow, 0.0), c + Vec2::new(arm + grow, 0.0)], stroke);
+            painter.line_segment([c - Vec2::new(0.0, arm + grow), c + Vec2::new(0.0, arm + grow)], stroke);
+        }
+        if active {
+            painter.circle_filled(c, 2.0, accent);
+        }
     }
     for (g, p) in fp.grabs(view) {
         let r = Rect::from_center_size(p, Vec2::splat(8.0));
@@ -1462,5 +1627,190 @@ mod tests {
         assert!(l.is_smart());
         assert_eq!(l.smart.as_ref().unwrap().size().0, 400, "original kept at full size");
         assert_eq!(l.raster.get_pixel(20, 20), Rgba8::new(1, 2, 3, 255));
+    }
+
+    /// A pseudo-random opaque-ish picture, so any resampling shows.
+    fn noisy_doc(w: u32, h: u32) -> qsketch_core::Document {
+        let mut doc = qsketch_core::Document::new(w, h, None, "noise");
+        let mut seed = 0x2545F491u32;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        let r = &mut doc.state_mut().layers[0].raster;
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                let n = next();
+                let a = if n & 0x300 == 0 { 120 } else { 255 };
+                r.set_pixel(x, y, Rgba8::new(n as u8, (n >> 8) as u8, (n >> 16) as u8, a));
+            }
+        }
+        doc
+    }
+
+    fn input(x: f32, y: f32) -> super::super::CanvasInput {
+        super::super::CanvasInput {
+            doc: Pt::new(x, y),
+            screen: Pos2::new(-1.0e6, -1.0e6),
+            pressure: 1.0,
+            mods: egui::Modifiers::NONE,
+            button: egui::PointerButton::Primary,
+        }
+    }
+
+    fn round_i32(v: f32) -> i32 {
+        v.round() as i32
+    }
+
+    #[test]
+    fn moving_a_selection_copies_its_pixels_exactly() {
+        for (sel, grab, to, filter) in [
+            // Odd and even box sizes, fractional pointer coordinates.
+            (IRect::new(11, 7, 21, 13), (16.3f32, 13.7), (23.9, 5.2), ResizeFilter::Bilinear),
+            (IRect::new(10, 8, 20, 12), (15.0f32, 14.0), (19.5, 20.5), ResizeFilter::Bilinear),
+            (IRect::new(11, 7, 21, 13), (16.3f32, 13.7), (23.9, 5.2), ResizeFilter::Nearest),
+            (IRect::new(11, 7, 21, 13), (16.3f32, 13.7), (23.9, 5.2), ResizeFilter::RotSprite),
+        ] {
+            let mut state = AppState::new(crate::settings::Settings::default());
+            state.settings.canvas.transform_filter = filter;
+            let id = state.add_document(noisy_doc(64, 48));
+            let before = state.doc(id).unwrap().doc.state().layers[0].raster.clone();
+            state.doc_mut(id).unwrap().doc.state_mut().selection = Some(Arc::new(Mask::from_rect(64, 48, sel)));
+            assert!(begin_transform_with(&mut state, id, false, "Move"));
+            let (dx, dy) = (round_i32(to.0 - grab.0), round_i32(to.1 - grab.1));
+            assert!(handle(&mut state, id, CanvasEvent::Press(input(grab.0, grab.1))));
+            assert!(handle(&mut state, id, CanvasEvent::Drag(input(to.0, to.1))));
+            refresh(&mut state);
+            assert!(handle(&mut state, id, CanvasEvent::Release(input(to.0, to.1))));
+            assert!(commit(&mut state));
+            let after = &state.doc(id).unwrap().doc.state().layers[0].raster;
+            for y in 0..48 {
+                for x in 0..64 {
+                    let moved_in = sel.contains(x - dx, y - dy);
+                    let was_in = sel.contains(x, y);
+                    let left_behind = if was_in { Rgba8::TRANSPARENT } else { before.get_pixel(x, y) };
+                    // The moved pixel lands over whatever is there, so a
+                    // translucent one blends; an opaque one is copied.
+                    let want = if moved_in {
+                        let moved = before.get_pixel(x - dx, y - dy);
+                        if moved.a == 255 {
+                            moved
+                        } else {
+                            Rgba8::from_f32(qsketch_core::blend::src_over(left_behind.to_f32(), moved.to_f32()))
+                        }
+                    } else {
+                        left_behind
+                    };
+                    let got = after.get_pixel(x, y);
+                    // Fully clear pixels may keep stale color bytes.
+                    if got.a != 0 || want.a != 0 {
+                        assert_eq!(got, want, "{filter:?} at {x},{y} moved by {dx},{dy}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// An input whose screen position equals its document position (the
+    /// default view is 1:1 about the origin).
+    fn input_on(x: f32, y: f32, mods: egui::Modifiers) -> super::super::CanvasInput {
+        super::super::CanvasInput { screen: Pos2::new(x, y), mods, ..input(x, y) }
+    }
+
+    fn selected_noise(sel: IRect) -> (AppState, DocId) {
+        let mut state = AppState::new(crate::settings::Settings::default());
+        let id = state.add_document(noisy_doc(64, 48));
+        state.doc_mut(id).unwrap().doc.state_mut().selection = Some(Arc::new(Mask::from_rect(64, 48, sel)));
+        (state, id)
+    }
+
+    fn sel_bounds(state: &AppState, id: DocId) -> Option<IRect> {
+        state.doc(id).unwrap().doc.state().selection.as_ref().map(|m| m.bounds())
+    }
+
+    #[test]
+    fn the_selection_stays_up_and_follows_while_its_pixels_float() {
+        let sel = IRect::new(11, 7, 21, 13);
+        let (mut state, id) = selected_noise(sel);
+        assert!(begin_transform_with(&mut state, id, false, "Move"));
+        assert_eq!(sel_bounds(&state, id), Some(sel), "up the moment the pixels lift");
+        assert!(handle(&mut state, id, CanvasEvent::Press(input(16.0, 13.0))));
+        assert!(handle(&mut state, id, CanvasEvent::Drag(input(24.0, 4.0))));
+        refresh(&mut state);
+        assert_eq!(sel_bounds(&state, id), Some(IRect::new(19, -2, 21, 13).intersect(&IRect::new(0, 0, 64, 48))));
+        // Cancelling puts the original selection back.
+        assert!(cancel(&mut state));
+        assert_eq!(sel_bounds(&state, id), Some(sel));
+    }
+
+    #[test]
+    fn a_box_that_was_only_moved_lands_on_whole_pixels() {
+        let (mut state, id) = selected_noise(IRect::new(11, 7, 21, 13));
+        assert!(begin_transform_with(&mut state, id, false, "Move"));
+        let before = state.doc(id).unwrap().doc.state().layers[0].raster.to_rgba();
+        {
+            // A half-pixel nudge, as the X / Y fields could leave it.
+            let fp = state.floating.as_mut().unwrap();
+            fp.center = Pt::new(fp.center.x + 3.4, fp.center.y - 2.6);
+            fp.dirty = true;
+        }
+        refresh(&mut state);
+        assert!(commit(&mut state));
+        let after = &state.doc(id).unwrap().doc.state().layers[0].raster;
+        // Every pixel that moved is a verbatim copy: it shows up shifted by (3, -3).
+        let src = Raster::from_rgba(64, 48, &before);
+        for y in 7..20 {
+            for x in 11..32 {
+                let (nx, ny) = (x + 3, y - 3);
+                if ny < 0 || nx >= 64 || src.get_pixel(x, y).a != 255 {
+                    continue;
+                }
+                assert_eq!(after.get_pixel(nx, ny), src.get_pixel(x, y), "{nx},{ny}");
+            }
+        }
+    }
+
+    #[test]
+    fn rotating_about_a_moved_anchor_keeps_the_anchor_put() {
+        let (mut state, id) = selected_noise(IRect::new(11, 7, 21, 13));
+        assert!(begin_transform(&mut state, id));
+        // Anchor on the top-left corner of the box.
+        state.floating.as_mut().unwrap().pivot = (0.0, 0.0);
+        let anchor = state.floating.as_ref().unwrap().pivot_pos();
+        assert_eq!((anchor.x, anchor.y), (11.0, 7.0));
+        // Press left of the box (its rotation band) and swing a quarter turn.
+        assert!(handle(&mut state, id, CanvasEvent::Press(input(5.0, 7.0))));
+        assert!(handle(&mut state, id, CanvasEvent::Drag(input(11.0, 1.0))));
+        let fp = state.floating.as_ref().unwrap();
+        let after = fp.pivot_pos();
+        assert!((after.x - anchor.x).abs() < 1e-3 && (after.y - anchor.y).abs() < 1e-3, "{after:?}");
+        assert!((fp.angle.rem_euclid(std::f32::consts::TAU) - std::f32::consts::FRAC_PI_2).abs() < 1e-3);
+        // The center swung from (21.5, 13.5) to (4.5, 17.5) about the anchor.
+        assert!((fp.center.x - 4.5).abs() < 1e-3 && (fp.center.y - 17.5).abs() < 1e-3, "{:?}", fp.center);
+    }
+
+    #[test]
+    fn the_anchor_can_be_dragged_and_snaps_to_the_box_points() {
+        let (mut state, id) = selected_noise(IRect::new(5, 5, 50, 36));
+        assert!(begin_transform(&mut state, id));
+        let c = state.floating.as_ref().unwrap().pivot_pos();
+        let alt = egui::Modifiers { alt: true, ..Default::default() };
+        // Grab the mark at the center and pull it away (Alt: no snapping).
+        assert!(handle(&mut state, id, CanvasEvent::Press(input_on(c.x, c.y, alt))));
+        assert!(matches!(state.floating.as_ref().unwrap().drag, Some(FloatDrag::Pivot { .. })));
+        assert!(handle(&mut state, id, CanvasEvent::Drag(input_on(c.x + 5.0, c.y + 3.0, alt))));
+        let p = state.floating.as_ref().unwrap().pivot_pos();
+        assert!((p.x - (c.x + 5.0)).abs() < 1e-3 && (p.y - (c.y + 3.0)).abs() < 1e-3, "{p:?}");
+        assert!(handle(&mut state, id, CanvasEvent::Release(input_on(c.x + 5.0, c.y + 3.0, alt))));
+        // The pixels did not move.
+        assert!(state.floating.as_ref().unwrap().is_untouched());
+        // Dragged near the bottom-right corner it snaps onto it.
+        let now = state.floating.as_ref().unwrap().pivot_pos();
+        let none = egui::Modifiers::NONE;
+        assert!(handle(&mut state, id, CanvasEvent::Press(input_on(now.x, now.y, none))));
+        assert!(handle(&mut state, id, CanvasEvent::Drag(input_on(54.0, 40.0, none))));
+        assert_eq!(state.floating.as_ref().unwrap().pivot, (1.0, 1.0));
     }
 }

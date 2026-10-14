@@ -866,13 +866,18 @@ fn show_modify(ctx: &Context, state: &mut AppState) {
             ui.label(RichText::new(kind.describe()).weak());
             ui.label(RichText::new("Previewed on the canvas.").weak().small());
             ui.add_space(10.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    apply = true;
-                }
-                if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    cancel = true;
-                }
+            // Inside `horizontal` so the right-aligned row keeps a one-row
+            // height; on its own it stretches the auto-sized window to the
+            // bottom of the screen.
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        apply = true;
+                    }
+                    if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        cancel = true;
+                    }
+                });
             });
         });
     if apply {
