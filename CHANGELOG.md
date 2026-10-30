@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.68.0 — 2026-10-30
 
 - File ▸ Open Recent ▸ Open All Recent (also "Open last session" on the Home
   tab) reopens every tab that was open when qsketch last ran, which is
