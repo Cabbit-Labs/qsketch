@@ -66,6 +66,36 @@ pub fn open_path(state: &mut AppState, path: &Path) -> Option<DocId> {
     }
 }
 
+/// Files from the last session that still exist and are not open now.
+pub fn last_session_to_open(state: &AppState) -> Vec<PathBuf> {
+    state
+        .last_session
+        .iter()
+        .filter(|p| p.is_file() && !state.docs.iter().any(|d| d.doc.path.as_deref() == Some(p.as_path())))
+        .cloned()
+        .collect()
+}
+
+/// File ▸ Open Recent ▸ Open All Recent: bring back the tabs the app had
+/// open when it last ran (after a restart, say).
+pub fn open_last_session(state: &mut AppState) {
+    let paths = last_session_to_open(state);
+    if paths.is_empty() {
+        let msg = if state.last_session.is_empty() {
+            "No tabs from the last session to open."
+        } else {
+            "Everything from the last session is already open."
+        };
+        state.toasts.push(Level::Info, msg);
+        return;
+    }
+    let n = paths.len();
+    state.open_file_requests.extend(paths);
+    state
+        .toasts
+        .push(Level::Info, format!("Opening {n} {} from the last session.", if n == 1 { "tab" } else { "tabs" }));
+}
+
 /// Save to the document's own path, or prompt if it has none / can't be
 /// written. Returns true once the file is on disk; false when cancelled, or
 /// when a format warning is up and the save continues from that dialog.
@@ -408,5 +438,31 @@ pub fn export_svg(state: &mut AppState, doc_id: DocId) {
             ));
         }
         Err(e) => state.toasts.push(Level::Error, format!("Couldn't write the SVG: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn last_session_offers_only_existing_files_that_are_not_open() {
+        let dir = std::env::temp_dir().join(format!("qsketch-session-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (open, closed, gone) = (dir.join("open.qsk"), dir.join("closed.qsk"), dir.join("gone.qsk"));
+        std::fs::write(&open, b"x").unwrap();
+        std::fs::write(&closed, b"x").unwrap();
+        let mut state = AppState::new(crate::settings::Settings::default());
+        let id = state.add_document(Document::new(8, 8, None, "open.qsk".to_string()));
+        state.doc_mut(id).unwrap().doc.path = Some(open.clone());
+        state.last_session = vec![open, closed.clone(), gone];
+        assert_eq!(last_session_to_open(&state), [closed]);
+        open_last_session(&mut state);
+        assert_eq!(state.open_file_requests.len(), 1);
+        state.last_session.clear();
+        state.open_file_requests.clear();
+        open_last_session(&mut state);
+        assert!(state.open_file_requests.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

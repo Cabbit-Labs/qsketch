@@ -210,7 +210,10 @@ impl QSketchApp {
             .filter(|id| !ids.contains(id))
             .collect();
         for id in stale {
-            self.workspace.remove_document(id);
+            self.workspace.remove_document(id, self.state.active_doc);
+        }
+        if self.state.track_session() {
+            self.persist();
         }
         // Panels requested by menus / actions.
         for p in std::mem::take(&mut self.state.show_panel_requests) {
@@ -225,12 +228,12 @@ impl QSketchApp {
         }
         // Close requests (with confirmation).
         if let Some(id) = self.state.close_doc_requests.first().copied() {
-            if self.state.dialogs.close_confirm.is_none() {
+            if !self.state.dialogs.confirming_close() {
                 self.request_close(id, AfterClose::Nothing);
             }
         }
         // Quit flow: close documents one at a time, confirming as needed.
-        if self.state.quit_requested && self.state.dialogs.close_confirm.is_none() {
+        if self.state.quit_requested && !self.state.dialogs.confirming_close() {
             match self
                 .state
                 .docs
@@ -848,6 +851,8 @@ impl QSketchApp {
                 }
                 None => (false, false, false, 0, false, false, false),
             };
+        // With Liquify up, Undo and Redo step its strokes.
+        let (can_undo, can_redo) = crate::dialogs::liquify::undo_state(&self.state).unwrap_or((can_undo, can_redo));
         // Menu buttons span the whole 24 px strip so their own hover
         // highlight (and click) reaches the top edge of the window.
         ui.spacing_mut().interact_size.y = 24.0;
@@ -861,6 +866,9 @@ impl QSketchApp {
                 self.menu_item(ui, Action::NewDocument, true);
                 self.menu_item(ui, Action::OpenDocument, true);
                 menus::submenu(ui, false, "Open Recent", |ui| {
+                    let can_reopen_session = !crate::files::last_session_to_open(&self.state).is_empty();
+                    self.menu_item(ui, Action::OpenAllRecent, can_reopen_session);
+                    ui.separator();
                     let recent = self.state.settings.general.recent_files.clone();
                     if recent.is_empty() {
                         ui.add_enabled(false, egui::Button::new("(empty)"));
@@ -1712,6 +1720,7 @@ impl QSketchApp {
         match action {
             Action::NewDocument => dialogs::open_new_doc(&mut self.state),
             Action::OpenDocument => crate::files::open_dialog(&mut self.state),
+            Action::OpenAllRecent => crate::files::open_last_session(&mut self.state),
             Action::Save => {
                 if let Some(id) = active {
                     crate::files::save(&mut self.state, id);
@@ -1819,6 +1828,9 @@ impl QSketchApp {
             },
             Action::Quit => self.state.quit_requested = true,
             Action::Undo => {
+                if dialogs::liquify::undo(&mut self.state) {
+                    return;
+                }
                 self.state.cancel_session();
                 // Undo while placing a paste (or typing text) discards it.
                 if crate::tools::floating::cancel(&mut self.state) || crate::tools::text::cancel(&mut self.state) {
@@ -1831,6 +1843,9 @@ impl QSketchApp {
                 }
             }
             Action::Redo => {
+                if dialogs::liquify::redo(&mut self.state) {
+                    return;
+                }
                 self.state.settle();
                 if let Some(d) = self.state.active_mut() {
                     if d.doc.redo() {

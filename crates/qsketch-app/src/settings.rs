@@ -512,6 +512,10 @@ pub struct GeneralSettings {
     pub confirm_close: bool,
     pub max_recent: usize,
     pub recent_files: Vec<PathBuf>,
+    /// Saved files that were open as tabs when the app last ran (kept up to
+    /// date as tabs come and go, so a crash or reboot leaves it intact), for
+    /// File ▸ Open Recent ▸ Open All Recent.
+    pub session_files: Vec<PathBuf>,
     pub new_doc_width: u32,
     pub new_doc_height: u32,
     pub new_doc_background: NewDocBackground,
@@ -543,6 +547,7 @@ impl Default for GeneralSettings {
             confirm_close: true,
             max_recent: 12,
             recent_files: Vec::new(),
+            session_files: Vec::new(),
             new_doc_width: 1920,
             new_doc_height: 1080,
             new_doc_background: NewDocBackground::White,

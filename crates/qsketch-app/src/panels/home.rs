@@ -33,7 +33,17 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 }
             });
             ui.add_space(24.0);
-            ui.label(RichText::new("RECENT FILES").small().weak().strong());
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("RECENT FILES").small().weak().strong());
+                let n = crate::files::last_session_to_open(state).len();
+                if n > 0
+                    && crate::ui::widgets::small_button(ui, format!("Open last session ({n})"))
+                        .on_hover_text("Reopen the tabs that were open when qsketch last ran")
+                        .clicked()
+                {
+                    state.pending.push(Action::OpenAllRecent);
+                }
+            });
             ui.separator();
             let recent = state.settings.general.recent_files.clone();
             if recent.is_empty() {

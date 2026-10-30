@@ -238,6 +238,12 @@ pub struct Dialogs {
 }
 
 impl Dialogs {
+    /// A save-or-discard prompt (or the format warning it leads to) is up, so
+    /// the next queued close must wait for it.
+    pub fn confirming_close(&self) -> bool {
+        self.close_confirm.is_some() || self.save_confirm.is_some()
+    }
+
     pub fn any_open(&self) -> bool {
         self.new_doc.is_some()
             || self.canvas_size.is_some()
@@ -1109,7 +1115,7 @@ fn show_save_confirm(ctx: &Context, state: &mut AppState) {
     let Some(choice) = choice else { return };
     state.dialogs.save_confirm = None;
     if !choice {
-        state.quit_requested = false;
+        abort_close(state, then.is_some());
         return;
     }
     if crate::files::write_document(state, doc_id, &path) {
@@ -1120,7 +1126,18 @@ fn show_save_confirm(ctx: &Context, state: &mut AppState) {
             }
         }
     } else {
-        state.quit_requested = false;
+        abort_close(state, then.is_some());
+    }
+}
+
+/// Call off a close that was waiting on the user: a pending quit, and (when
+/// `queued` closes were behind it) the tab closes still queued, or the
+/// "Save changes?" prompt would come straight back for the same tab and
+/// Cancel would seem to do nothing.
+fn abort_close(state: &mut AppState, queued: bool) {
+    state.quit_requested = false;
+    if queued {
+        state.close_doc_requests.clear();
     }
 }
 
@@ -1154,10 +1171,12 @@ fn show_close_confirm(ctx: &Context, state: &mut AppState) {
     }
     let Some(choice) = choice else { return };
     state.dialogs.close_confirm = None;
+    apply_close_choice(state, doc_id, then, choice);
+}
+
+fn apply_close_choice(state: &mut AppState, doc_id: DocId, then: AfterClose, choice: CloseChoice) {
     match choice {
-        CloseChoice::Cancel => {
-            state.quit_requested = false;
-        }
+        CloseChoice::Cancel => abort_close(state, true),
         CloseChoice::Discard => {
             crate::files::force_close(state, doc_id);
             if then == AfterClose::Quit {
@@ -1173,7 +1192,7 @@ fn show_close_confirm(ctx: &Context, state: &mut AppState) {
             } else if state.dialogs.save_confirm.is_some() {
                 // The format-warning dialog carries the close forward.
             } else {
-                state.quit_requested = false;
+                abort_close(state, true);
                 state.toasts.push(Level::Info, "Close cancelled.");
             }
         }
@@ -1210,4 +1229,37 @@ fn install_and_reopen(state: &mut AppState, artifact: &std::path::Path) -> Resul
     state.autosave.flush_all(&state.docs);
     let reopen: Vec<std::path::PathBuf> = state.docs.iter().filter_map(|d| d.doc.path.clone()).collect();
     crate::update::install_and_relaunch(artifact, &reopen)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_with_docs(n: usize) -> (AppState, Vec<DocId>) {
+        let mut state = AppState::new(crate::settings::Settings::default());
+        let ids =
+            (0..n).map(|i| state.add_document(qsketch_core::Document::new(8, 8, None, format!("doc{i}")))).collect();
+        (state, ids)
+    }
+
+    #[test]
+    fn cancel_in_the_close_prompt_keeps_the_tab_and_does_not_ask_again() {
+        let (mut state, ids) = state_with_docs(3);
+        // Close Others queued two tabs; the prompt is up for the first.
+        state.close_doc_requests = vec![ids[1], ids[2]];
+        state.quit_requested = true;
+        apply_close_choice(&mut state, ids[1], AfterClose::Quit, CloseChoice::Cancel);
+        assert!(state.close_doc_requests.is_empty(), "nothing queued to re-prompt");
+        assert!(!state.quit_requested);
+        assert_eq!(state.docs.len(), 3, "nothing closed");
+    }
+
+    #[test]
+    fn dont_save_closes_just_that_tab() {
+        let (mut state, ids) = state_with_docs(2);
+        state.close_doc_requests = vec![ids[0], ids[1]];
+        apply_close_choice(&mut state, ids[0], AfterClose::Nothing, CloseChoice::Discard);
+        assert_eq!(state.docs.len(), 1);
+        assert_eq!(state.close_doc_requests, [ids[1]], "the rest of the queue goes on");
+    }
 }

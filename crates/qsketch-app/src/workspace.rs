@@ -250,10 +250,44 @@ impl Workspace {
         }
     }
 
-    pub fn remove_document(&mut self, id: DocId) {
-        if let Some(path) = self.find(&PanelKind::Document(id)) {
-            self.dock.remove_tab(path);
-            prune_empty_surfaces(&mut self.dock);
+    /// Take a document's tab out. Closing the tab in front moves to a
+    /// document, never to Home (egui_dock falls back to the tab on the left,
+    /// which is Home when the first document closes): the right neighbor
+    /// first, then the left, then `fallback` or any document in the layout.
+    pub fn remove_document(&mut self, id: DocId, fallback: Option<DocId>) {
+        let Some(path) = self.find(&PanelKind::Document(id)) else { return };
+        let at = path.tab.0;
+        let (was_active, mut near) = match self.dock[path.surface][path.node].get_leaf() {
+            Some(leaf) => {
+                let near: Vec<(usize, DocId)> = leaf
+                    .tabs()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, t)| if let PanelKind::Document(d) = t { Some((i, *d)) } else { None })
+                    .filter(|(_, d)| *d != id)
+                    .collect();
+                (leaf.active.0 == at, near)
+            }
+            None => (false, Vec::new()),
+        };
+        near.sort_by_key(|(i, _)| (i.abs_diff(at), *i < at));
+        self.dock.remove_tab(path);
+        prune_empty_surfaces(&mut self.dock);
+        if !was_active || matches!(self.dock.find_active_focused(), Some((_, PanelKind::Document(_)))) {
+            return;
+        }
+        let target = near
+            .into_iter()
+            .map(|(_, d)| d)
+            .chain(fallback)
+            .chain(
+                self.dock
+                    .iter_all_tabs()
+                    .filter_map(|(_, t)| if let PanelKind::Document(d) = t { Some(*d) } else { None }),
+            )
+            .find(|d| *d != id && self.find(&PanelKind::Document(*d)).is_some());
+        if let Some(d) = target {
+            self.focus_document(d);
         }
     }
 
@@ -852,6 +886,59 @@ mod tests {
             let json = ws.to_json().unwrap();
             assert!(Workspace::from_json(&json).is_some(), "{preset:?} reloads");
         }
+    }
+
+    fn active_tab(ws: &mut Workspace) -> Option<PanelKind> {
+        ws.dock.find_active_focused().map(|(_, t)| t.clone())
+    }
+
+    #[test]
+    fn closing_the_front_tab_lands_on_a_document_not_home() {
+        let mut ws = Workspace::new(LayoutPreset::default());
+        for d in 1..=3 {
+            ws.add_document(d);
+        }
+        // Home, 1, 2, 3: closing 1 would fall back to Home on its left.
+        ws.focus_document(1);
+        ws.remove_document(1, None);
+        assert_eq!(active_tab(&mut ws), Some(PanelKind::Document(2)), "right neighbor");
+        // The last tab has no right neighbor: the left one.
+        ws.focus_document(3);
+        ws.remove_document(3, None);
+        assert_eq!(active_tab(&mut ws), Some(PanelKind::Document(2)), "left neighbor");
+        // Nothing else open: Home is all there is.
+        ws.remove_document(2, None);
+        assert_eq!(active_tab(&mut ws), Some(PanelKind::Home));
+    }
+
+    #[test]
+    fn closing_a_background_tab_leaves_the_front_tab_alone() {
+        let mut ws = Workspace::new(LayoutPreset::default());
+        for d in 1..=2 {
+            ws.add_document(d);
+        }
+        let home = ws.dock.find_tab(&PanelKind::Home).unwrap();
+        ws.dock.set_active_tab(home).unwrap();
+        ws.remove_document(2, None);
+        assert_eq!(active_tab(&mut ws), Some(PanelKind::Home), "the user was looking at Home");
+        ws.focus_document(1);
+        ws.add_document(3);
+        ws.focus_document(1);
+        ws.remove_document(3, None);
+        assert_eq!(active_tab(&mut ws), Some(PanelKind::Document(1)));
+    }
+
+    #[test]
+    fn closing_the_only_tab_in_a_strip_focuses_a_document_elsewhere() {
+        let mut ws = Workspace::new(LayoutPreset::default());
+        let ids: Vec<DocId> = (1..=2).collect();
+        for &d in &ids {
+            ws.add_document(d);
+        }
+        ws.arrange_documents(&ids, Some(1), Arrange::SideBySide);
+        ws.focus_document(2);
+        ws.remove_document(2, Some(1));
+        assert_eq!(active_tab(&mut ws), Some(PanelKind::Document(1)));
     }
 
     #[test]

@@ -92,6 +92,7 @@ actions! {
     // File
     NewDocument => (File, "New…", ["Ctrl+N"]),
     OpenDocument => (File, "Open…", ["Ctrl+O"]),
+    OpenAllRecent => (File, "Open All Recent", []),
     Save => (File, "Save", ["Ctrl+S"]),
     SaveAs => (File, "Save As…", ["Ctrl+Shift+S"]),
     ExportImage => (File, "Export Image…", ["Ctrl+Alt+Shift+S"]),

@@ -125,6 +125,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     match ev {
         CanvasEvent::Press(inp) if inp.button == egui::PointerButton::Primary => {
             d.last = Some(inp.doc);
+            d.field.begin_stroke();
             if d.tool != LiquifyTool::Push {
                 apply(d, &inp, Pt::new(0.0, 0.0));
             }
@@ -158,6 +159,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         }
         CanvasEvent::Release(_) | CanvasEvent::Cancel => {
             d.last = None;
+            d.field.end_stroke();
             if matches!(state.session, Some(crate::tools::ToolSession::Liquify)) {
                 state.session = None;
                 state.session_doc = None;
@@ -166,6 +168,39 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         _ => {}
     }
     render(state, doc_id);
+}
+
+/// Edit ▸ Undo / Redo while the dialog is open: the last stroke, not the whole
+/// session (which Cancel and Reset are for). `None` when no dialog is up.
+pub fn undo_state(state: &AppState) -> Option<(bool, bool)> {
+    let d = state.dialogs.liquify.as_ref().filter(|d| state.active_doc == Some(d.doc))?;
+    Some((d.field.can_undo(), d.field.can_redo()))
+}
+
+/// Ctrl+Z with the dialog open. True when the dialog took it (even with
+/// nothing left to take back: the document's own history must not move under
+/// the preview).
+pub fn undo(state: &mut AppState) -> bool {
+    step(state, Field::undo)
+}
+
+/// Ctrl+Shift+Z / Ctrl+Y with the dialog open; see `undo`.
+pub fn redo(state: &mut AppState) -> bool {
+    step(state, Field::redo)
+}
+
+fn step(state: &mut AppState, f: fn(&mut Field) -> Option<IRect>) -> bool {
+    let active = state.active_doc;
+    let Some(d) = state.dialogs.liquify.as_mut().filter(|d| active == Some(d.doc)) else { return false };
+    // Mid-drag: the stroke is not a step yet.
+    if d.last.is_none() {
+        if let Some(rect) = f(&mut d.field) {
+            d.stale = Some(d.stale.map_or(rect, |r| r.union(&rect)));
+            let doc = d.doc;
+            render(state, doc);
+        }
+    }
+    true
 }
 
 /// Re-render the stale part of the preview into the working layers.
@@ -265,7 +300,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 if crate::ui::widgets::small_button(ui, "Reset")
-                    .on_hover_text("Undo every warp in this session")
+                    .on_hover_text("Undo every warp in this session (Ctrl+Z undoes one stroke)")
                     .clicked()
                 {
                     reset = true;
@@ -301,5 +336,78 @@ pub fn show(ctx: &Context, state: &mut AppState) {
         }
     } else if cancel || !open {
         revert(state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qsketch_core::{Document, Rgba8};
+
+    fn input(x: f32, y: f32) -> CanvasInput {
+        CanvasInput {
+            doc: Pt::new(x, y),
+            screen: egui::pos2(x, y),
+            pressure: 1.0,
+            mods: egui::Modifiers::NONE,
+            button: egui::PointerButton::Primary,
+        }
+    }
+
+    fn stroke(state: &mut AppState, id: DocId, from: (f32, f32), to: (f32, f32)) {
+        handle(state, id, CanvasEvent::Press(input(from.0, from.1)));
+        handle(state, id, CanvasEvent::Drag(input(to.0, to.1)));
+        handle(state, id, CanvasEvent::Release(input(to.0, to.1)));
+    }
+
+    fn pixels(state: &AppState, id: DocId) -> Vec<Rgba8> {
+        let r = &state.doc(id).unwrap().doc.state().layers[0].raster;
+        (0..80).map(|x| r.get_pixel(x, 40)).collect()
+    }
+
+    /// Ctrl+Z in Liquify takes back the last stroke and keeps the dialog (and
+    /// the earlier strokes) up; Ctrl+Y brings it back.
+    #[test]
+    fn undo_steps_one_stroke_and_keeps_the_session() {
+        let mut state = AppState::new(crate::settings::Settings::default());
+        let mut doc = Document::new(80, 80, Some(Rgba8::WHITE), "t".to_string());
+        for x in 20..30 {
+            doc.state_mut().layers[0].raster.set_pixel(x, 40, Rgba8::new(255, 0, 0, 255));
+        }
+        doc.commit("Dot");
+        let id = state.add_document(doc);
+        let history = state.doc(id).unwrap().doc.history.current_id();
+        let original = pixels(&state, id);
+        open(&mut state);
+        assert!(state.dialogs.liquify.is_some());
+        assert_eq!(undo_state(&state), Some((false, false)));
+
+        stroke(&mut state, id, (25.0, 40.0), (45.0, 40.0));
+        let one = pixels(&state, id);
+        assert_ne!(one, original, "the first stroke warped the picture");
+        stroke(&mut state, id, (50.0, 40.0), (70.0, 40.0));
+        let two = pixels(&state, id);
+        assert_ne!(two, one, "the second stroke did too");
+        assert_eq!(undo_state(&state), Some((true, false)));
+
+        assert!(undo(&mut state));
+        assert_eq!(pixels(&state, id), one, "only the last stroke went");
+        assert!(state.dialogs.liquify.is_some(), "the session goes on");
+        assert_eq!(state.doc(id).unwrap().doc.history.current_id(), history, "document history untouched");
+        assert!(undo(&mut state));
+        assert_eq!(pixels(&state, id), original);
+        assert!(undo(&mut state), "the dialog still takes Ctrl+Z with nothing left");
+        assert_eq!(pixels(&state, id), original);
+        assert!(redo(&mut state));
+        assert_eq!(pixels(&state, id), one);
+        assert_eq!(undo_state(&state), Some((true, true)));
+    }
+
+    #[test]
+    fn undo_is_not_ours_without_the_dialog() {
+        let mut state = AppState::new(crate::settings::Settings::default());
+        state.add_document(Document::new(8, 8, None, "t".to_string()));
+        assert!(!undo(&mut state));
+        assert!(!redo(&mut state));
     }
 }

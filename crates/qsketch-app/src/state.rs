@@ -296,6 +296,13 @@ pub struct AppState {
     /// What was closed lately, newest last, for File ▸ Reopen Closed.
     pub closed: Vec<Closed>,
     pub open_file_requests: Vec<PathBuf>,
+    /// Files that were open when the app last ran, as of launch (what
+    /// Open All Recent brings back).
+    pub last_session: Vec<PathBuf>,
+    /// A saved file has been open this run, so `settings.general.session_files`
+    /// now describes this run and may be overwritten (a launch that has not
+    /// opened any must not wipe the list it is about to offer).
+    session_tracking: bool,
     /// Backups picked from File ▸ Restore Previous Version: (original, backup).
     pub restore_requests: Vec<(PathBuf, crate::backups::Backup)>,
 
@@ -359,6 +366,7 @@ impl AppState {
     pub fn new(settings: Settings) -> Self {
         let keymap = Keymap::with_overrides(&settings.shortcuts);
         let paint = settings.paint.clone();
+        let last_session = settings.general.session_files.clone();
         Self {
             docs: Vec::new(),
             active_doc: None,
@@ -405,6 +413,8 @@ impl AppState {
             close_doc_requests: Vec::new(),
             closed: Vec::new(),
             open_file_requests: Vec::new(),
+            last_session,
+            session_tracking: false,
             restore_requests: Vec::new(),
             hover_doc_pos: None,
             hover_screen_pos: None,
@@ -551,6 +561,23 @@ impl AppState {
             self.active_doc = self.docs.last().map(|d| d.id);
         }
         entry
+    }
+
+    /// Keep `settings.general.session_files` matching the saved documents
+    /// that are open, so the next launch can offer them back. Returns true
+    /// when it changed and the settings want saving. Frozen while quitting:
+    /// closing the tabs one by one is not the user dropping them.
+    pub fn track_session(&mut self) -> bool {
+        if self.quit_requested {
+            return false;
+        }
+        let paths: Vec<PathBuf> = self.docs.iter().filter_map(|d| d.doc.path.clone()).collect();
+        self.session_tracking |= !paths.is_empty();
+        if !self.session_tracking || paths == self.settings.general.session_files {
+            return false;
+        }
+        self.settings.general.session_files = paths;
+        true
     }
 
     /// Keep a closed document or panel for Reopen Closed. Documents keep
@@ -724,6 +751,35 @@ mod tests {
         assert_eq!(state.reopen_closed().as_deref(), Some("Layers"));
         assert_eq!(state.show_panel_requests, vec![crate::workspace::PanelKind::Layers]);
         assert_eq!(state.reopen_closed().as_deref(), Some("doc0"));
+    }
+
+    #[test]
+    fn session_files_follow_the_open_saved_documents() {
+        let at = |n: &str| Some(PathBuf::from(format!("/tmp/{n}.qsk")));
+        let mut settings = crate::settings::Settings::default();
+        settings.general.session_files = vec![PathBuf::from("/tmp/last-run.qsk")];
+        let mut state = AppState::new(settings);
+        let ids: Vec<DocId> =
+            (0..3).map(|i| state.add_document(qsketch_core::Document::new(8, 8, None, format!("doc{i}")))).collect();
+        // A launch with only a blank document must not wipe the last session.
+        assert!(!state.track_session());
+        assert_eq!(state.settings.general.session_files, [PathBuf::from("/tmp/last-run.qsk")]);
+        state.doc_mut(ids[0]).unwrap().doc.path = at("a");
+        state.doc_mut(ids[1]).unwrap().doc.path = at("b");
+        assert!(state.track_session());
+        assert_eq!(state.settings.general.session_files, [PathBuf::from("/tmp/a.qsk"), PathBuf::from("/tmp/b.qsk")]);
+        assert!(!state.track_session(), "unchanged");
+        // Closing a tab drops it from the list...
+        crate::files::force_close(&mut state, ids[1]);
+        assert!(state.track_session());
+        assert_eq!(state.settings.general.session_files, [PathBuf::from("/tmp/a.qsk")]);
+        // ...but quitting closes everything without touching it.
+        state.quit_requested = true;
+        crate::files::force_close(&mut state, ids[0]);
+        assert!(!state.track_session());
+        assert_eq!(state.settings.general.session_files, [PathBuf::from("/tmp/a.qsk")]);
+        // What the launch started with is still on offer.
+        assert_eq!(state.last_session, [PathBuf::from("/tmp/last-run.qsk")]);
     }
 
     #[test]

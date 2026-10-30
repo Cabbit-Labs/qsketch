@@ -2,6 +2,21 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- File ▸ Open Recent ▸ Open All Recent (also "Open last session" on the Home
+  tab) reopens every tab that was open when qsketch last ran, which is
+  handy after a restart or a crash. The list is kept up to date as tabs come
+  and go, and quitting normally does not clear it.
+- Undo (Ctrl+Z) in Liquify takes back the last stroke instead of ending the
+  whole liquify session. Redo (Ctrl+Shift+Z / Ctrl+Y) puts a stroke back;
+  Reset still undoes everything and Cancel leaves the picture untouched.
+- Closing a tab now moves to the neighboring document instead of the Home
+  tab. Home is only shown when no other document is left to show.
+- Cancel in the "Save changes before closing?" prompt now actually cancels.
+  It used to bring the same prompt straight back, so "Don't Save" was the
+  only way out; Close Others and quitting stop at the first Cancel too.
+
 ## 0.67.0 — 2026-10-14
 
 - The rotation anchor can be moved, like Photoshop's reference point. In

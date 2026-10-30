@@ -18,6 +18,7 @@ reachable from its menu until you assign one.
 | --- | --- |
 | New… | `Ctrl+N` |
 | Open… | `Ctrl+O` |
+| Open Recent ▸ Open All Recent (the tabs that were open when qsketch last ran, e.g. after a restart) | — |
 | Save | `Ctrl+S` |
 | Save As… | `Ctrl+Shift+S` |
 | Export Image… | `Ctrl+Alt+Shift+S` |
