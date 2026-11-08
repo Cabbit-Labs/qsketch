@@ -25,7 +25,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 | 2 | Sections: find them, list, pick on the model, highlight in both views | Mostly done; picking on the canvas and saving edits still to come |
 | 2b | Rearrange Texture: one continuous island per section, with the paint baked across | Done; a few pieces still fold |
 | 3 | Overlays: island outlines, tints, labels, mapped pixels only | Planned |
-| 4 | Paint limits: paint only inside a section, through the selection system | Planned |
+| 4 | Paint limits: paint only inside a section, through the selection system | Done: Select on Canvas |
 | 5 | Paint directly on the 3D model | Later |
 | 6 | Simplifier: reduce a heavy mesh and bake its texture across | Later |
 
@@ -99,8 +99,9 @@ pixels only (everything outside the UVs shown black). Drawn from a texture rende
 
 ### 4. Paint limits
 
-Turn the selected section into a selection mask, so every brush, fill and filter respects it. Edge padding, painting
-slightly past each island so seams don't show, is applied to the mask. Selections already support this kind of mask.
+**Select on Canvas** turns the selected section into the document's selection, as one undoable step, so every brush,
+fill and filter respects it. The mask grows 3 pixels past the section into unclaimed texture, so paint reaches past the
+rim without showing a seam, and never into another section.
 
 ### 6. Simplifier
 

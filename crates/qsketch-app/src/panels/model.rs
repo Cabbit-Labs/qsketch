@@ -8,9 +8,9 @@ use std::sync::Arc;
 use egui::{epaint::Vertex as ScreenVertex, Color32, RichText, Sense, Ui};
 use qsketch_3d::camera::{model_matrix, mul, pick_triangle, up_in_mesh};
 use qsketch_3d::hidden::{find_hidden, without_triangles};
-use qsketch_3d::unwrap::{rearrange, Report, Texture};
+use qsketch_3d::unwrap::{rearrange, section_coverage, Report, Texture};
 use qsketch_3d::{find_sections, Mesh, Orbit, Sections};
-use qsketch_core::Pt;
+use qsketch_core::{Mask, Pt};
 
 use super::model_render::ModelCallback;
 use crate::canvas::render::needs_full_upload;
@@ -21,6 +21,8 @@ const SPIN_RADIANS_PER_SECOND: f32 = 0.6;
 const DRAG_RADIANS_PER_POINT: f32 = 0.01;
 /// Sections are found automatically up to this size; larger meshes pause the app noticeably, so they wait for the button.
 const AUTO_SECTION_TRIANGLES: usize = 400_000;
+/// A selected section extends this far past its edges, so paint reaches the rim without leaving a seam.
+const SELECTION_PADDING: u32 = 3;
 const CANVAS_HIGHLIGHT: Color32 = Color32::from_rgba_premultiplied(0, 90, 115, 120);
 
 #[derive(Default)]
@@ -291,6 +293,27 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     }
 }
 
+/// Makes the selected section the texture document's selection, as one undoable step.
+fn select_section_on_canvas(state: &mut AppState) {
+    let model = &state.model;
+    let (Some(mesh), Some(sections), Some(section)) = (model.mesh.clone(), model.sections.clone(), model.selected)
+    else {
+        return;
+    };
+    let Some(id) = model.texture.or(state.active_doc) else { return };
+    let Some(entry) = state.doc_mut(id) else { return };
+    let (width, height) = (entry.doc.width(), entry.doc.height());
+    let covered = section_coverage(&mesh, &sections, section, width, height, SELECTION_PADDING);
+    let mut mask = Mask::new(width, height);
+    for (i, _) in covered.iter().enumerate().filter(|(_, c)| **c) {
+        mask.set((i as u32 % width) as i32, (i as u32 / width) as i32, 255);
+    }
+    mask.recompute_bounds();
+    entry.doc.state_mut().selection = if mask.is_empty() { None } else { Some(Arc::new(mask)) };
+    entry.doc.commit("Select Section");
+    entry.sel_outline = None;
+}
+
 /// One button per section; clicking it selects the section, and clicking again clears it.
 fn section_row(ui: &mut Ui, state: &mut AppState) {
     let model = &mut state.model;
@@ -300,10 +323,22 @@ fn section_row(ui: &mut Ui, state: &mut AppState) {
         }
         return;
     };
+    let mut select_on_canvas = false;
     ui.horizontal_wrapped(|ui| {
         ui.checkbox(&mut model.tint_all, "Tint All");
         ui.checkbox(&mut model.show_on_canvas, "Show on Canvas");
+        if ui
+            .add_enabled(model.selected.is_some(), egui::Button::new("Select on Canvas").small())
+            .on_hover_text("Make this section the canvas selection, so brushes and fills stay inside it")
+            .clicked()
+        {
+            select_on_canvas = true;
+        }
     });
+    if select_on_canvas {
+        select_section_on_canvas(state);
+    }
+    let model = &mut state.model;
     ui.horizontal_wrapped(|ui| {
         for (i, section) in sections.list.iter().enumerate() {
             let i = i as u32;

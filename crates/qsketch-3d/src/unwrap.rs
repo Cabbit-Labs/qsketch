@@ -681,6 +681,66 @@ fn dilate(rgba: &mut [u8], filled: &mut [bool], size: usize, passes: u32) {
     }
 }
 
+/// Which pixels of a `width` by `height` texture belong to a section. The result grows by `padding`
+/// pixels into unclaimed texture, so painting reaches past the rim, but never into another section.
+pub fn section_coverage(
+    mesh: &Mesh,
+    sections: &Sections,
+    section: u32,
+    width: u32,
+    height: u32,
+    padding: u32,
+) -> Vec<bool> {
+    const NONE: u32 = u32::MAX;
+    let (w, h) = (width as usize, height as usize);
+    let mut owner = vec![NONE; w * h];
+    for (t, tri) in mesh.indices.chunks_exact(3).enumerate() {
+        let p = [0, 1, 2].map(|k| {
+            let uv = mesh.vertices[tri[k] as usize].uv;
+            [f64::from(uv[0]) * f64::from(width), f64::from(uv[1]) * f64::from(height)]
+        });
+        let double_area = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
+        if double_area == 0.0 {
+            continue;
+        }
+        let range = |a: usize, limit: usize| {
+            let lo = p.iter().map(|v| v[a]).fold(f64::INFINITY, f64::min).floor().max(0.0) as usize;
+            let hi = p.iter().map(|v| v[a]).fold(f64::NEG_INFINITY, f64::max).ceil().max(0.0) as usize;
+            lo..hi.min(limit)
+        };
+        for y in range(1, h) {
+            for x in range(0, w) {
+                let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+                let edge = |a: [f64; 2], b: [f64; 2]| {
+                    ((b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0])) / double_area
+                };
+                if edge(p[0], p[1]) >= 0.0 && edge(p[1], p[2]) >= 0.0 && edge(p[2], p[0]) >= 0.0 {
+                    owner[y * w + x] = sections.of_triangle[t];
+                }
+            }
+        }
+    }
+    for _ in 0..padding {
+        let before = owner.clone();
+        for y in 0..h {
+            for x in 0..w {
+                let at = y * w + x;
+                if before[at] != NONE {
+                    continue;
+                }
+                let touches = (x > 0 && before[at - 1] == section)
+                    || (x + 1 < w && before[at + 1] == section)
+                    || (y > 0 && before[at - w] == section)
+                    || (y + 1 < h && before[at + w] == section);
+                if touches {
+                    owner[at] = section;
+                }
+            }
+        }
+    }
+    owner.iter().map(|&o| o == section).collect()
+}
+
 /// Rearranges `mesh`'s texture layout by `sections`, baking `source` to a `size` pixel square.
 pub fn rearrange(mesh: &Mesh, sections: &Sections, source: &Texture, size: u32) -> Rearranged {
     let (center, radius) = mesh.bounds();
@@ -911,6 +971,43 @@ mod tests {
         let result = rearrange(&mesh, &sections, &Texture { width: 2, height: 2, rgba: &rgba }, 128);
         assert_eq!(result.report.islands, 2);
         assert_eq!(result.report.overlapping_pixels, 0);
+    }
+
+    /// Two triangles side by side in UV space, one per section, with a gap around them.
+    fn two_sections() -> (Mesh, Sections) {
+        let v = |x: f32, u: f32, w: f32| Vertex { position: [x, 0.0, w], normal: [0.0, 1.0, 0.0], uv: [u, w] };
+        let mesh = Mesh {
+            vertices: vec![
+                v(0.0, 0.25, 0.25),
+                v(0.5, 0.5, 0.25),
+                v(0.5, 0.5, 0.75),
+                v(0.0, 0.25, 0.75),
+                v(1.0, 0.75, 0.25),
+                v(1.0, 0.75, 0.75),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3, 1, 4, 5, 1, 5, 2],
+        };
+        let list = vec![Section { name: "L".into(), triangles: 2 }, Section { name: "R".into(), triangles: 2 }];
+        (mesh, Sections { of_triangle: vec![0, 0, 1, 1], list })
+    }
+
+    #[test]
+    fn coverage_fills_only_the_chosen_section() {
+        let (mesh, sections) = two_sections();
+        let c = section_coverage(&mesh, &sections, 0, 16, 16, 0);
+        let at = |x: usize, y: usize| c[y * 16 + x];
+        assert!(at(5, 8), "inside the left section");
+        assert!(!at(10, 8), "inside the right section");
+        assert!(!at(1, 8), "outside the UVs");
+    }
+
+    #[test]
+    fn padding_grows_into_empty_texture_but_not_the_neighbor() {
+        let (mesh, sections) = two_sections();
+        let c = section_coverage(&mesh, &sections, 0, 16, 16, 2);
+        let at = |x: usize, y: usize| c[y * 16 + x];
+        assert!(at(3, 8), "grew left into empty texture");
+        assert!(!at(9, 8), "did not cross into the right section");
     }
 
     #[test]

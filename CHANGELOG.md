@@ -11,6 +11,8 @@ All notable changes to qSketch are documented in this file.
 - Rearrange Texture in the Model panel lays a model's texture out again with each
   part in one continuous island, removes surfaces nothing can see, and writes a
   new model and texture beside it.
+- Select on Canvas in the Model panel turns a section into the selection, so
+  painting stays inside that part of the model.
 - Linux: window snapping works on high-DPI displays. The minimum window size
   is now 480x320 points; at 2.4x scaling the old 900x560 was larger than half
   of a 4K monitor, so the window manager refused to tile the window.
