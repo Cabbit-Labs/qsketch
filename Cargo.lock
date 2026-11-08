@@ -2706,6 +2706,7 @@ version = "0.68.0"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "image",
  "serde_json",
 ]
 

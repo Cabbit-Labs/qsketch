@@ -10,6 +10,7 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 
 use crate::mesh::Mesh;
+use crate::unwrap::Texture;
 
 /// A new tip must be at least this fraction of the surface's longest path from every other tip.
 const TIP_SEPARATION: f32 = 0.4;
@@ -26,6 +27,11 @@ const LONG_RATIO: f32 = 3.0;
 /// Each part is cut into this many slices along its length, since a curved strip has no single plane.
 const SLICES: usize = 8;
 const SMOOTHING_PASSES: usize = 12;
+/// Two paint colors must be at least this far apart in 0..255 RGB, and the smaller must cover this share, to split a part.
+const MIN_COLOR_SEPARATION: f32 = 60.0;
+const MIN_COLOR_SHARE: f32 = 0.08;
+/// Stray pieces smaller than this share of their section join a neighbor; bigger ones are real and keep their section.
+const STRAY_SHARE: f32 = 0.03;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Section {
@@ -68,19 +74,23 @@ fn distance(a: [f32; 3], b: [f32; 3]) -> f32 {
     dot(d, d).sqrt()
 }
 
-/// Connects triangles that share an edge, after merging vertices at the same position.
-fn build_graph(mesh: &Mesh, radius: f32) -> Graph {
+/// Gives vertices at the same position the same number, undoing the splits UV seams make.
+pub fn weld_vertices(mesh: &Mesh, radius: f32) -> Vec<u32> {
     let step = radius * 1e-5;
     let mut welded: HashMap<[i64; 3], u32> = HashMap::with_capacity(mesh.vertices.len());
-    let weld_ids: Vec<u32> = mesh
-        .vertices
+    mesh.vertices
         .iter()
         .map(|v| {
             let key = v.position.map(|c| (c / step).round() as i64);
             let next = welded.len() as u32;
             *welded.entry(key).or_insert(next)
         })
-        .collect();
+        .collect()
+}
+
+/// Connects triangles that share an edge, after merging vertices at the same position.
+fn build_graph(mesh: &Mesh, radius: f32) -> Graph {
+    let weld_ids = weld_vertices(mesh, radius);
 
     let mut edges: Vec<(u32, u32, u32)> = Vec::with_capacity(mesh.indices.len());
     for (t, tri) in mesh.indices.chunks_exact(3).enumerate() {
@@ -256,13 +266,116 @@ fn covariance_of(points: &[[f32; 3]], weights: &[f32]) -> ([f32; 3], [[f32; 3]; 
     (mean, covariance)
 }
 
+/// Clears specks: a piece much smaller than its section's largest goes to the neighboring section it touches most.
+fn absorb_strays(graph: &Graph, areas: &[f32], of_triangle: &mut [u32], sections: usize) {
+    for _ in 0..8 {
+        let mut piece = vec![u32::MAX; of_triangle.len()];
+        let mut piece_area = Vec::new();
+        let mut piece_section = Vec::new();
+        let mut stack = Vec::new();
+        for start in 0..of_triangle.len() {
+            if piece[start] != u32::MAX {
+                continue;
+            }
+            let id = piece_area.len() as u32;
+            let section = of_triangle[start];
+            let mut total = 0.0;
+            piece[start] = id;
+            stack.push(start);
+            while let Some(t) = stack.pop() {
+                total += areas[t];
+                for &n in graph.of(t) {
+                    let n = n as usize;
+                    if piece[n] == u32::MAX && of_triangle[n] == section {
+                        piece[n] = id;
+                        stack.push(n);
+                    }
+                }
+            }
+            piece_area.push(total);
+            piece_section.push(section);
+        }
+
+        let mut largest = vec![(u32::MAX, -1.0f32); sections];
+        for (id, (&area, &section)) in piece_area.iter().zip(&piece_section).enumerate() {
+            if area > largest[section as usize].1 {
+                largest[section as usize] = (id as u32, area);
+            }
+        }
+
+        let mut votes: HashMap<u32, HashMap<u32, u32>> = HashMap::new();
+        for t in 0..of_triangle.len() {
+            let (main, main_area) = largest[of_triangle[t] as usize];
+            if main == piece[t] || piece_area[piece[t] as usize] >= main_area * STRAY_SHARE {
+                continue;
+            }
+            for &n in graph.of(t) {
+                if of_triangle[n as usize] != of_triangle[t] {
+                    *votes.entry(piece[t]).or_default().entry(of_triangle[n as usize]).or_insert(0) += 1;
+                }
+            }
+        }
+        if votes.is_empty() {
+            return;
+        }
+        let winner: HashMap<u32, u32> = votes
+            .into_iter()
+            .filter_map(|(id, counts)| Some((id, counts.into_iter().max_by_key(|&(s, n)| (n, s))?.0)))
+            .collect();
+        for t in 0..of_triangle.len() {
+            if let Some(&to) = winner.get(&piece[t]) {
+                of_triangle[t] = to;
+            }
+        }
+    }
+}
+
+/// Splits triangles into two color clusters, or `None` if the part is not clearly two colors.
+fn two_color_split(members: &[usize], colors: &[[f32; 3]], areas: &[f32]) -> Option<Vec<bool>> {
+    if members.len() < 16 {
+        return None;
+    }
+    let brightness = |c: [f32; 3]| c[0] + c[1] + c[2];
+    let mut ordered: Vec<usize> = members.to_vec();
+    ordered.sort_by(|&a, &b| brightness(colors[a]).total_cmp(&brightness(colors[b])));
+    let mut centers = [colors[ordered[ordered.len() / 10]], colors[ordered[ordered.len() * 9 / 10]]];
+    let mut labels = vec![false; members.len()];
+    let mut shares = [0.0f32; 2];
+    for _ in 0..16 {
+        let mut sums = [[0.0f32; 3]; 2];
+        shares = [0.0; 2];
+        for (m, &t) in members.iter().enumerate() {
+            let d = |c: [f32; 3]| {
+                let e = sub(colors[t], c);
+                dot(e, e)
+            };
+            labels[m] = d(centers[1]) < d(centers[0]);
+            let k = usize::from(labels[m]);
+            shares[k] += areas[t];
+            for a in 0..3 {
+                sums[k][a] += colors[t][a] * areas[t];
+            }
+        }
+        for k in 0..2 {
+            if shares[k] > 0.0 {
+                centers[k] = sums[k].map(|s| s / shares[k]);
+            }
+        }
+    }
+    let total = (shares[0] + shares[1]).max(1e-12);
+    let separation = distance(centers[0], centers[1]);
+    (separation >= MIN_COLOR_SEPARATION && shares[0].min(shares[1]) / total >= MIN_COLOR_SHARE).then_some(labels)
+}
+
 fn part_name(index: usize) -> String {
     let letter = (b'A' + (index % 26) as u8) as char;
     format!("Part {letter}")
 }
 
 /// Finds a mesh's sections. `up` is the direction, in mesh space, that "top" should face.
-pub fn find_sections(mesh: &Mesh, up: [f32; 3]) -> Sections {
+/// With a `texture`, parts painted in two clearly different colors split along that paint line,
+/// which follows real surfaces such as a peel's skin and lining better than facing direction does.
+pub fn find_sections(mesh: &Mesh, up: [f32; 3], texture: Option<&Texture>) -> Sections {
     let count = mesh.triangle_count();
     if count == 0 {
         return Sections::default();
@@ -419,6 +532,37 @@ pub fn find_sections(mesh: &Mesh, up: [f32; 3]) -> Sections {
         }
     }
 
+    if let Some(texture) = texture {
+        let colors: Vec<[f32; 3]> = (0..count)
+            .map(|t| {
+                let mut sum = [0.0f32; 3];
+                for k in 0..3 {
+                    let uv = mesh.vertices[mesh.indices[t * 3 + k] as usize].uv;
+                    let c = texture.sample(f64::from(uv[0]), f64::from(uv[1]));
+                    for a in 0..3 {
+                        sum[a] += f32::from(c[a]) / 3.0;
+                    }
+                }
+                sum
+            })
+            .collect();
+        for (p, part_has_sides) in has_sides.iter_mut().enumerate() {
+            let members: Vec<usize> = (0..count).filter(|&t| part[t] == p as u32).collect();
+            if let Some(labels) = two_color_split(&members, &colors, &areas) {
+                // Label by facing: the color whose triangles face up more is the top.
+                let mut facing = [0.0f32; 2];
+                for (&t, &label) in members.iter().zip(&labels) {
+                    facing[usize::from(label)] += dot(normals[t], up);
+                }
+                let swap = facing[1] > facing[0];
+                for (&t, &label) in members.iter().zip(&labels) {
+                    side[t] = u8::from(label ^ swap);
+                }
+                *part_has_sides = true;
+            }
+        }
+    }
+
     // Each triangle takes the majority side of its neighbors, which clears speckle along the rims.
     for _ in 0..SMOOTHING_PASSES {
         let previous = side.clone();
@@ -460,7 +604,14 @@ pub fn find_sections(mesh: &Mesh, up: [f32; 3]) -> Sections {
             list.push(Section { name, triangles: n });
         }
     }
-    let of_triangle = (0..count).map(|t| ids[part[t] as usize][usize::from(side[t])]).collect();
+    let mut of_triangle: Vec<u32> = (0..count).map(|t| ids[part[t] as usize][usize::from(side[t])]).collect();
+    absorb_strays(&graph, &areas, &mut of_triangle, list.len());
+    for section in &mut list {
+        section.triangles = 0;
+    }
+    for &s in &of_triangle {
+        list[s as usize].triangles += 1;
+    }
     Sections { of_triangle, list }
 }
 
@@ -529,7 +680,7 @@ mod tests {
         add_box(&mut mesh, [-0.1, -0.02, 0.1], [0.1, 0.02, 1.0], 24);
         add_box(&mut mesh, [-0.1, -0.02, -1.0], [0.1, 0.02, -0.1], 24);
 
-        let found = find_sections(&mesh, [0.0, 1.0, 0.0]);
+        let found = find_sections(&mesh, [0.0, 1.0, 0.0], None);
         assert_eq!(found.of_triangle.len(), mesh.triangle_count());
         let tops = [[0.7, 0.02, 0.0], [-0.7, 0.02, 0.0], [0.0, 0.02, 0.7], [0.0, 0.02, -0.7]]
             .map(|p| section_at(&mesh, &found, p));
@@ -551,14 +702,14 @@ mod tests {
     fn a_loose_fragment_joins_the_nearest_part() {
         let mut mesh = Mesh::default();
         add_box(&mut mesh, [-1.0, -0.1, -0.1], [1.0, 0.1, 0.1], 16);
-        let parts_alone = find_sections(&mesh, [0.0, 1.0, 0.0]).list.len();
+        let parts_alone = find_sections(&mesh, [0.0, 1.0, 0.0], None).list.len();
         add_box(&mut mesh, [1.2, -0.01, -0.01], [1.22, 0.01, 0.01], 1);
-        assert_eq!(find_sections(&mesh, [0.0, 1.0, 0.0]).list.len(), parts_alone);
+        assert_eq!(find_sections(&mesh, [0.0, 1.0, 0.0], None).list.len(), parts_alone);
     }
 
     #[test]
     fn an_empty_mesh_has_no_sections() {
-        assert!(find_sections(&Mesh::default(), [0.0, 1.0, 0.0]).list.is_empty());
+        assert!(find_sections(&Mesh::default(), [0.0, 1.0, 0.0], None).list.is_empty());
     }
 
     #[test]

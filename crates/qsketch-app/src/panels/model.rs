@@ -2,10 +2,12 @@
 //! are painting. The design, including what comes next, is in `docs/Q3D.md`.
 
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 
 use egui::{epaint::Vertex as ScreenVertex, Color32, RichText, Sense, Ui};
 use qsketch_3d::camera::{model_matrix, mul, pick_triangle, up_in_mesh};
+use qsketch_3d::unwrap::{rearrange, Report, Texture};
 use qsketch_3d::{find_sections, Mesh, Orbit, Sections};
 use qsketch_core::Pt;
 
@@ -42,6 +44,15 @@ pub struct Model {
     tint_all: bool,
     /// Also highlight the selected section on the canvas.
     show_on_canvas: bool,
+    job: Option<Receiver<Result<Finished, String>>>,
+}
+
+/// A finished Rearrange Texture run, whose files are on disk.
+struct Finished {
+    model: PathBuf,
+    texture: PathBuf,
+    sections: Sections,
+    report: Report,
 }
 
 /// What a canvas needs to highlight the selected section. Cheap to take each frame.
@@ -97,7 +108,7 @@ impl Model {
 
     fn find_sections(&mut self) {
         let Some(mesh) = &self.mesh else { return };
-        self.sections = Some(Arc::new(find_sections(mesh, up_in_mesh(self.turns))));
+        self.sections = Some(Arc::new(find_sections(mesh, up_in_mesh(self.turns), None)));
         self.sections_generation += 1;
         self.selected = None;
     }
@@ -119,7 +130,85 @@ fn choose_file(state: &mut AppState) {
     }
 }
 
+/// The first `name_rearranged` base that overwrites nothing.
+fn free_base(model: &Path) -> PathBuf {
+    let stem = model.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "model".into());
+    let directory = model.parent().unwrap_or(Path::new("."));
+    (1..)
+        .map(|n| directory.join(if n == 1 { format!("{stem}_rearranged") } else { format!("{stem}_rearranged{n}") }))
+        .find(|base| !base.with_extension("glb").exists() && !base.with_extension("png").exists())
+        .expect("an unused file name")
+}
+
+/// Starts laying the model's texture out again per section, on a background thread.
+fn start_rearrange(state: &mut AppState) {
+    let model = &state.model;
+    let (Some(mesh), Some(path)) = (model.mesh.clone(), model.path.clone()) else { return };
+    let Some(entry) = model.texture.or(state.active_doc).and_then(|id| state.doc(id)) else { return };
+    let raster = qsketch_core::composite::flatten(entry.doc.state());
+    let (width, height, rgba) = (raster.width(), raster.height(), raster.to_rgba());
+    let up = up_in_mesh(model.turns);
+    let (send, receive) = mpsc::channel();
+    std::thread::spawn(move || {
+        let run = || -> anyhow::Result<Finished> {
+            let source = Texture { width, height, rgba: &rgba };
+            let sections = find_sections(&mesh, up, Some(&source));
+            let size = width.max(height).max(2048).min(4096);
+            let result = rearrange(&mesh, &sections, &source, size);
+            let mut png = Vec::new();
+            image::write_buffer_with_format(
+                &mut std::io::Cursor::new(&mut png),
+                &result.rgba,
+                size,
+                size,
+                image::ColorType::Rgba8,
+                image::ImageFormat::Png,
+            )?;
+            let base = free_base(&path);
+            let (model, texture) = (base.with_extension("glb"), base.with_extension("png"));
+            std::fs::write(&texture, &png)?;
+            std::fs::write(&model, result.mesh.to_glb(&png))?;
+            Ok(Finished { model, texture, sections, report: result.report })
+        };
+        let _ = send.send(run().map_err(|e| format!("{e:#}")));
+    });
+    state.model.job = Some(receive);
+}
+
+/// Opens the results of a finished Rearrange Texture run.
+fn finish_rearrange(ui: &Ui, state: &mut AppState) {
+    let Some(job) = &state.model.job else { return };
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+    let result = match job.try_recv() {
+        Ok(result) => result,
+        Err(mpsc::TryRecvError::Empty) => return,
+        Err(mpsc::TryRecvError::Disconnected) => Err("the rearranging thread stopped unexpectedly".to_string()),
+    };
+    state.model.job = None;
+    match result {
+        Ok(done) => {
+            let doc = crate::files::open_path(state, &done.texture);
+            let turns = state.model.turns;
+            state.model.open(&done.model);
+            state.model.turns = turns;
+            state.model.texture = doc;
+            // The triangles are in the same order, so the sections found from the paint still apply.
+            state.model.sections = Some(Arc::new(done.sections));
+            state.model.sections_generation += 1;
+            state.model.selected = None;
+            let r = done.report;
+            let note = format!(
+                "Texture rearranged: {} islands. {} triangles folded over, {} pixels overlap.",
+                r.islands, r.flipped_triangles, r.overlapping_pixels
+            );
+            state.toasts.push(crate::ui::toasts::Level::Info, note);
+        }
+        Err(e) => state.model.error = Some(e),
+    }
+}
+
 pub fn ui(ui: &mut Ui, state: &mut AppState) {
+    finish_rearrange(ui, state);
     toolbar(ui, state);
     if let Some(error) = &state.model.error {
         ui.colored_label(ui.visuals().error_fg_color, error);
@@ -236,6 +325,16 @@ fn toolbar(ui: &mut Ui, state: &mut AppState) {
             state.model.orbit = Orbit::default();
         }
         ui.checkbox(&mut state.model.spin, "Spin");
+        if state.model.job.is_some() {
+            ui.spinner();
+            ui.label("Rearranging…");
+        } else if small_button(ui, "Rearrange Texture")
+            .on_hover_text("Lay the texture out again with each part in one piece. Writes a new model and texture beside the original.")
+            .clicked()
+            && state.model.texture.or(state.active_doc).is_some()
+        {
+            start_rearrange(state);
+        }
     });
     if state.model.mesh.is_none() {
         return;

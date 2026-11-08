@@ -46,6 +46,81 @@ impl Mesh {
         (center, radius.max(1e-6))
     }
 
+    /// Writes a binary glTF with `png` embedded as its color texture.
+    pub fn to_glb(&self, png: &[u8]) -> Vec<u8> {
+        fn align(bin: &mut Vec<u8>) {
+            while bin.len() % 4 != 0 {
+                bin.push(0);
+            }
+        }
+        let mut bin = Vec::new();
+        let mut views = Vec::new();
+        let mut view = |bin: &mut Vec<u8>, data: &[u8]| {
+            align(bin);
+            views.push(serde_json::json!({"buffer": 0, "byteOffset": bin.len(), "byteLength": data.len()}));
+            bin.extend_from_slice(data);
+            views.len() - 1
+        };
+        let attribute = |f: fn(&Vertex) -> &[f32]| -> Vec<u8> {
+            self.vertices.iter().flat_map(|v| f(v).iter().flat_map(|c| c.to_le_bytes())).collect()
+        };
+        let positions = view(&mut bin, &attribute(|v| &v.position));
+        let normals = view(&mut bin, &attribute(|v| &v.normal));
+        let uvs = view(&mut bin, &attribute(|v| &v.uv));
+        let indices = view(&mut bin, bytemuck::cast_slice(&self.indices));
+        let image = view(&mut bin, png);
+        align(&mut bin);
+
+        let (mut min, mut max) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
+        for v in &self.vertices {
+            for a in 0..3 {
+                min[a] = min[a].min(v.position[a]);
+                max[a] = max[a].max(v.position[a]);
+            }
+        }
+        let count = self.vertices.len();
+        let root = serde_json::json!({
+            "asset": {"version": "2.0", "generator": "qsketch"},
+            "scene": 0,
+            "scenes": [{"nodes": [0]}],
+            "nodes": [{"mesh": 0}],
+            "meshes": [{"primitives": [{
+                "attributes": {"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2},
+                "indices": 3,
+                "material": 0
+            }]}],
+            "materials": [{
+                "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0.0, "roughnessFactor": 1.0},
+                "doubleSided": true
+            }],
+            "textures": [{"source": 0}],
+            "images": [{"bufferView": image, "mimeType": "image/png"}],
+            "accessors": [
+                {"bufferView": positions, "componentType": 5126, "count": count, "type": "VEC3", "min": min, "max": max},
+                {"bufferView": normals, "componentType": 5126, "count": count, "type": "VEC3"},
+                {"bufferView": uvs, "componentType": 5126, "count": count, "type": "VEC2"},
+                {"bufferView": indices, "componentType": 5125, "count": self.indices.len(), "type": "SCALAR"}
+            ],
+            "bufferViews": views,
+            "buffers": [{"byteLength": bin.len()}]
+        });
+        let mut json = serde_json::to_vec(&root).unwrap_or_default();
+        while json.len() % 4 != 0 {
+            json.push(b' ');
+        }
+        let mut out = Vec::with_capacity(28 + json.len() + bin.len());
+        out.extend_from_slice(b"glTF");
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&((28 + json.len() + bin.len()) as u32).to_le_bytes());
+        out.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        out.extend_from_slice(&0x4E4F534Au32.to_le_bytes());
+        out.extend_from_slice(&json);
+        out.extend_from_slice(&(bin.len() as u32).to_le_bytes());
+        out.extend_from_slice(&0x004E4942u32.to_le_bytes());
+        out.extend_from_slice(&bin);
+        out
+    }
+
     pub fn from_glb(bytes: &[u8]) -> Result<Self> {
         let (json, bin) = split_glb(bytes)?;
         let root: Value = serde_json::from_slice(json).context("the file's JSON is invalid")?;
@@ -466,6 +541,14 @@ mod tests {
         let mut json = triangle_json(json!({"mesh": 0, "children": [0]}));
         json["scenes"][0]["nodes"] = json!([0]);
         assert!(Mesh::from_glb(&glb(&json, &triangle_bin())).is_err());
+    }
+
+    #[test]
+    fn a_written_glb_reads_back_the_same() {
+        let original = Mesh::from_glb(&glb(&triangle_json(json!({"mesh": 0})), &triangle_bin())).unwrap();
+        let back = Mesh::from_glb(&original.to_glb(b"not really a png")).unwrap();
+        assert_eq!(back.vertices, original.vertices);
+        assert_eq!(back.indices, original.indices);
     }
 
     #[test]

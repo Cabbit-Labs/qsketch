@@ -23,6 +23,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 |---|------|--------|
 | 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | Done; live update during a stroke unverified |
 | 2 | Sections: find them, list, pick on the model, highlight in both views | Mostly done; picking on the canvas and saving edits still to come |
+| 2b | Rearrange Texture: one continuous island per section, with the paint baked across | Done; a few pieces still fold |
 | 3 | Overlays: island outlines, tints, labels, mapped pixels only | Planned |
 | 4 | Paint limits: paint only inside a section, through the selection system | Planned |
 | 5 | Paint directly on the 3D model | Later |
@@ -59,6 +60,8 @@ peel has 888 islands, and many are scraps a few pixels wide. The sectioner turns
    protrusion such as a stem keeps its share.
 4. **Split sides:** flat or long parts split by which way each triangle faces, measured against a plane fitted to each
    slice along the part, because a curved strip has no single plane. Neighbors then vote to clear speckle along the rims.
+   With a texture available, a part painted in two clearly different colors splits along that paint line instead,
+   which follows real surfaces better: facing direction put cream and yellow into the same section on the peel.
 5. **Name and keep (not built yet):** let the user rename, merge and split, and save the result in the sidecar so the
    automatic pass runs once and those edits are kept. For now sections are named "Part A top" and so on, and are
    recomputed on load.
@@ -67,6 +70,20 @@ The peel comes out as four strips with a top and underside each, plus the stem a
 0.13 s for 139,428 triangles and 1.1 s for 987,308. `cargo run -p qsketch-3d --example section_report -- model.glb -z`
 prints the result for a model. Sections span islands freely, so a poor UV layout does not limit them. A triangle-level split is allowed where one
 island crosses parts, which is common on these models.
+
+### 2b. Rearrange Texture
+
+The Model panel's **Rearrange Texture** button writes `name_rearranged.glb` and `.png` beside the model, never
+overwriting, and opens both. Each connected piece of a section is flattened with least squares conformal maps, refined
+as-rigid-as-possible to even out stretch, turned lengthwise with its inner end on the left, and packed in section
+order. Triangles keep their order, and each new pixel reads the old texture through its own triangle's old UVs.
+
+On the 139,428-triangle peel this takes about 6 s and gives 25 islands, median area stretch 1.06, 924 flipped triangles
+and 82,322 overlapping pixels out of 4 million. `cargo run -p qsketch-3d --example rearrange_report` prints the numbers.
+
+Known limits: a piece with tunnels through it, common on generated meshes, can fold over itself, and one yellow island
+on the peel does at its root. The next fix is to split any piece that folds and flatten the parts separately. Sections
+are found from paint only during Rearrange; loading a model still uses geometry alone.
 
 ### 3. Overlays
 

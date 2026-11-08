@@ -19,7 +19,7 @@ fn main() -> anyhow::Result<()> {
     };
     let mesh = Mesh::from_glb(&std::fs::read(path)?)?;
     let start = Instant::now();
-    let found = find_sections(&mesh, up);
+    let found = find_sections(&mesh, up, None);
     println!("{} triangles, {} sections, {:?}", mesh.triangle_count(), found.list.len(), start.elapsed());
     for s in &found.list {
         println!(

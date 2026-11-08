@@ -4,6 +4,7 @@
 pub mod camera;
 pub mod mesh;
 pub mod sections;
+pub mod unwrap;
 
 pub use camera::{Mat4, Orbit};
 pub use mesh::{Mesh, Vertex};
