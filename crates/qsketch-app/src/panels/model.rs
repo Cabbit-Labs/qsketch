@@ -163,7 +163,7 @@ fn start_rearrange(state: &mut AppState) {
             let removed = hidden.iter().filter(|h| **h).count();
             let mesh = without_triangles(&mesh, &hidden);
             let sections = find_sections(&mesh, up, Some(&source));
-            let size = width.max(height).max(2048).min(4096);
+            let size = width.max(height).clamp(2048, 4096);
             let result = rearrange(&mesh, &sections, &source, size);
             let mut png = Vec::new();
             image::write_buffer_with_format(
