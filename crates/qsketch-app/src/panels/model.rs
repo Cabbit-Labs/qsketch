@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use egui::{epaint::Vertex as ScreenVertex, Color32, RichText, Sense, Ui};
 use qsketch_3d::camera::{model_matrix, mul, pick_triangle, up_in_mesh};
+use qsketch_3d::hidden::{find_hidden, without_triangles};
 use qsketch_3d::unwrap::{rearrange, Report, Texture};
 use qsketch_3d::{find_sections, Mesh, Orbit, Sections};
 use qsketch_core::Pt;
@@ -45,6 +46,8 @@ pub struct Model {
     /// Also highlight the selected section on the canvas.
     show_on_canvas: bool,
     job: Option<Receiver<Result<Finished, String>>>,
+    /// Rearrange normally drops surfaces nothing can see; this keeps them.
+    keep_hidden: bool,
 }
 
 /// A finished Rearrange Texture run, whose files are on disk.
@@ -53,6 +56,7 @@ struct Finished {
     texture: PathBuf,
     sections: Sections,
     report: Report,
+    removed: usize,
 }
 
 /// What a canvas needs to highlight the selected section. Cheap to take each frame.
@@ -148,10 +152,14 @@ fn start_rearrange(state: &mut AppState) {
     let raster = qsketch_core::composite::flatten(entry.doc.state());
     let (width, height, rgba) = (raster.width(), raster.height(), raster.to_rgba());
     let up = up_in_mesh(model.turns);
+    let keep_hidden = model.keep_hidden;
     let (send, receive) = mpsc::channel();
     std::thread::spawn(move || {
         let run = || -> anyhow::Result<Finished> {
             let source = Texture { width, height, rgba: &rgba };
+            let hidden = if keep_hidden { vec![false; mesh.triangle_count()] } else { find_hidden(&mesh) };
+            let removed = hidden.iter().filter(|h| **h).count();
+            let mesh = without_triangles(&mesh, &hidden);
             let sections = find_sections(&mesh, up, Some(&source));
             let size = width.max(height).max(2048).min(4096);
             let result = rearrange(&mesh, &sections, &source, size);
@@ -168,7 +176,7 @@ fn start_rearrange(state: &mut AppState) {
             let (model, texture) = (base.with_extension("glb"), base.with_extension("png"));
             std::fs::write(&texture, &png)?;
             std::fs::write(&model, result.mesh.to_glb(&png))?;
-            Ok(Finished { model, texture, sections, report: result.report })
+            Ok(Finished { model, texture, sections, report: result.report, removed })
         };
         let _ = send.send(run().map_err(|e| format!("{e:#}")));
     });
@@ -198,8 +206,8 @@ fn finish_rearrange(ui: &Ui, state: &mut AppState) {
             state.model.selected = None;
             let r = done.report;
             let note = format!(
-                "Texture rearranged: {} islands. {} triangles folded over, {} pixels overlap.",
-                r.islands, r.flipped_triangles, r.overlapping_pixels
+                "Texture rearranged: {} islands, {} hidden triangles removed. {} triangles folded over, {} pixels overlap.",
+                r.islands, done.removed, r.flipped_triangles, r.overlapping_pixels
             );
             state.toasts.push(crate::ui::toasts::Level::Info, note);
         }
@@ -335,6 +343,8 @@ fn toolbar(ui: &mut Ui, state: &mut AppState) {
         {
             start_rearrange(state);
         }
+        ui.checkbox(&mut state.model.keep_hidden, "Keep Hidden Surfaces")
+            .on_hover_text("Rearrange normally removes surfaces that can never be seen, such as the inside of a hollow model");
     });
     if state.model.mesh.is_none() {
         return;

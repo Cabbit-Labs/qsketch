@@ -78,12 +78,19 @@ overwriting, and opens both. Each connected piece of a section is flattened with
 as-rigid-as-possible to even out stretch, turned lengthwise with its inner end on the left, and packed in section
 order. Triangles keep their order, and each new pixel reads the old texture through its own triangle's old UVs.
 
-On the 139,428-triangle peel this takes about 6 s and gives 25 islands, median area stretch 1.06, 924 flipped triangles
-and 82,322 overlapping pixels out of 4 million. `cargo run -p qsketch-3d --example rearrange_report` prints the numbers.
+First it removes surfaces nothing can ever see, unless **Keep Hidden Surfaces** is ticked: a triangle stays if at least
+2 of 32 rays over its hemisphere escape the model. Generated models are often hollow thin shells, and on the peel 48%
+of the triangles were the inside of that shell, 0.002 from a visible face and pointing the opposite way.
 
-Known limits: a piece with tunnels through it, common on generated meshes, can fold over itself, and one yellow island
-on the peel does at its root. The next fix is to split any piece that folds and flatten the parts separately. Sections
-are found from paint only during Rearrange; loading a model still uses geometry alone.
+A piece that folds over itself, often because of tunnels in a generated mesh, is halved across its length and each half
+flattened again, up to four times.
+
+On the 139,428-triangle peel this takes about 4 s and leaves 71,951 triangles in 50 islands, with median area stretch
+1.03, 228 flipped triangles and 8,651 overlapping pixels out of 4 million. Most of the islands are specks along the
+bottom. `cargo run -p qsketch-3d --example rearrange_report` prints the numbers.
+
+Known limits: splitting a fold cuts that part into several islands. Sections are found from paint only during
+Rearrange; loading a model still uses geometry alone.
 
 ### 3. Overlays
 

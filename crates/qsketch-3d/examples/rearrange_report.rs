@@ -4,6 +4,7 @@
 
 use std::time::Instant;
 
+use qsketch_3d::hidden::{find_hidden, without_triangles};
 use qsketch_3d::unwrap::{rearrange, Texture};
 use qsketch_3d::{find_sections, Mesh};
 
@@ -18,6 +19,9 @@ fn main() -> anyhow::Result<()> {
         _ => [0.0, 1.0, 0.0],
     };
     let mesh = Mesh::from_glb(&std::fs::read(model)?)?;
+    let hidden = find_hidden(&mesh);
+    println!("{} of {} triangles hidden", hidden.iter().filter(|h| **h).count(), hidden.len());
+    let mesh = without_triangles(&mesh, &hidden);
     let image = image::open(texture)?.to_rgba8();
     let source = Texture { width: image.width(), height: image.height(), rgba: image.as_raw() };
     let sections = find_sections(&mesh, up, Some(&source));

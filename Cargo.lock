@@ -2707,6 +2707,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "image",
+ "rayon",
  "serde_json",
 ]
 

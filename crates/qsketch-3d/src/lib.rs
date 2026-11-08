@@ -2,6 +2,7 @@
 //! The design is in `docs/Q3D.md`.
 
 pub mod camera;
+pub mod hidden;
 pub mod mesh;
 pub mod sections;
 pub mod unwrap;

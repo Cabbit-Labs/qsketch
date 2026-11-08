@@ -18,6 +18,11 @@ const MAX_SOLVER_STEPS: usize = 6000;
 const SOLVER_TOLERANCE: f64 = 1e-7;
 /// Pieces smaller than this share of the model's area keep to the end of the sheet.
 const SMALL_PIECE: f64 = 0.005;
+/// A piece counts as folded with more flipped triangles than both of these allow (a count, and one in this many).
+const MAX_FLIPS: usize = 8;
+const MAX_FLIP_DIVISOR: usize = 500;
+const MAX_SPLITS: u32 = 4;
+const MIN_SPLIT_TRIANGLES: usize = 64;
 const RIGID_ITERATIONS: usize = 30;
 const RIGID_SOLVER_STEPS: usize = 60;
 /// Cotangent weights are clamped: lumpy meshes have sliver triangles that would otherwise wreck the solve.
@@ -89,83 +94,134 @@ fn find(parent: &mut [u32], mut x: u32) -> u32 {
     x
 }
 
-fn build_charts(mesh: &Mesh, sections: &Sections, weld: &[u32]) -> Vec<Chart> {
-    let triangle_count = mesh.triangle_count();
-    let mut by_section: Vec<Vec<usize>> = vec![Vec::new(); sections.list.len().max(1)];
-    for t in 0..triangle_count {
-        by_section[sections.of_triangle[t] as usize].push(t);
+/// Splits triangles into groups connected through shared vertices (welded, so old UV seams do not split them).
+fn connected_pieces(mesh: &Mesh, weld: &[u32], triangles: &[usize]) -> Vec<Vec<usize>> {
+    let mut number: HashMap<u32, u32> = HashMap::new();
+    let mut parent: Vec<u32> = Vec::new();
+    for &t in triangles {
+        let mut first = None;
+        for k in 0..3 {
+            let w = weld[mesh.indices[t * 3 + k] as usize];
+            let next = number.len() as u32;
+            let id = *number.entry(w).or_insert(next);
+            if id == next {
+                parent.push(id);
+            }
+            match first {
+                None => first = Some(id),
+                Some(f) => {
+                    let (a, b) = (find(&mut parent, f), find(&mut parent, id));
+                    parent[a as usize] = b;
+                }
+            }
+        }
+    }
+    let mut grouped: HashMap<u32, Vec<usize>> = HashMap::new();
+    for &t in triangles {
+        let w = weld[mesh.indices[t * 3] as usize];
+        let root = find(&mut parent, number[&w]);
+        grouped.entry(root).or_default().push(t);
+    }
+    let mut pieces: Vec<Vec<usize>> = grouped.into_values().collect();
+    pieces.sort_by_key(|p| std::cmp::Reverse(p.len()));
+    pieces
+}
+
+fn make_chart(mesh: &Mesh, weld: &[u32], section: u32, triangles: Vec<usize>) -> Chart {
+    let mut local: HashMap<u32, u32> = HashMap::new();
+    let (mut points, mut source, mut corners) = (Vec::new(), Vec::new(), Vec::with_capacity(triangles.len()));
+    for &t in &triangles {
+        let mut c = [0u32; 3];
+        for (k, slot) in c.iter_mut().enumerate() {
+            let original = mesh.indices[t * 3 + k];
+            let next = local.len() as u32;
+            let id = *local.entry(weld[original as usize]).or_insert(next);
+            if id == next {
+                points.push(mesh.vertices[original as usize].position.map(f64::from));
+                source.push(original);
+            }
+            *slot = id;
+        }
+        corners.push(c);
+    }
+    let area = corners
+        .iter()
+        .map(|c: &[u32; 3]| {
+            let n = cross(
+                sub(points[c[1] as usize], points[c[0] as usize]),
+                sub(points[c[2] as usize], points[c[0] as usize]),
+            );
+            dot(n, n).sqrt() * 0.5
+        })
+        .sum();
+    let uv = vec![[0.0; 2]; points.len()];
+    Chart { section, triangles, points, source, corners, uv, area, size: [0.0; 2] }
+}
+
+/// Flattens a piece, cutting it in half across its length and trying again while it folds over itself.
+fn flatten_piece(
+    mesh: &Mesh,
+    weld: &[u32],
+    center: P3,
+    section: u32,
+    triangles: Vec<usize>,
+    depth: u32,
+    out: &mut Vec<Chart>,
+) {
+    let mut chart = make_chart(mesh, weld, section, triangles);
+    flatten(&mut chart);
+    normalize(&mut chart, center);
+    let flips = chart.corners.iter().filter(|c| signed_area(&chart.uv, c) <= 0.0).count();
+    let folded = flips > MAX_FLIPS.max(chart.corners.len() / MAX_FLIP_DIVISOR);
+    if !folded || depth >= MAX_SPLITS || chart.corners.len() < MIN_SPLIT_TRIANGLES {
+        out.push(chart);
+        return;
     }
 
+    // Halve at the median along the piece's longest direction.
+    let n = chart.points.len() as f64;
+    let mean = chart.points.iter().fold([0.0; 3], |m, p| [m[0] + p[0] / n, m[1] + p[1] / n, m[2] + p[2] / n]);
+    let mut axis = [0.577, 0.577, 0.577];
+    for _ in 0..24 {
+        let mut next = [0.0f64; 3];
+        for p in &chart.points {
+            let d = sub(*p, mean);
+            let along = dot(d, axis);
+            for a in 0..3 {
+                next[a] += d[a] * along;
+            }
+        }
+        let length = dot(next, next).sqrt().max(1e-18);
+        axis = next.map(|c| c / length);
+    }
+    let positions: Vec<f64> = chart.corners.iter().map(|c| dot(sub(chart.points[c[0] as usize], mean), axis)).collect();
+    let mut sorted = positions.clone();
+    sorted.sort_by(f64::total_cmp);
+    let median = sorted[sorted.len() / 2];
+    let (mut low, mut high) = (Vec::new(), Vec::new());
+    for (&t, &position) in chart.triangles.iter().zip(&positions) {
+        if position < median {
+            low.push(t);
+        } else {
+            high.push(t);
+        }
+    }
+    for half in [low, high] {
+        for piece in connected_pieces(mesh, weld, &half) {
+            flatten_piece(mesh, weld, center, section, piece, depth + 1, out);
+        }
+    }
+}
+
+fn build_charts(mesh: &Mesh, sections: &Sections, weld: &[u32], center: P3) -> Vec<Chart> {
+    let mut by_section: Vec<Vec<usize>> = vec![Vec::new(); sections.list.len().max(1)];
+    for t in 0..mesh.triangle_count() {
+        by_section[sections.of_triangle[t] as usize].push(t);
+    }
     let mut charts = Vec::new();
     for (section, triangles) in by_section.into_iter().enumerate() {
-        // Pieces are found per section with welded vertices, so old UV seams do not split them.
-        let mut number: HashMap<u32, u32> = HashMap::new();
-        let mut parent: Vec<u32> = Vec::new();
-        for &t in &triangles {
-            let mut first = None;
-            for k in 0..3 {
-                let w = weld[mesh.indices[t * 3 + k] as usize];
-                let next = number.len() as u32;
-                let id = *number.entry(w).or_insert(next);
-                if id == next {
-                    parent.push(id);
-                }
-                match first {
-                    None => first = Some(id),
-                    Some(f) => {
-                        let (a, b) = (find(&mut parent, f), find(&mut parent, id));
-                        parent[a as usize] = b;
-                    }
-                }
-            }
-        }
-        let mut grouped: HashMap<u32, Vec<usize>> = HashMap::new();
-        for &t in &triangles {
-            let w = weld[mesh.indices[t * 3] as usize];
-            let root = find(&mut parent, number[&w]);
-            grouped.entry(root).or_default().push(t);
-        }
-        let mut pieces: Vec<Vec<usize>> = grouped.into_values().collect();
-        pieces.sort_by_key(|p| std::cmp::Reverse(p.len()));
-
-        for tris in pieces {
-            let mut local: HashMap<u32, u32> = HashMap::new();
-            let (mut points, mut source, mut corners) = (Vec::new(), Vec::new(), Vec::with_capacity(tris.len()));
-            for &t in &tris {
-                let mut c = [0u32; 3];
-                for (k, slot) in c.iter_mut().enumerate() {
-                    let original = mesh.indices[t * 3 + k];
-                    let next = local.len() as u32;
-                    let id = *local.entry(weld[original as usize]).or_insert(next);
-                    if id == next {
-                        points.push(mesh.vertices[original as usize].position.map(f64::from));
-                        source.push(original);
-                    }
-                    *slot = id;
-                }
-                corners.push(c);
-            }
-            let area = corners
-                .iter()
-                .map(|c| {
-                    let n = cross(
-                        sub(points[c[1] as usize], points[c[0] as usize]),
-                        sub(points[c[2] as usize], points[c[0] as usize]),
-                    );
-                    dot(n, n).sqrt() * 0.5
-                })
-                .sum();
-            let uv = vec![[0.0; 2]; points.len()];
-            charts.push(Chart {
-                section: section as u32,
-                triangles: tris,
-                points,
-                source,
-                corners,
-                uv,
-                area,
-                size: [0.0; 2],
-            });
+        for piece in connected_pieces(mesh, weld, &triangles) {
+            flatten_piece(mesh, weld, center, section as u32, piece, 0, &mut charts);
         }
     }
     charts
@@ -629,12 +685,7 @@ fn dilate(rgba: &mut [u8], filled: &mut [bool], size: usize, passes: u32) {
 pub fn rearrange(mesh: &Mesh, sections: &Sections, source: &Texture, size: u32) -> Rearranged {
     let (center, radius) = mesh.bounds();
     let weld = crate::sections::weld_vertices(mesh, radius);
-    let mut charts = build_charts(mesh, sections, &weld);
-    let center = center.map(f64::from);
-    for chart in &mut charts {
-        flatten(chart);
-        normalize(chart, center);
-    }
+    let charts = build_charts(mesh, sections, &weld, center.map(f64::from));
 
     // Each section's main piece goes first, in section order, so a part's top sits by its underside.
     let total_area: f64 = charts.iter().map(|c| c.area).sum::<f64>().max(1e-18);
