@@ -374,7 +374,7 @@ pub fn find_sections(mesh: &Mesh, up: [f32; 3]) -> Sections {
     let parts = fields.len();
     let mut side = vec![0u8; count]; // 0 is top or the whole part, 1 is under
     let mut has_sides = vec![false; parts];
-    for p in 0..parts {
+    for (p, part_has_sides) in has_sides.iter_mut().enumerate() {
         let members: Vec<usize> = (0..count).filter(|&t| part[t] == p as u32).collect();
         let weights: Vec<f32> = members.iter().map(|&t| areas[t]).collect();
         let points: Vec<[f32; 3]> = members.iter().map(|&t| centers[t]).collect();
@@ -385,7 +385,7 @@ pub fn find_sections(mesh: &Mesh, up: [f32; 3]) -> Sections {
         if !flat && !long {
             continue;
         }
-        has_sides[p] = true;
+        *part_has_sides = true;
         if dot(part_axis, up) < 0.0 {
             part_axis = part_axis.map(|c| -c);
         }
