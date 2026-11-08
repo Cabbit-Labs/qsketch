@@ -11,6 +11,7 @@ mod clipboard;
 mod dialogs;
 mod files;
 mod fonts;
+mod frame_stats;
 mod panels;
 mod settings;
 mod share;
@@ -27,6 +28,11 @@ mod update;
 mod win_pointer;
 mod wintab;
 mod workspace;
+
+/// Smallest window, in points. Window managers refuse to tile a window whose
+/// minimum size doesn't fit the tile, and the minimum scales with the display:
+/// at 2.4x a quarter of a 4K monitor is only about 800x450 points.
+const MIN_WINDOW_SIZE: [f32; 2] = [480.0, 320.0];
 
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(
@@ -45,12 +51,14 @@ fn main() -> eframe::Result<()> {
     // The window's final geometry goes on the builder so the first painted
     // frame is already the right size: a resize after the window is shown
     // rebuilds the swapchain and flashes a cleared frame.
-    let rect = saved.window_rect.filter(|r| r[2] >= 900.0 && r[3] >= 560.0 && r[0] > -8000.0 && r[1] > -8000.0);
+    let rect = saved
+        .window_rect
+        .filter(|r| r[2] >= MIN_WINDOW_SIZE[0] && r[3] >= MIN_WINDOW_SIZE[1] && r[0] > -8000.0 && r[1] > -8000.0);
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("qsketch")
         .with_app_id("qsketch")
         .with_inner_size(rect.map(|r| [r[2], r[3]]).unwrap_or([1600.0, 950.0]))
-        .with_min_inner_size([900.0, 560.0])
+        .with_min_inner_size(MIN_WINDOW_SIZE)
         .with_decorations(native_frame)
         .with_maximized(startup_cloak::builder_maximized(saved.window_maximized))
         .with_icon(icon);
@@ -78,7 +86,11 @@ fn main() -> eframe::Result<()> {
         persist_window: false,
         wgpu_options: egui_wgpu::WgpuConfiguration {
             surface: egui_wgpu::SurfaceConfig {
-                present_mode: wgpu::PresentMode::AutoVsync,
+                present_mode: if frame_stats::x11_uncapped_present() {
+                    wgpu::PresentMode::AutoNoVsync
+                } else {
+                    wgpu::PresentMode::AutoVsync
+                },
                 ..egui_wgpu::SurfaceConfig::LOW_LATENCY
             },
             ..Default::default()

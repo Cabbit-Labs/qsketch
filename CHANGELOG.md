@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Linux: window snapping works on high-DPI displays. The minimum window size
+  is now 480x320 points; at 2.4x scaling the old 900x560 was larger than half
+  of a 4K monitor, so the window manager refused to tile the window.
+- Linux/X11: no more stutter from vsynced presents, which stalled for about
+  100 ms at a time. X11 now presents without vsync, capped at about 120 fps
+  (set `QSKETCH_VSYNC=1` for the old behavior). `QSKETCH_FRAME_STATS=1` logs
+  frame pacing.
+
 ## 0.68.0 — 2026-10-30
 
 - File ▸ Open Recent ▸ Open All Recent (also "Open last session" on the Home

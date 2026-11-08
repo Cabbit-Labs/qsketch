@@ -2883,6 +2883,7 @@ impl eframe::App for QSketchApp {
         } else if let Some(t) = self.tablet.as_mut() {
             t.pump(&mut self.state);
         }
+        crate::frame_stats::tick();
         self.handle_dropped_files(&ctx);
         self.handle_keyboard(&ctx);
         crate::anim::tick(&mut self.state, &ctx);
