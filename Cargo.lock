@@ -2683,6 +2683,7 @@ dependencies = [
  "minisign-verify",
  "octotablet",
  "parking_lot",
+ "qsketch-3d",
  "qsketch-core",
  "raw-window-handle",
  "rfd",
@@ -2697,6 +2698,15 @@ dependencies = [
  "wgpu",
  "windows-sys 0.59.0",
  "winresource",
+]
+
+[[package]]
+name = "qsketch-3d"
+version = "0.68.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "serde_json",
 ]
 
 [[package]]

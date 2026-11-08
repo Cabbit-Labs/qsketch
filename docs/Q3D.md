@@ -21,7 +21,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 
 | # | Step | Status |
 |---|------|--------|
-| 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | In progress |
+| 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | Done; live update during a stroke unverified |
 | 2 | Sections: list, pick on model or canvas, highlight in both views | Planned |
 | 3 | Overlays: island outlines, tints, labels, mapped pixels only | Planned |
 | 4 | Paint limits: paint only inside a section, through the selection system | Planned |
@@ -37,6 +37,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
   then copied into the panel.
 - Controls: orbit, zoom, spin, texture document (the active one or a fixed one), and rotate 90 degrees, since
   generated models often come in with the wrong axis up.
+- Not yet: the model is not remembered between sessions, and only GLB with an embedded buffer loads.
 
 ### 2. Sections
 

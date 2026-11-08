@@ -379,6 +379,7 @@ actions! {
     ShowInfo => (Window, "Info", ["F8"]),
     ShowPalette => (Window, "Palette", []),
     ShowReference => (Window, "Reference", []),
+    ShowModel => (Window, "Model", []),
     ShowTileset => (Window, "Tileset", []),
     ResetLayout => (Window, "Reset Workspace", []),
     NextDocument => (Window, "Next Document", ["Ctrl+Tab"]),

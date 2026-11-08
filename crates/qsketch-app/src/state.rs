@@ -334,6 +334,8 @@ pub struct AppState {
     pub thumbs: crate::panels::thumbs::ThumbCache,
     /// The Reference panel's picture and view.
     pub reference: crate::panels::reference::Reference,
+    /// The Model panel's mesh and view.
+    pub model: crate::panels::model::Model,
     /// Encodes timelapse frames off the UI thread.
     pub recorder: crate::timelapse::Recorder,
     /// Background work with progress (exports).
@@ -429,6 +431,7 @@ impl AppState {
             render_state: None,
             thumbs: Default::default(),
             reference: Default::default(),
+            model: Default::default(),
             recorder: Default::default(),
             jobs: Vec::new(),
             style_clipboard: None,

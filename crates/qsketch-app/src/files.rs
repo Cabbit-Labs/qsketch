@@ -17,6 +17,7 @@ pub fn open_dialog(state: &mut AppState) {
     let mut all: Vec<&str> = io::DOCUMENT_EXTENSIONS.to_vec();
     all.extend(io::OPEN_ONLY_EXTENSIONS);
     all.extend(image_filter_exts());
+    all.push("glb");
     let dlg = rfd::FileDialog::new()
         .set_title("Open")
         .add_filter("All supported", &all)
@@ -24,7 +25,8 @@ pub fn open_dialog(state: &mut AppState) {
         .add_filter("Aseprite", io::ase::EXTENSIONS)
         .add_filter("Photoshop", &[io::psd::EXTENSION])
         .add_filter("PaintTool SAI 2", &[io::sai2::EXTENSION])
-        .add_filter("Images", &image_filter_exts());
+        .add_filter("Images", &image_filter_exts())
+        .add_filter("3D model", &["glb"]);
     let dlg = match state.settings.general.recent_files.first().and_then(|p| p.parent()) {
         Some(dir) if dir.exists() => dlg.set_directory(dir),
         _ => dlg,
@@ -37,6 +39,12 @@ pub fn open_dialog(state: &mut AppState) {
 }
 
 pub fn open_path(state: &mut AppState, path: &Path) -> Option<DocId> {
+    // A 3D model opens in its panel rather than as a document.
+    if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("glb")) {
+        state.model.open(path);
+        state.show_panel_requests.push(crate::workspace::PanelKind::Model);
+        return None;
+    }
     // Already open? Focus it.
     if let Some(d) = state.docs.iter().find(|d| d.doc.path.as_deref() == Some(path)) {
         let id = d.id;

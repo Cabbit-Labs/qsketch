@@ -43,6 +43,7 @@ pub struct TileUpload {
 
 struct GpuDoc {
     texture: wgpu::Texture,
+    view: wgpu::TextureView,
     uniform: wgpu::Buffer,
     bind_nearest: wgpu::BindGroup,
     bind_linear: wgpu::BindGroup,
@@ -185,12 +186,17 @@ impl CanvasRenderer {
         };
         let bind_nearest = make_bind(&self.sampler_nearest);
         let bind_linear = make_bind(&self.sampler_linear);
-        self.docs.insert(id, GpuDoc { texture, uniform, bind_nearest, bind_linear, tex_w, tex_h, filled: false });
+        self.docs.insert(id, GpuDoc { texture, view, uniform, bind_nearest, bind_linear, tex_w, tex_h, filled: false });
         true
     }
 
     pub fn forget(&mut self, id: DocId) {
         self.docs.remove(&id);
+    }
+
+    /// A document's composite texture and that texture's size, for the Model panel to sample.
+    pub fn doc_texture(&self, id: DocId) -> Option<(wgpu::TextureView, u32, u32)> {
+        self.docs.get(&id).map(|d| (d.view.clone(), d.tex_w, d.tex_h))
     }
 
     /// True when the GPU holds a fully uploaded texture of this size.

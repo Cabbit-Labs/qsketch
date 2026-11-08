@@ -29,10 +29,12 @@ Run the app:
 cargo run -p qsketch
 ```
 
-The workspace has two crates:
+The workspace has these main crates:
 
 - `crates/qsketch-core` — headless document model, raster/brush/compositor
   engine and file formats. No GUI dependencies; keep it that way.
+- `crates/qsketch-3d` — headless mesh loading and camera math for the Model
+  panel. No GUI or GPU code.
 - `crates/qsketch-app` — the `egui`/`eframe`/`wgpu` desktop application.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how they fit together.

@@ -1,0 +1,14 @@
+[package]
+name = "qsketch-3d"
+description = "Headless 3D support for qsketch: mesh loading and camera math"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+bytemuck.workspace = true
+serde_json.workspace = true

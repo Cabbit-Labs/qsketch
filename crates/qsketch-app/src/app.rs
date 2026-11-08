@@ -104,6 +104,9 @@ impl QSketchApp {
         if let Some(rs) = cc.wgpu_render_state.as_ref() {
             let renderer = CanvasRenderer::new(&rs.device, rs.target_format);
             rs.renderer.write().callback_resources.insert(renderer);
+            let model_renderer =
+                crate::panels::model_render::ModelRenderer::new(&rs.device, &rs.queue, rs.target_format);
+            rs.renderer.write().callback_resources.insert(model_renderer);
             state.render_state = Some(rs.clone());
         } else {
             log::error!("wgpu render state missing; canvas rendering disabled");
@@ -1416,6 +1419,7 @@ impl QSketchApp {
                     (Action::ShowBrushSettings, PanelKind::BrushSettings),
                     (Action::ShowInfo, PanelKind::Info),
                     (Action::ShowReference, PanelKind::Reference),
+                    (Action::ShowModel, PanelKind::Model),
                     (Action::ShowTileset, PanelKind::Tileset),
                     (Action::ShowTimeline, PanelKind::Timeline),
                 ] {
@@ -2578,6 +2582,7 @@ impl QSketchApp {
             Action::ShowBrushSettings => self.state.show_panel_requests.push(PanelKind::BrushSettings),
             Action::ShowInfo => self.state.show_panel_requests.push(PanelKind::Info),
             Action::ShowReference => self.state.show_panel_requests.push(PanelKind::Reference),
+            Action::ShowModel => self.state.show_panel_requests.push(PanelKind::Model),
             Action::ShowTileset => self.state.show_panel_requests.push(PanelKind::Tileset),
             Action::ShowTimeline => {
                 if self.workspace.is_panel_open(&PanelKind::Timeline) {

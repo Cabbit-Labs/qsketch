@@ -7,6 +7,8 @@ pub mod history;
 pub mod home;
 pub mod info;
 pub mod layers;
+pub mod model;
+pub mod model_render;
 pub mod navigator;
 pub mod palette;
 pub mod reference;

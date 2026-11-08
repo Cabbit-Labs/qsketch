@@ -27,13 +27,14 @@ pub enum PanelKind {
     BrushSettings,
     Info,
     Reference,
+    Model,
     Tileset,
     Timeline,
 }
 
 impl PanelKind {
     #[allow(dead_code)]
-    pub const PANELS: [PanelKind; 13] = [
+    pub const PANELS: [PanelKind; 14] = [
         PanelKind::Tools,
         PanelKind::Layers,
         PanelKind::History,
@@ -45,6 +46,7 @@ impl PanelKind {
         PanelKind::BrushSettings,
         PanelKind::Info,
         PanelKind::Reference,
+        PanelKind::Model,
         PanelKind::Tileset,
         PanelKind::Timeline,
     ];
@@ -64,6 +66,7 @@ impl PanelKind {
             PanelKind::BrushSettings => "Brush Settings",
             PanelKind::Info => "Info",
             PanelKind::Reference => "Reference",
+            PanelKind::Model => "Model",
             PanelKind::Tileset => "Tileset",
             PanelKind::Timeline => "Timeline",
         }
@@ -76,7 +79,7 @@ impl PanelKind {
             PanelKind::Tools => Some(Section::Tools),
             PanelKind::Layers | PanelKind::History | PanelKind::Timeline => Some(Section::Layers),
             PanelKind::Color | PanelKind::Swatches | PanelKind::Palette | PanelKind::Tileset => Some(Section::Color),
-            PanelKind::Navigator | PanelKind::Info | PanelKind::Reference => Some(Section::View),
+            PanelKind::Navigator | PanelKind::Info | PanelKind::Reference | PanelKind::Model => Some(Section::View),
             PanelKind::Brushes | PanelKind::BrushSettings => Some(Section::Brush),
         }
     }
@@ -96,6 +99,7 @@ impl PanelKind {
             PanelKind::BrushSettings => icons::SLIDERS_HORIZONTAL,
             PanelKind::Info => icons::INFO,
             PanelKind::Reference => icons::IMAGES,
+            PanelKind::Model => icons::CUBE,
             PanelKind::Tileset => icons::SQUARES_FOUR,
             PanelKind::Timeline => icons::FILM_STRIP,
         }
@@ -420,7 +424,7 @@ impl Workspace {
             _ => PanelKind::Home,
         };
         // Brush Settings is a large editor: open it floating rather than squeezing it into a column.
-        if kind != PanelKind::Tools && kind != PanelKind::BrushSettings {
+        if kind != PanelKind::Tools && kind != PanelKind::BrushSettings && kind != PanelKind::Model {
             let found = self
                 .dock
                 .iter_all_tabs()
@@ -682,6 +686,7 @@ impl TabViewer for Viewer<'_> {
             PanelKind::BrushSettings => panels::brush_settings::ui(ui, self.state),
             PanelKind::Info => panels::info::ui(ui, self.state),
             PanelKind::Reference => panels::reference::ui(ui, self.state),
+            PanelKind::Model => panels::model::ui(ui, self.state),
             PanelKind::Tileset => panels::tileset::ui(ui, self.state),
             PanelKind::Timeline => panels::timeline::ui(ui, self.state),
         }
