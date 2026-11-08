@@ -22,7 +22,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 | # | Step | Status |
 |---|------|--------|
 | 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | Done; live update during a stroke unverified |
-| 2 | Sections: list, pick on model or canvas, highlight in both views | Planned |
+| 2 | Sections: find them, list, pick on the model, highlight in both views | Mostly done; picking on the canvas and saving edits still to come |
 | 3 | Overlays: island outlines, tints, labels, mapped pixels only | Planned |
 | 4 | Paint limits: paint only inside a section, through the selection system | Planned |
 | 5 | Paint directly on the 3D model | Later |
@@ -42,7 +42,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 ### 2. Sections
 
 A section is a named set of triangles, drawn from one UV island or several. A triangle's UV gives its canvas pixels,
-so one selection can be shown in both views. Picking on the model is a ray cast against the mesh. Picking on the
+so one selection can be shown in both views. Picking on the model tests the click against the projected triangles. Picking on the
 canvas looks up an ID map rendered in UV space.
 
 ### The sectioner (generated models)
@@ -50,15 +50,22 @@ canvas looks up an ID map rendered in UV space.
 Hand-made models have a few clean islands, and those can be sections as they stand. Generated models do not: the
 peel has 888 islands, and many are scraps a few pixels wide. The sectioner turns that into a handful of useful parts:
 
-1. **Find islands** in UV space, from shared edges, and connected components in 3D, welding positions that UV seams split.
-2. **Absorb scraps:** merge islands below an area threshold into the neighbor they share the longest 3D edge with.
-3. **Find parts:** split the welded surface where it pinches or creases sharply, using the classic approach of growing
-   regions from flat seeds until curvature stops them. The peel's four strips and stem are the test case.
-4. **Split by facing:** within a part, optionally separate surfaces by normal direction ("A top" and "A under").
-5. **Name and keep:** suggest names from position and facing, and let the user rename, merge and split. The result is
-   saved in the sidecar, so the automatic pass runs once and the user's edits are not thrown away.
+1. **Connect the surface:** weld vertices that UV seams split, and link triangles across shared edges. Loose
+   fragments are set aside and later join the nearest part.
+2. **Find the tips:** repeatedly take the surface point farthest from every tip so far, until new ones are close to
+   existing ones. Tips close together in 3D are one end seen from both faces of a thick sheet, and tips that barely
+   reach from the hub are bumps, so those are merged or dropped.
+3. **Assign triangles:** each goes to a tip by surface distance divided by that tip's reach from the hub, so a short
+   protrusion such as a stem keeps its share.
+4. **Split sides:** flat or long parts split by which way each triangle faces, measured against a plane fitted to each
+   slice along the part, because a curved strip has no single plane. Neighbors then vote to clear speckle along the rims.
+5. **Name and keep (not built yet):** let the user rename, merge and split, and save the result in the sidecar so the
+   automatic pass runs once and those edits are kept. For now sections are named "Part A top" and so on, and are
+   recomputed on load.
 
-Sections span islands freely, so a poor UV layout does not limit them. A triangle-level split is allowed where one
+The peel comes out as four strips with a top and underside each, plus the stem and hub: nine sections in about
+0.13 s for 139,428 triangles and 1.1 s for 987,308. `cargo run -p qsketch-3d --example section_report -- model.glb -z`
+prints the result for a model. Sections span islands freely, so a poor UV layout does not limit them. A triangle-level split is allowed where one
 island crosses parts, which is common on these models.
 
 ### 3. Overlays

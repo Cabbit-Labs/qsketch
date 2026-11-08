@@ -3,6 +3,8 @@
 
 pub mod camera;
 pub mod mesh;
+pub mod sections;
 
 pub use camera::{Mat4, Orbit};
 pub use mesh::{Mesh, Vertex};
+pub use sections::{find_sections, Section, Sections};

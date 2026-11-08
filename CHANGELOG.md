@@ -6,6 +6,8 @@ All notable changes to qSketch are documented in this file.
 
 - New Model panel (Window > Model): open a `.glb` and see the document on it as
   a live texture while you paint. `docs/Q3D.md` has the plan for what follows.
+- The Model panel finds a model's parts automatically. Select one by name or by
+  clicking the model to highlight it there and on the canvas.
 - Linux: window snapping works on high-DPI displays. The minimum window size
   is now 480x320 points; at 2.4x scaling the old 900x560 was larger than half
   of a 4K monitor, so the window manager refused to tile the window.

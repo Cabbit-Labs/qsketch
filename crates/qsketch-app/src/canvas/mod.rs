@@ -15,6 +15,7 @@ use crate::tools::{self, CanvasEvent, CanvasInput, ToolKind, ToolSession};
 use render::{CanvasCallback, TileUpload, Uniforms};
 
 pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
+    let model_overlay = state.model.canvas_overlay(doc_id, state.active_doc);
     let avail = ui.available_size_before_wrap();
     let (rect, response) = ui.allocate_exact_size(avail, Sense::click_and_drag());
     if rect.width() < 2.0 || rect.height() < 2.0 {
@@ -509,6 +510,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
 
     // --- overlays ---------------------------------------------------------
     let painter = ui.painter().with_clip_rect(rect);
+    if let Some(overlay) = &model_overlay {
+        overlay.paint(&painter, view, dw as f32, dh as f32);
+    }
     // Document border
     let border_pts = [
         view.doc_to_screen(Pt::new(0.0, 0.0)),

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
 use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
-use qsketch_3d::{Mat4, Mesh, Vertex};
+use qsketch_3d::{Mat4, Mesh, Sections, Vertex};
 use wgpu::util::DeviceExt;
 
 use crate::canvas::render::CanvasRenderer;
@@ -23,14 +23,17 @@ struct Uniforms {
     view_proj: Mat4,
     model: Mat4,
     uv_scale: [f32; 2],
-    _pad: [f32; 2],
+    /// -1 when no section is selected.
+    selected: i32,
+    tint_all: u32,
 }
 
 struct GpuMesh {
     generation: u64,
     vertices: wgpu::Buffer,
-    indices: wgpu::Buffer,
-    index_count: u32,
+    vertex_count: u32,
+    sections: Option<wgpu::Buffer>,
+    sections_generation: u64,
 }
 
 struct Targets {
@@ -114,11 +117,18 @@ impl ModelRenderer {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Vertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
-                })],
+                buffers: &[
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Vertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+                    }),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 4,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![3 => Uint32],
+                    }),
+                ],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -208,17 +218,37 @@ impl ModelRenderer {
         if self.mesh.as_ref().is_some_and(|m| m.generation == generation) {
             return;
         }
+        // One copy of each vertex per triangle, so every triangle can carry its own section.
+        let expanded: Vec<Vertex> = mesh.indices.iter().map(|&i| mesh.vertices[i as usize]).collect();
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("qsketch model vertices"),
-            contents: bytemuck::cast_slice(&mesh.vertices),
+            contents: bytemuck::cast_slice(&expanded),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("qsketch model indices"),
-            contents: bytemuck::cast_slice(&mesh.indices),
-            usage: wgpu::BufferUsages::INDEX,
+        self.mesh = Some(GpuMesh {
+            generation,
+            vertices,
+            vertex_count: expanded.len() as u32,
+            sections: None,
+            sections_generation: u64::MAX,
         });
-        self.mesh = Some(GpuMesh { generation, vertices, indices, index_count: mesh.indices.len() as u32 });
+    }
+
+    fn ensure_sections(&mut self, device: &wgpu::Device, sections: Option<&Sections>, generation: u64) {
+        let Some(mesh) = &mut self.mesh else { return };
+        if mesh.sections.is_some() && mesh.sections_generation == generation {
+            return;
+        }
+        let ids: Vec<u32> = match sections {
+            Some(s) => s.of_triangle.iter().flat_map(|&id| [id, id, id]).collect(),
+            None => vec![0; mesh.vertex_count as usize],
+        };
+        mesh.sections = Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("qsketch model sections"),
+            contents: bytemuck::cast_slice(&ids),
+            usage: wgpu::BufferUsages::VERTEX,
+        }));
+        mesh.sections_generation = generation;
     }
 
     fn ensure_targets(&mut self, device: &wgpu::Device, size: (u32, u32)) {
@@ -258,6 +288,10 @@ impl ModelRenderer {
 pub struct ModelCallback {
     pub mesh: Arc<Mesh>,
     pub generation: u64,
+    pub sections: Option<Arc<Sections>>,
+    pub sections_generation: u64,
+    pub selected: i32,
+    pub tint_all: bool,
     pub view_proj: Mat4,
     pub model: Mat4,
     pub doc: Option<DocId>,
@@ -279,13 +313,20 @@ impl CallbackTrait for ModelCallback {
         let doc = self.doc.and_then(|id| resources.get::<CanvasRenderer>()?.doc_texture(id));
         let Some(r) = resources.get_mut::<ModelRenderer>() else { return Vec::new() };
         r.ensure_mesh(device, &self.mesh, self.generation);
+        r.ensure_sections(device, self.sections.as_deref(), self.sections_generation);
         r.ensure_targets(device, self.size);
 
         let uv_scale = match &doc {
             Some((_, w, h)) => [self.doc_size.0 as f32 / *w as f32, self.doc_size.1 as f32 / *h as f32],
             None => [1.0, 1.0],
         };
-        let uniforms = Uniforms { view_proj: self.view_proj, model: self.model, uv_scale, _pad: [0.0; 2] };
+        let uniforms = Uniforms {
+            view_proj: self.view_proj,
+            model: self.model,
+            uv_scale,
+            selected: self.selected,
+            tint_all: u32::from(self.tint_all),
+        };
         queue.write_buffer(&r.uniform, 0, bytemuck::bytes_of(&uniforms));
 
         let view = doc.as_ref().map_or(&r.blank, |(view, _, _)| view);
@@ -320,8 +361,9 @@ impl CallbackTrait for ModelCallback {
         pass.set_pipeline(&r.pipeline);
         pass.set_bind_group(0, &bind, &[]);
         pass.set_vertex_buffer(0, mesh.vertices.slice(..));
-        pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+        let Some(sections) = &mesh.sections else { return Vec::new() };
+        pass.set_vertex_buffer(1, sections.slice(..));
+        pass.draw(0..mesh.vertex_count, 0..1);
         Vec::new()
     }
 
