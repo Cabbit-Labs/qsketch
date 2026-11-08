@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.69.0 — 2026-11-08
 
 - New Model panel (Window > Model): open a `.glb` and see the document on it as
   a live texture while you paint. `docs/Q3D.md` has the plan for what follows.
