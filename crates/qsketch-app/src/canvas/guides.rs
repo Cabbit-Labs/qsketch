@@ -8,7 +8,7 @@
 //! guides through [`snap_point`] (see `tools::handle`).
 
 use egui::{Align2, Color32, CursorIcon, FontId, Modifiers, Pos2, Rect, Stroke, Ui, Vec2};
-use qsketch_core::{Guide, Pt};
+use qsketch_core::{Guide, GuideDiag, Pt};
 
 use super::view::CanvasView;
 use crate::state::{AppState, DocId, GuideDrag};
@@ -34,10 +34,32 @@ pub fn layout(full: Rect, rulers: bool) -> (Rect, Option<(Rect, Rect)>) {
 
 /// Two screen points on the guide's line.
 fn guide_points(view: &CanvasView, g: &Guide) -> (Pos2, Pos2) {
-    if g.vertical {
-        (view.doc_to_screen(Pt::new(g.pos, 0.0)), view.doc_to_screen(Pt::new(g.pos, 1000.0)))
+    let (p, (dx, dy)) = g.line();
+    (view.doc_to_screen(p), view.doc_to_screen(Pt::new(p.x + dx * 1000.0, p.y + dy * 1000.0)))
+}
+
+/// The ruler corner square (where diagonal guides are pulled from).
+fn corner_rect(top: Rect, left: Rect) -> Rect {
+    Rect::from_min_max(egui::pos2(left.left(), top.top()), egui::pos2(top.left(), left.top()))
+}
+
+/// Point on the guide's line nearest `p` (document space).
+fn project(g: &Guide, p: Pt) -> Pt {
+    let (o, (dx, dy)) = g.line();
+    let t = (p.x - o.x) * dx + (p.y - o.y) * dy;
+    Pt::new(o.x + dx * t, o.y + dy * t)
+}
+
+/// Turn an angle (degrees) and a point into a guide: an axis guide when the
+/// angle is (within a hair of) horizontal or vertical, a diagonal otherwise.
+fn guide_from(angle: f32, at: Pt) -> (bool, f32, Option<GuideDiag>) {
+    let a = angle.rem_euclid(180.0);
+    if a < 0.05 || a > 179.95 {
+        (false, at.y.round(), None)
+    } else if (a - 90.0).abs() < 0.05 {
+        (true, at.x.round(), None)
     } else {
-        (view.doc_to_screen(Pt::new(0.0, g.pos)), view.doc_to_screen(Pt::new(1000.0, g.pos)))
+        (false, 0.0, Some(GuideDiag { x: at.x.round(), y: at.y.round(), angle: a }))
     }
 }
 
@@ -64,8 +86,10 @@ fn guide_pos_at(state: &AppState, view: &CanvasView, vertical: bool, p: Pos2) ->
     }
 }
 
-fn drag_cursor(vertical: bool) -> CursorIcon {
-    if vertical {
+fn drag_cursor(vertical: bool, diag: bool) -> CursorIcon {
+    if diag {
+        CursorIcon::Move
+    } else if vertical {
         CursorIcon::ResizeHorizontal
     } else {
         CursorIcon::ResizeVertical
@@ -92,20 +116,42 @@ pub fn handle(
 
     // A drag in flight: follow the pointer, finish on release.
     if let Some(mut drag) = state.guide_drag.filter(|d| d.doc == doc_id) {
-        let new_pos = match state.doc(doc_id) {
-            Some(entry) => pointer.map(|p| guide_pos_at(state, &entry.view, drag.vertical, p)),
-            None => {
-                state.guide_drag = None;
-                return (false, None);
-            }
+        let Some(entry) = state.doc(doc_id) else {
+            state.guide_drag = None;
+            return (false, None);
         };
-        if let Some(p) = new_pos {
-            drag.pos = p;
+        if let Some(p) = pointer {
+            let d = entry.view.screen_to_doc(p);
+            if mods.shift {
+                // Shift: turn the guide around the point it was grabbed at
+                // (snapped to the fine angle step; Shift+Alt for any angle).
+                let cur = drag.guide();
+                let pivot = *drag.pivot.get_or_insert_with(|| project(&cur, d));
+                let (vx, vy) = (d.x - pivot.x, d.y - pivot.y);
+                let mut angle = cur.angle();
+                if (vx * vx + vy * vy).sqrt() * entry.view.zoom > 6.0 {
+                    angle = vy.atan2(vx).to_degrees();
+                    if !mods.alt {
+                        let step = state.settings.canvas.fine_angle_step.clamp(1.0, 90.0);
+                        angle = (angle / step).round() * step;
+                    }
+                }
+                (drag.vertical, drag.pos, drag.diag) = guide_from(angle, pivot);
+                if drag.diag.is_none() {
+                    drag.pos = if drag.vertical { pivot.x.round() } else { pivot.y.round() };
+                }
+            } else if let Some(dg) = drag.diag {
+                drag.pivot = None;
+                drag.diag = Some(GuideDiag { x: d.x.round(), y: d.y.round(), ..dg });
+            } else {
+                drag.pivot = None;
+                drag.pos = guide_pos_at(state, &entry.view, drag.vertical, p);
+            }
         }
         let on_canvas = pointer.is_some_and(|p| canvas.contains(p));
         if any_down {
             if let Some(g) = drag.index.and_then(|i| state.doc_mut(doc_id).and_then(|e| e.doc.guides.get_mut(i))) {
-                g.pos = drag.pos;
+                *g = drag.guide();
             }
             state.guide_drag = Some(drag);
         } else {
@@ -119,17 +165,17 @@ pub fn handle(
                     }
                     Some(i) => {
                         if let Some(g) = entry.doc.guides.get_mut(i) {
-                            g.pos = drag.pos;
+                            *g = drag.guide();
                         }
                     }
-                    None if on_canvas => entry.doc.guides.push(Guide { vertical: drag.vertical, pos: drag.pos }),
+                    None if on_canvas => entry.doc.guides.push(drag.guide()),
                     None => {}
                 }
             }
             state.guide_drag = None;
         }
         ui.ctx().request_repaint();
-        return (true, Some(drag_cursor(drag.vertical)));
+        return (true, Some(drag_cursor(drag.vertical, drag.diag.is_some())));
     }
 
     // Hover and presses.
@@ -151,7 +197,10 @@ pub fn handle(
                 .min_by(|a, b| a.1.total_cmp(&b.1))
                 .map(|(i, _)| i)
         };
-        let cursor = pointer.and_then(hit).map(|i| drag_cursor(entry.doc.guides[i].vertical));
+        let cursor = pointer.and_then(hit).map(|i| {
+            let g = &entry.doc.guides[i];
+            drag_cursor(g.vertical, g.diag.is_some())
+        });
         let started = events.iter().find_map(|ev| {
             let egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, .. } = ev else {
                 return None;
@@ -159,19 +208,26 @@ pub fn handle(
             let pos = *pos;
             if !locked {
                 if let Some((top, left)) = bands {
+                    // The corner square pulls out a diagonal (45°) guide;
+                    // Shift-drag turns any guide.
+                    if corner_rect(top, left).contains(pos) {
+                        let d = entry.view.screen_to_doc(pos);
+                        let diag = Some(GuideDiag { x: d.x.round(), y: d.y.round(), angle: 45.0 });
+                        return Some(GuideDrag { doc: doc_id, vertical: false, index: None, pos: 0.0, diag, pivot: None });
+                    }
                     if top.contains(pos) {
                         let p = guide_pos_at(state, &entry.view, false, pos);
-                        return Some(GuideDrag { doc: doc_id, vertical: false, index: None, pos: p });
+                        return Some(GuideDrag { doc: doc_id, vertical: false, index: None, pos: p, diag: None, pivot: None });
                     }
                     if left.contains(pos) {
                         let p = guide_pos_at(state, &entry.view, true, pos);
-                        return Some(GuideDrag { doc: doc_id, vertical: true, index: None, pos: p });
+                        return Some(GuideDrag { doc: doc_id, vertical: true, index: None, pos: p, diag: None, pivot: None });
                     }
                 }
             }
             hit(pos).map(|i| {
                 let g = entry.doc.guides[i];
-                GuideDrag { doc: doc_id, vertical: g.vertical, index: Some(i), pos: g.pos }
+                GuideDrag { doc: doc_id, vertical: g.vertical, index: Some(i), pos: g.pos, diag: g.diag, pivot: None }
             })
         });
         (started, cursor)
@@ -180,8 +236,13 @@ pub fn handle(
         state.guide_drag = Some(d);
         state.active_doc = Some(doc_id);
         state.focus_doc_request = Some(doc_id);
-        return (true, Some(drag_cursor(d.vertical)));
+        return (true, Some(drag_cursor(d.vertical, d.diag.is_some())));
     }
+    // Over the corner square: hint that it pulls a guide.
+    let cursor = cursor.or_else(|| {
+        let (top, left) = bands?;
+        (!locked && pointer.is_some_and(|p| corner_rect(top, left).contains(p))).then_some(CursorIcon::Crosshair)
+    });
     (false, cursor)
 }
 
@@ -191,22 +252,46 @@ pub fn snap_point(guides: &[Guide], zoom: f32, p: Pt, tol_px: f32) -> Pt {
     let tol = tol_px / zoom.max(1e-6);
     let mut out = p;
     let (mut best_x, mut best_y) = (tol, tol);
-    for g in guides {
+    let mut snapped_x = None;
+    let mut snapped_y = None;
+    for g in guides.iter().filter(|g| g.diag.is_none()) {
         if g.vertical {
             let d = (g.pos - p.x).abs();
             if d <= best_x {
                 best_x = d;
                 out.x = g.pos;
+                snapped_x = Some(g.pos);
             }
         } else {
             let d = (g.pos - p.y).abs();
             if d <= best_y {
                 best_y = d;
                 out.y = g.pos;
+                snapped_y = Some(g.pos);
             }
         }
     }
-    out
+    // Diagonal guides: the nearest one within reach pulls the point onto it,
+    // keeping an axis snap by landing on the crossing.
+    let mut best = tol;
+    let mut diag_out = None;
+    for g in guides.iter().filter(|g| g.diag.is_some()) {
+        let (o, (dx, dy)) = g.line();
+        let dist = ((p.x - o.x) * -dy + (p.y - o.y) * dx).abs();
+        if dist > best {
+            continue;
+        }
+        let q = match (snapped_x, snapped_y) {
+            (Some(x), _) if dx.abs() > 0.05 => Pt::new(x, o.y + dy * (x - o.x) / dx),
+            (_, Some(y)) if dy.abs() > 0.05 => Pt::new(o.x + dx * (y - o.y) / dy, y),
+            _ => project(g, p),
+        };
+        if (q.x - p.x).hypot(q.y - p.y) <= tol * 1.5 {
+            best = dist;
+            diag_out = Some(q);
+        }
+    }
+    diag_out.unwrap_or(out)
 }
 
 /// Major and minor tick spacing (document pixels) for a zoom: majors every
@@ -254,9 +339,15 @@ pub fn draw(ui: &Ui, state: &AppState, doc_id: DocId, canvas: Rect, bands: Optio
             }
         }
         if let Some(d) = drag {
-            draw_line(&Guide { vertical: d.vertical, pos: d.pos }, accent, 1.5);
+            draw_line(&d.guide(), accent, 1.5);
+            if let Some(pv) = d.pivot {
+                painter.circle_stroke(view.doc_to_screen(pv), 4.0, Stroke::new(1.5, accent));
+            }
             if let Some(p) = ui.input(|i| i.pointer.latest_pos()) {
-                let label = format!("{} {}", if d.vertical { "x" } else { "y" }, d.pos);
+                let label = match d.diag {
+                    Some(g) => format!("{:.0}°  (Shift: turn)", 180.0 - g.angle),
+                    None => format!("{} {}", if d.vertical { "x" } else { "y" }, d.pos),
+                };
                 let galley = painter.layout_no_wrap(label, FontId::proportional(11.0), Color32::WHITE);
                 let rect = Rect::from_min_size(p + egui::vec2(14.0, 14.0), galley.size() + egui::vec2(8.0, 4.0));
                 painter.rect_filled(rect, 3.0, Color32::from_black_alpha(190));
@@ -272,9 +363,14 @@ pub fn draw(ui: &Ui, state: &AppState, doc_id: DocId, canvas: Rect, bands: Optio
     let edge = v.widgets.noninteractive.bg_stroke.color;
     let tick = crate::ui::theme::dim_text(v);
     let text = v.text_color();
-    let corner = Rect::from_min_max(egui::pos2(left.left(), top.top()), egui::pos2(top.left(), left.top()));
+    let corner = corner_rect(top, left);
     for r in [top, left, corner] {
         painter.rect_filled(r, 0.0, fill);
+    }
+    // A little diagonal in the corner square: drag it out for a diagonal guide.
+    {
+        let r = corner.shrink(4.0);
+        painter.line_segment([r.left_bottom(), r.right_top()], Stroke::new(1.0, tick));
     }
     painter.line_segment(
         [egui::pos2(top.left(), top.bottom()), egui::pos2(top.right(), top.bottom())],
@@ -364,7 +460,7 @@ mod tests {
 
     #[test]
     fn snaps_to_the_nearest_guide_per_axis() {
-        let guides = [Guide { vertical: true, pos: 100.0 }, Guide { vertical: false, pos: 40.0 }];
+        let guides = [Guide::axis(true, 100.0), Guide::axis(false, 40.0)];
         let p = snap_point(&guides, 1.0, Pt::new(103.0, 37.0), 8.0);
         assert_eq!((p.x, p.y), (100.0, 40.0));
         // Out of tolerance: untouched.
@@ -373,6 +469,36 @@ mod tests {
         // Tolerance is in screen pixels: at 4× zoom, 3 doc px is 12 screen px.
         let p = snap_point(&guides, 4.0, Pt::new(103.0, 40.0), 8.0);
         assert_eq!(p.x, 103.0);
+    }
+
+    #[test]
+    fn snaps_onto_diagonal_guides() {
+        let diag = Guide { vertical: false, pos: 0.0, diag: Some(GuideDiag { x: 0.0, y: 0.0, angle: 45.0 }) };
+        // Near the y = x line: projected onto it.
+        let p = snap_point(&[diag], 1.0, Pt::new(52.0, 48.0), 8.0);
+        assert!((p.x - 50.0).abs() < 1e-3 && (p.y - 50.0).abs() < 1e-3, "{p:?}");
+        // With a vertical guide too: lands on the crossing.
+        let p = snap_point(&[diag, Guide::axis(true, 60.0)], 1.0, Pt::new(58.0, 62.0), 8.0);
+        assert!((p.x - 60.0).abs() < 1e-3 && (p.y - 60.0).abs() < 1e-3, "{p:?}");
+        // Far away: untouched.
+        let p = snap_point(&[diag], 1.0, Pt::new(80.0, 20.0), 8.0);
+        assert_eq!((p.x, p.y), (80.0, 20.0));
+    }
+
+    #[test]
+    fn near_axis_angles_become_axis_guides() {
+        assert_eq!(guide_from(180.0, Pt::new(3.0, 7.0)), (false, 7.0, None));
+        assert_eq!(guide_from(90.0, Pt::new(3.0, 7.0)), (true, 3.0, None));
+        assert!(guide_from(30.0, Pt::new(3.0, 7.0)).2.is_some());
+    }
+
+    #[test]
+    fn diagonal_guides_survive_json_and_old_files_still_load() {
+        let g = Guide { vertical: false, pos: 0.0, diag: Some(GuideDiag { x: 1.0, y: 2.0, angle: 30.0 }) };
+        let s = serde_json::to_string(&g).unwrap();
+        assert_eq!(serde_json::from_str::<Guide>(&s).unwrap(), g);
+        let old: Guide = serde_json::from_str(r#"{"vertical":true,"pos":5.0}"#).unwrap();
+        assert_eq!(old, Guide::axis(true, 5.0));
     }
 
     #[test]

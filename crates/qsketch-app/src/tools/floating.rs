@@ -215,6 +215,7 @@ pub enum Origin {
     },
 }
 
+#[derive(Clone)]
 pub struct FloatingPaste {
     pub doc: DocId,
     pub layer: usize,
@@ -771,6 +772,60 @@ pub fn begin_smart_paste(state: &mut AppState, doc_id: DocId, li: usize, source:
 /// Free Transform: lift the selected pixels (or the whole layer when nothing
 /// is selected) and start transforming them. A paste already floating just
 /// keeps floating.
+/// Lossless transforms, SAI style: the last committed Free Transform / Move
+/// box is kept (with the original pixels it was drawn from). Transforming
+/// the same pixels again picks that box back up, so rotating or scaling in
+/// several goes resamples the original only once instead of piling up blur.
+#[derive(Clone)]
+pub struct TransformMemory {
+    fp: FloatingPaste,
+    layer_id: qsketch_core::LayerId,
+    /// The layer exactly as the transform left it (tiles are shared, so
+    /// "unchanged since" is a cheap pointer check).
+    result: Raster,
+    /// The selection the transform left behind.
+    sel_after: Option<Arc<Mask>>,
+}
+
+fn same_tiles(a: &Raster, b: &Raster) -> bool {
+    a.width() == b.width()
+        && a.height() == b.height()
+        && (0..a.tile_count()).all(|i| a.tile_ptr_eq(b, i))
+        && a.outside_bounds() == b.outside_bounds()
+}
+
+fn covers_everything(sel: &Mask, w: u32, h: u32) -> bool {
+    (0..h as i32).all(|y| (0..w as i32).all(|x| sel.get(x, y) == 255))
+}
+
+/// The remembered box, if the active layer is still exactly what that
+/// transform produced and the selection still means the same pixels (the
+/// selection it left, or Select All when it had lifted the whole layer).
+fn resumable(state: &AppState, doc_id: DocId) -> Option<FloatingPaste> {
+    if !state.settings.canvas.lossless_transform {
+        return None;
+    }
+    let mem = state.transform_memory.as_ref()?;
+    if mem.fp.doc != doc_id {
+        return None;
+    }
+    let s = state.doc(doc_id)?.doc.state();
+    let li = s.active;
+    let layer = s.layers.get(li)?;
+    if li != mem.fp.layer || layer.props.id != mem.layer_id || !same_tiles(&layer.raster, &mem.result) {
+        return None;
+    }
+    let same_sel = match (&s.selection, &mem.sel_after) {
+        (None, None) => true,
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+        _ => false,
+    };
+    let whole = mem.fp.base.is_empty()
+        && !mem.fp.base.has_outside()
+        && s.selection.as_ref().is_some_and(|m| covers_everything(m, s.width, s.height));
+    (same_sel || whole).then(|| mem.fp.clone())
+}
+
 pub fn begin_transform(state: &mut AppState, doc_id: DocId) -> bool {
     begin_transform_with(state, doc_id, false, "Free Transform")
 }
@@ -792,6 +847,25 @@ pub fn begin_transform_with(state: &mut AppState, doc_id: DocId, duplicate: bool
         state.toasts.push(Level::Info, "The active layer is locked or hidden.");
         return false;
     }
+    if !duplicate {
+        if let Some(mut fp) = resumable(state, doc_id) {
+            let Some(entry) = state.doc_mut(doc_id) else { return false };
+            let sel_now = entry.doc.state().selection.clone();
+            if let Origin::Transform { sel_before, label: l, .. } = &mut fp.origin {
+                *sel_before = sel_now;
+                *l = label;
+            }
+            fp.drag = None;
+            fp.dirty = true;
+            fp.last_dirty = entry.doc.state().rect();
+            state.floating = Some(fp);
+            refresh(state);
+            return true;
+        }
+    }
+    let Some(entry) = state.doc_mut(doc_id) else { return false };
+    let s = entry.doc.state_mut();
+    let li = s.active;
     let sel_before = s.selection.clone();
     let intact = duplicate.then(|| s.layers[li].raster.clone());
     let Some(lifted) = qsketch_core::ops::lift(s, li) else {
@@ -1110,7 +1184,17 @@ fn commit_clipped(state: &mut AppState, clip: Option<IRect>) -> bool {
                 // A box that started as a plain move but was scaled, rotated
                 // or bent deserves a truthful history label.
                 let label = if *label == "Move" && !fp.is_identity() { "Transform" } else { *label };
+                let s = entry.doc.state();
+                let memory = s.layers.get(fp.layer).map(|l| TransformMemory {
+                    fp: fp.clone(),
+                    layer_id: l.props.id,
+                    result: l.raster.clone(),
+                    sel_after: s.selection.clone(),
+                });
                 entry.doc.commit(label);
+                entry.sel_outline = None;
+                state.transform_memory = memory;
+                return true;
             }
         }
         entry.sel_outline = None;
@@ -1756,6 +1840,81 @@ mod tests {
 
     fn sel_bounds(state: &AppState, id: DocId) -> Option<IRect> {
         state.doc(id).unwrap().doc.state().selection.as_ref().map(|m| m.bounds())
+    }
+
+    /// Ctrl+A then a transform/move of a soft-edged blob must lift every
+    /// pixel: nothing (not even a faint edge) may stay behind.
+    #[test]
+    fn select_all_then_move_leaves_nothing_behind() {
+        for filter in [ResizeFilter::Bilinear, ResizeFilter::Nearest, ResizeFilter::RotSprite] {
+            for twice in [false, true] {
+                let mut state = AppState::new(crate::settings::Settings::default());
+                state.settings.canvas.transform_filter = filter;
+                let mut doc = qsketch_core::Document::new(64, 48, None, "blob");
+                {
+                    let r = &mut doc.state_mut().layers[0].raster;
+                    *r = qsketch_core::Raster::new(64, 48);
+                    for y in 0..48 {
+                        for x in 0..64 {
+                            let d = (((x - 20) * (x - 20) + (y - 20) * (y - 20)) as f32).sqrt();
+                            let a = (255.0 * (1.0 - (d - 8.0) / 4.0)).clamp(0.0, 255.0) as u8;
+                            if a > 0 {
+                                r.set_pixel(x, y, Rgba8::new(200, 40, 40, a));
+                            }
+                        }
+                    }
+                }
+                let id = state.add_document(doc);
+                let mut off = (0, 0);
+                for (step, (gx, gy, tx, ty)) in [(20.0f32, 20.0f32, 37.3f32, 24.6f32), (37.0, 25.0, 30.0, 33.0)].into_iter().enumerate() {
+                    if step == 1 && !twice {
+                        break;
+                    }
+                    crate::tools::select_all(&mut state, id);
+                    assert!(begin_transform(&mut state, id));
+                    assert!(handle(&mut state, id, CanvasEvent::Press(input(gx, gy))));
+                    assert!(handle(&mut state, id, CanvasEvent::Drag(input(tx, ty))));
+                    refresh(&mut state);
+                    assert!(handle(&mut state, id, CanvasEvent::Release(input(tx, ty))));
+                    assert!(commit(&mut state));
+                    off.0 += round_i32(tx - gx);
+                    off.1 += round_i32(ty - gy);
+                }
+                let after = &state.doc(id).unwrap().doc.state().layers[0].raster;
+                for y in 0..48 {
+                    for x in 0..64 {
+                        let (sx, sy) = (x - off.0, y - off.1);
+                        let d = (((sx - 20) * (sx - 20) + (sy - 20) * (sy - 20)) as f32).sqrt();
+                        if d > 13.0 {
+                            assert_eq!(after.get_pixel(x, y).a, 0, "{filter:?} twice={twice}: left behind at {x},{y}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn transforming_again_picks_up_the_last_box() {
+        let (mut state, id) = selected_noise(IRect::new(8, 6, 40, 30));
+        let original = state.doc(id).unwrap().doc.state().layers[0].raster.crop(IRect::new(8, 6, 40, 30));
+        assert!(begin_transform(&mut state, id));
+        state.floating.as_mut().unwrap().set_angle(30.0);
+        refresh(&mut state);
+        assert!(commit(&mut state));
+        // Same pixels, same selection: the box comes back with the original
+        // pixels and its 30° still on.
+        assert!(begin_transform(&mut state, id));
+        let fp = state.floating.as_ref().unwrap();
+        assert!((fp.angle.to_degrees() - 30.0).abs() < 0.01, "{}", fp.angle.to_degrees());
+        assert_eq!(fp.source.to_rgba(), original.to_rgba());
+        assert!(commit(&mut state));
+        // Painting in between breaks the link: a fresh lift.
+        state.doc_mut(id).unwrap().doc.state_mut().layers[0].raster.set_pixel(1, 1, Rgba8::BLACK);
+        state.doc_mut(id).unwrap().doc.commit("paint");
+        assert!(begin_transform(&mut state, id));
+        assert!(state.floating.as_ref().unwrap().angle.abs() < 1e-4);
+        assert!(cancel(&mut state));
     }
 
     #[test]

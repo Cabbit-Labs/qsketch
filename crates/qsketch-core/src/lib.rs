@@ -52,7 +52,7 @@ pub use brush::{AngleControl, BrushSettings, PaintMode, StabilizerMode, StrokeEn
 pub use clipboard::ClipImage;
 pub use color::{Hsv, Rgba8};
 pub use composite::{Composite, TileSet};
-pub use document::{DocMeta, DocState, DocStats, Document, Guide, LoadedMeta};
+pub use document::{DocMeta, DocState, DocStats, Document, Guide, GuideDiag, LoadedMeta};
 pub use filter::Filter;
 pub use geom::{IRect, Pt};
 pub use history::{History, HistoryEntry};

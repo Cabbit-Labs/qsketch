@@ -156,6 +156,17 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                 last_pos = Some(*pos);
                 let capturing_now = state.session.is_some() && state.session_doc == Some(doc_id);
                 if *pressed {
+                    // SAI style: a right-click while a stroke (or line/shape
+                    // drag) is held cancels it, leaving the Shift+click
+                    // anchor where it was.
+                    if capturing_now
+                        && *button == egui::PointerButton::Secondary
+                        && matches!(state.session, Some(ToolSession::Stroke { .. }) | Some(ToolSession::Shape { .. }))
+                    {
+                        state.cancel_session();
+                        ui.ctx().request_repaint();
+                        continue;
+                    }
                     // Clicks on the quick brush popup belong to it, not the canvas.
                     if popup_rect.is_some_and(|r| r.contains(*pos)) {
                         continue;
@@ -854,10 +865,7 @@ fn draw_shift_line_preview(
     {
         return;
     }
-    let Some((d, from)) = state.last_stroke_end else { return };
-    if d != doc_id {
-        return;
-    }
+    let Some(from) = state.shift_anchor(doc_id) else { return };
     let Some(brush) = state.brush_for_tool(tool) else { return };
     let Some(entry) = state.doc(doc_id) else { return };
     let view = &entry.view;
