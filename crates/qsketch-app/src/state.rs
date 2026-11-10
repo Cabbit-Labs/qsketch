@@ -214,6 +214,17 @@ pub struct GuideDrag {
     pub index: Option<usize>,
     /// Current document coordinate along the guide's axis.
     pub pos: f32,
+    /// Set while the guide is diagonal (pulled off the ruler corner, or
+    /// turned with Shift).
+    pub diag: Option<qsketch_core::GuideDiag>,
+    /// The point a Shift-drag turns the guide around.
+    pub pivot: Option<Pt>,
+}
+
+impl GuideDrag {
+    pub fn guide(&self) -> qsketch_core::Guide {
+        qsketch_core::Guide { vertical: self.vertical, pos: self.pos, diag: self.diag }
+    }
 }
 
 /// A color pick in flight (the Eyedropper tool, or a pick chord held down).
@@ -244,10 +255,17 @@ pub struct AppState {
     pub session: Option<ToolSession>,
     pub session_doc: Option<DocId>,
     pub tool_opts: ToolOptions,
-    /// End point of the last stroke for Shift+click straight lines.
+    /// End point of the stroke in progress (the pointer's last position).
     pub last_stroke_end: Option<(DocId, Pt)>,
+    /// Shift+click line anchors, SAI style: the end of each committed stroke,
+    /// keyed by the history state it produced. The anchor is the end of the
+    /// newest stroke at or before the current undo position, so a cancelled
+    /// (Esc) stroke never moves it and an undone line puts it back.
+    pub stroke_anchors: HashMap<(DocId, u64), Pt>,
     /// Pasted pixels awaiting placement (move/scale) before commit.
     pub floating: Option<crate::tools::floating::FloatingPaste>,
+    /// The last committed transform box, for lossless re-transforms.
+    pub transform_memory: Option<crate::tools::floating::TransformMemory>,
     /// Text being typed/placed by the Text tool.
     pub text_edit: Option<crate::tools::text::TextEdit>,
     /// Fonts for the Text tool (loaded lazily).
@@ -380,7 +398,9 @@ impl AppState {
             session_doc: None,
             tool_opts: ToolOptions::default(),
             last_stroke_end: None,
+            stroke_anchors: HashMap::new(),
             floating: None,
+            transform_memory: None,
             text_edit: None,
             fonts: Default::default(),
             brush_popup: None,
@@ -505,6 +525,29 @@ impl AppState {
             }
         }
         self.session_doc = None;
+    }
+
+    /// Where a Shift+click line starts: the end of the newest committed
+    /// stroke that is still in the document's undo history at or before the
+    /// current state.
+    pub fn shift_anchor(&self, doc_id: DocId) -> Option<Pt> {
+        let entry = self.doc(doc_id)?;
+        let h = &entry.doc.history;
+        let entries = h.entries();
+        let cur = h.cursor().min(entries.len().saturating_sub(1));
+        entries[..=cur].iter().rev().find_map(|e| self.stroke_anchors.get(&(doc_id, e.id)).copied())
+    }
+
+    /// Remember `end` as the anchor of the state the document is now at
+    /// (call right after a stroke commits).
+    pub fn record_stroke_anchor(&mut self, doc_id: DocId, end: Pt) {
+        let Some(entry) = self.doc(doc_id) else { return };
+        let h = &entry.doc.history;
+        let (id, oldest) = (h.current_id(), h.entries().first().map(|e| e.id).unwrap_or(0));
+        // Forget anchors of states that fell off the history (or of closed tabs).
+        let live: Vec<DocId> = self.docs.iter().map(|d| d.id).collect();
+        self.stroke_anchors.retain(|(d, i), _| live.contains(d) && (*d != doc_id || *i >= oldest));
+        self.stroke_anchors.insert((doc_id, id), end);
     }
 
     pub fn doc(&self, id: DocId) -> Option<&DocEntry> {

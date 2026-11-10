@@ -815,6 +815,9 @@ pub struct CanvasSettings {
     pub pick_loupe_pixels: u32,
     /// Shift snaps lines to 45°; Shift+Ctrl snaps to this finer step (degrees).
     pub fine_angle_step: f32,
+    /// Transforming the same pixels again picks the last transform box back
+    /// up, so repeated rotates/scales resample the original only once.
+    pub lossless_transform: bool,
 }
 
 impl Default for CanvasSettings {
@@ -863,6 +866,7 @@ impl Default for CanvasSettings {
             pick_loupe_size: 86.0,
             pick_loupe_pixels: 13,
             fine_angle_step: 15.0,
+            lossless_transform: true,
         }
     }
 }

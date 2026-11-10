@@ -478,6 +478,46 @@ pub fn civil_from_unix(secs: u64) -> (i64, u32, u32, u32, u32) {
 pub struct Guide {
     pub vertical: bool,
     pub pos: f32,
+    /// A diagonal guide instead: when set, `vertical`/`pos` are ignored
+    /// (older versions read the file as the axis guide they describe).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diag: Option<GuideDiag>,
+}
+
+/// A diagonal guide: the line through (`x`, `y`) at `angle` degrees
+/// (document space, y down, 0° = along +x, 0 <= angle < 180).
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct GuideDiag {
+    pub x: f32,
+    pub y: f32,
+    pub angle: f32,
+}
+
+impl Guide {
+    pub fn axis(vertical: bool, pos: f32) -> Self {
+        Self { vertical, pos, diag: None }
+    }
+
+    /// A point on the line and its unit direction, in document pixels.
+    pub fn line(&self) -> (crate::Pt, (f32, f32)) {
+        match self.diag {
+            Some(d) => {
+                let a = d.angle.to_radians();
+                (crate::Pt::new(d.x, d.y), (a.cos(), a.sin()))
+            }
+            None if self.vertical => (crate::Pt::new(self.pos, 0.0), (0.0, 1.0)),
+            None => (crate::Pt::new(0.0, self.pos), (1.0, 0.0)),
+        }
+    }
+
+    /// The guide's angle in degrees (0 horizontal, 90 vertical).
+    pub fn angle(&self) -> f32 {
+        match self.diag {
+            Some(d) => d.angle,
+            None if self.vertical => 90.0,
+            None => 0.0,
+        }
+    }
 }
 
 /// What a `.qsk` stores besides the layer stack, borrowed from a
