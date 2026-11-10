@@ -2,6 +2,18 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Slimmer, denser interface for high-DPI displays: a smaller, more even text
+  scale (11.5 pt body, 9.5 pt small), tighter spacing and widget heights,
+  slimmer dock tab bars and dividers, and thinner panel margins.
+- The Tools strip is now at most two columns wide and pinned to just what two
+  columns need, so the canvas gets the space; its separators are thinner.
+- Layer rows are shorter (32 pt rows, 40x30 thumbnails), so more layers fit in
+  the panel.
+- The status bar hint no longer draws over the layer name on narrow windows; it
+  is shortened with an ellipsis instead.
+
 ## 0.69.0 — 2026-11-08
 
 - New Model panel (Window > Model): open a `.glb` and see the document on it as

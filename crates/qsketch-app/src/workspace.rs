@@ -469,9 +469,11 @@ impl Workspace {
     }
 
     /// Keep the Tools strip a fixed pixel width instead of a fraction of the
-    /// window, so it doesn't balloon on wide displays.
+    /// window, so it doesn't balloon on wide displays. The width is what two
+    /// columns of tool buttons need (the strip never holds more) plus the
+    /// panel's own margins, so there is no dead space either side of them.
     fn pin_tools_width(&mut self) {
-        const TOOLS_WIDTH: f32 = 86.0;
+        const TOOLS_WIDTH: f32 = 66.0;
         let Some(path) = self.find(&PanelKind::Tools) else { return };
         if path.surface != SurfaceIndex::main() {
             return;

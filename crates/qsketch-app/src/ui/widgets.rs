@@ -48,7 +48,26 @@ pub fn small_button(ui: &mut Ui, text: impl Into<String>) -> Response {
 /// outlined box under the pointer, the accent frame when selected. The box
 /// never changes size between states, so a row of these holds still.
 pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected: bool) -> Response {
-    let r = icon_box(ui, glyph, size, size * 0.62, selected, None);
+    let r = icon_box(ui, glyph, Vec2::splat(size), size * 0.62, selected, None);
+    if tooltip.is_empty() {
+        r
+    } else {
+        r.on_hover_text(tooltip)
+    }
+}
+
+/// [`icon_button`] with a box that need not be square: `size` is the box and
+/// the glyph keeps `glyph_size`, so a strip can widen its buttons to fill its
+/// width without the icons growing.
+pub fn icon_button_sized(
+    ui: &mut Ui,
+    glyph: &str,
+    tooltip: &str,
+    size: Vec2,
+    glyph_size: f32,
+    selected: bool,
+) -> Response {
+    let r = icon_box(ui, glyph, size, glyph_size, selected, None);
     if tooltip.is_empty() {
         r
     } else {
@@ -62,12 +81,12 @@ pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected:
 fn icon_box(
     ui: &mut Ui,
     glyph: &str,
-    size: f32,
+    size: Vec2,
     glyph_size: f32,
     selected: bool,
     glyph_color: Option<Color32>,
 ) -> Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), selected, glyph));
     if ui.is_rect_visible(rect) {
         let v = ui.visuals();
@@ -113,7 +132,7 @@ pub fn icon_toggle(
     // themes dim and normal text can be nearly the same color, and several
     // toggles use one glyph for both states.
     let off_color = crate::ui::theme::dim_text(ui.visuals());
-    let mut r = icon_box(ui, glyph, size, size * 0.7, *value, (!*value).then_some(off_color));
+    let mut r = icon_box(ui, glyph, Vec2::splat(size), size * 0.7, *value, (!*value).then_some(off_color));
     if r.clicked() {
         *value = !*value;
         // Callers rely on `changed()`, which a plain click does not set.

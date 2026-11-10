@@ -1574,7 +1574,7 @@ impl QSketchApp {
     fn status_bar(&mut self, ui: &mut Ui) {
         let bar = ui.max_rect();
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 12.0;
+            ui.spacing_mut().item_spacing.x = 8.0;
             if let Some(d) = self.state.active() {
                 // View group (zoom, size, cursor) then document group (layer, selection),
                 // each tagged with its section color.
@@ -1678,7 +1678,7 @@ impl QSketchApp {
                     ToolKind::Crop => "Enter: apply · Esc: cancel",
                     _ => "",
                 };
-                ui.label(RichText::new(hint).weak().small());
+                ui.add(egui::Label::new(RichText::new(hint).weak().small()).truncate());
                 if self.state.pen.pressure.is_some() {
                     ui.label(
                         RichText::new(format!("{} {:.0}%", icons::PEN, self.state.pen.pressure.unwrap_or(0.0) * 100.0))
@@ -1702,7 +1702,7 @@ impl QSketchApp {
             return;
         }
         let painter = ui.painter();
-        let font = egui::FontId::proportional(12.0);
+        let font = egui::FontId::proportional(11.5);
         let galley = painter.layout_no_wrap(msg.clone(), font, ui.visuals().strong_text_color());
         let pad = egui::vec2(10.0, 3.0);
         let size = galley.size() + pad * 2.0;
@@ -2965,7 +2965,7 @@ impl eframe::App for QSketchApp {
                 ui.add_space(1.0);
                 crate::panels::tool_options::ui(ui, &mut self.state);
             });
-            let status_frame = egui::Frame::new().fill(p.panel_alt).inner_margin(egui::Margin::symmetric(6, 1));
+            let status_frame = egui::Frame::new().fill(p.panel_alt).inner_margin(egui::Margin::symmetric(4, 0));
             egui::Panel::bottom("status_bar").frame(status_frame).show(ui, |ui| {
                 texture(ui);
                 self.status_bar(ui);

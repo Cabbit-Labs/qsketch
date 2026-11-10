@@ -323,20 +323,42 @@ pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32, shape: UiShape) {
     visuals.indent_has_left_vline = false;
 
     let mut style = Style { visuals, ..Style::default() };
+    // One type scale for the whole chrome. egui's defaults (12.5 body, 18
+    // heading) read large once the UI is zoomed, so everything steps down a
+    // notch and the sizes sit close together: panels use Body, captions and
+    // hints use Small, and only dialog titles use Heading.
+    {
+        use egui::{
+            FontFamily::{Monospace, Proportional},
+            FontId, TextStyle,
+        };
+        style.text_styles = [
+            (TextStyle::Small, FontId::new(9.5, Proportional)),
+            (TextStyle::Body, FontId::new(11.5, Proportional)),
+            (TextStyle::Button, FontId::new(11.5, Proportional)),
+            (TextStyle::Heading, FontId::new(14.0, Proportional)),
+            (TextStyle::Monospace, FontId::new(11.0, Monospace)),
+        ]
+        .into();
+    }
     if angular {
+        style.spacing.item_spacing = egui::vec2(3.0, 2.0);
+        style.spacing.button_padding = egui::vec2(4.0, 1.0);
+        style.spacing.interact_size = egui::vec2(20.0, 16.0);
+        style.spacing.menu_margin = egui::Margin::same(3);
+        style.spacing.window_margin = egui::Margin::same(5);
+    } else {
         style.spacing.item_spacing = egui::vec2(4.0, 2.0);
-        style.spacing.button_padding = egui::vec2(5.0, 1.0);
-        style.spacing.interact_size = egui::vec2(24.0, 17.0);
+        style.spacing.button_padding = egui::vec2(4.0, 1.0);
+        style.spacing.interact_size = egui::vec2(22.0, 17.0);
         style.spacing.menu_margin = egui::Margin::same(4);
         style.spacing.window_margin = egui::Margin::same(6);
-    } else {
-        style.spacing.item_spacing = egui::vec2(5.0, 3.0);
-        style.spacing.button_padding = egui::vec2(5.0, 2.0);
-        style.spacing.interact_size = egui::vec2(26.0, 18.0);
-        style.spacing.menu_margin = egui::Margin::same(6);
-        style.spacing.window_margin = egui::Margin::same(8);
     }
-    style.spacing.slider_width = 110.0;
+    style.spacing.slider_width = 100.0;
+    style.spacing.slider_rail_height = 5.0;
+    style.spacing.icon_spacing = 3.0;
+    style.spacing.scroll.bar_width = 6.0;
+    style.spacing.scroll.floating_width = 3.0;
     style.interaction.selectable_labels = false;
     style.interaction.tooltip_delay = 0.4;
     style.animation_time = 0.08;
@@ -349,7 +371,7 @@ pub fn apply(ctx: &egui::Context, p: &Palette, scale: f32, shape: UiShape) {
 /// Dock-area style consistent with the palette.
 pub fn dock_style(ctx: &egui::Context, p: &Palette) -> egui_dock::Style {
     let mut s = egui_dock::Style::from_egui(&ctx.global_style());
-    s.tab_bar.height = 22.0;
+    s.tab_bar.height = 19.0;
     s.tab_bar.bg_fill = p.panel_alt;
     s.tab_bar.hline_color = p.border;
     s.tab.active.bg_fill = p.panel;
@@ -363,8 +385,9 @@ pub fn dock_style(ctx: &egui::Context, p: &Palette) -> egui_dock::Style {
     s.tab.focused.text_color = p.text;
     s.tab.tab_body.bg_fill = p.panel;
     s.tab.tab_body.stroke = Stroke::new(1.0, p.border);
-    s.tab.tab_body.inner_margin = egui::Margin::same(4);
-    s.separator.width = 3.0;
+    s.tab.tab_body.inner_margin = egui::Margin::same(2);
+    s.separator.width = 2.0;
+    s.separator.extra_interact_width = 4.0;
     s.separator.color_idle = p.bg;
     s.separator.color_hovered = p.accent_dim;
     s.separator.color_dragged = p.accent;
@@ -377,13 +400,13 @@ pub fn dock_style(ctx: &egui::Context, p: &Palette) -> egui_dock::Style {
     s.dock_area_padding = None;
     s.main_surface_border_stroke = Stroke::NONE;
     if angular() {
-        s.tab_bar.height = 21.0;
+        s.tab_bar.height = 19.0;
         s.tab.active.corner_radius = CornerRadius::ZERO;
         s.tab.inactive.corner_radius = CornerRadius::ZERO;
         s.tab.hovered.corner_radius = CornerRadius::ZERO;
         s.tab.focused.corner_radius = CornerRadius::ZERO;
         s.tab.tab_body.corner_radius = CornerRadius::ZERO;
-        s.tab.tab_body.inner_margin = egui::Margin::same(3);
+        s.tab.tab_body.inner_margin = egui::Margin::same(2);
         s.main_surface_border_rounding = CornerRadius::ZERO;
     }
     s

@@ -10,12 +10,19 @@ use crate::ui::widgets::{checkerboard, rgba_to_color32};
 
 pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let width = ui.available_width();
-    let btn = 28.0;
-    // A strip holds one or two columns; a wider spot (a SAI-style column)
-    // fills its width with a grid.
-    let columns = if width < 64.0 { 1 } else { (((width - 8.0) / (btn + 2.0)) as usize).clamp(2, 10) };
+    // One or two columns, never more: a wide spot just gets more room around
+    // the grid. Buttons flex between 24 and 28 pt so a strip that is a few
+    // points short still holds two columns instead of dropping to one.
+    const GAP: f32 = 1.0;
+    const EDGE: f32 = 2.0;
+    let columns = if width < 52.0 { 1 } else { 2 };
+    const BTN: f32 = 28.0;
+    let btn = ((width - EDGE - GAP * (columns as f32 - 1.0)) / columns as f32).clamp(24.0, BTN);
     let mut last_group = None;
-    ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
+    ui.spacing_mut().item_spacing = egui::vec2(GAP, GAP);
+    // A floating scroll bar takes no width, so the grid above stays exact
+    // when a short window makes the strip scroll.
+    ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
     let current = state.tool;
     let mut clicked: Option<ToolKind> = None;
     // (dragged, index in `order` to insert at after removal)
@@ -38,7 +45,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         })
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(2.0);
+                ui.add_space(1.0);
                 let mut row: Vec<ToolKind> = Vec::new();
                 let dropped = &mut dropped;
                 let mut flush = |ui: &mut Ui, row: &mut Vec<ToolKind>, clicked: &mut Option<ToolKind>| {
@@ -93,13 +100,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 for &t in order.iter() {
                     if dividers && last_group.is_some_and(|g| g != t.group()) {
                         flush(ui, &mut row, &mut clicked);
-                        ui.add_space(2.0);
+                        ui.add_space(1.0);
                         let (r, _) =
-                            ui.allocate_exact_size(egui::vec2(ui.available_width(), 2.0), egui::Sense::hover());
-                        let w = (columns as f32 * btn + (columns as f32 - 1.0) * 2.0).min(r.width());
-                        let line = egui::Rect::from_center_size(r.center(), egui::vec2(w, 2.0));
-                        crate::ui::chrome::fill_box(ui.painter(), line, 1.0, palette.border);
-                        ui.add_space(2.0);
+                            ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+                        let w = (columns as f32 * btn + (columns as f32 - 1.0)).min(r.width());
+                        let line = egui::Rect::from_center_size(r.center(), egui::vec2(w, 1.0));
+                        crate::ui::chrome::fill_box(ui.painter(), line, 0.0, palette.border);
+                        ui.add_space(1.0);
                     }
                     last_group = Some(t.group());
                     row.push(t);
@@ -108,12 +115,12 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     }
                 }
                 flush(ui, &mut row, &mut clicked);
-                ui.add_space(4.0);
-                let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 2.0), egui::Sense::hover());
-                let w = (columns as f32 * btn + (columns as f32 - 1.0) * 2.0).min(r.width());
-                let line = egui::Rect::from_center_size(r.center(), egui::vec2(w, 2.0));
-                crate::ui::chrome::fill_box(ui.painter(), line, 1.0, palette.border);
-                ui.add_space(3.0);
+                ui.add_space(2.0);
+                let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+                let w = (columns as f32 * btn + (columns as f32 - 1.0)).min(r.width());
+                let line = egui::Rect::from_center_size(r.center(), egui::vec2(w, 1.0));
+                crate::ui::chrome::fill_box(ui.painter(), line, 0.0, palette.border);
+                ui.add_space(2.0);
                 color_pair(ui, state);
             });
         });
@@ -161,8 +168,8 @@ pub fn tool_order(saved: &[ToolKind]) -> Vec<ToolKind> {
 
 /// Foreground/background swatch pair with swap and reset buttons.
 pub fn color_pair(ui: &mut Ui, state: &mut AppState) {
-    let size = 40.0;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(size + 8.0, size + 8.0), egui::Sense::hover());
+    let size = 32.0;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size + 6.0, size + 6.0), egui::Sense::hover());
     let p = ui.painter();
     let bg_rect =
         egui::Rect::from_min_size(rect.min + egui::vec2(size * 0.35, size * 0.35), egui::Vec2::splat(size * 0.65));

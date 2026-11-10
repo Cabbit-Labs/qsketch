@@ -230,11 +230,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         .filter(|&i| s.ancestors(i).iter().all(|g| s.layer_by_id(*g).is_some_and(|l| l.props.expanded)))
         .map(|i| (i, s.depth(i)))
         .collect();
-    // Layer rows are just tall enough for the 36 px thumbnail; group rows
+    // Layer rows are just tall enough for the 30 px thumbnail; group rows
     // carry only a folder glyph and take a lot less.
-    let row_h = 38.0;
-    let group_h = 26.0;
-    let footer_h = 34.0;
+    let row_h = 32.0;
+    let group_h = 22.0;
+    let footer_h = 30.0;
     let list_h = (ui.available_height() - footer_h).max(row_h);
     let rename_id = ui.id().with("rename");
     let mut renaming = ui.data(|d| d.get_temp::<Rename>(rename_id));
@@ -439,29 +439,29 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 x += 12.0;
                 // Centered in the (shorter) group row rather than sized for a
                 // thumbnail row.
-                let folder_rect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 0.0), egui::vec2(36.0, row_h));
+                let folder_rect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 0.0), egui::vec2(28.0, row_h));
                 ui.painter().text(
                     folder_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     if expanded { icons::FOLDER_OPEN } else { icons::FOLDER },
-                    egui::FontId::new(22.0, ICON_FAMILY()),
+                    egui::FontId::new(18.0, ICON_FAMILY()),
                     if dim { crate::ui::theme::dim_text(ui.visuals()) } else { ui.visuals().text_color() },
                 );
-                x += 40.0;
+                x += 32.0;
             } else {
-                let thumb_rect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 1.0), egui::vec2(48.0, 36.0));
+                let thumb_rect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 1.0), egui::vec2(40.0, 30.0));
                 let adjustment = s.layers[i].is_adjustment();
                 let draw = if adjustment {
                     // Adjustment layers have no pixels to show: a half-filled
                     // circle stands for them (click it for the settings).
-                    let draw = egui::Rect::from_center_size(thumb_rect.center(), egui::vec2(36.0, 36.0));
+                    let draw = egui::Rect::from_center_size(thumb_rect.center(), egui::vec2(30.0, 30.0));
                     let adj = ui.interact(draw, ui.id().with(("adj_thumb", layer_id)), Sense::click());
                     crate::ui::chrome::fill_box(ui.painter(), draw, 3.0, ui.visuals().extreme_bg_color);
                     ui.painter().text(
                         draw.center(),
                         egui::Align2::CENTER_CENTER,
                         icons::CIRCLE_HALF,
-                        egui::FontId::new(20.0, ICON_FAMILY()),
+                        egui::FontId::new(17.0, ICON_FAMILY()),
                         if adj.hovered() {
                             ui.visuals().text_color()
                         } else {
@@ -506,10 +506,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 if pix_resp.clicked() && s.layers[i].mask.is_some() {
                     mask_click = Some((i, None));
                 }
-                x += 54.0;
+                x += 45.0;
                 // The mask thumbnail: click to paint the mask instead of the pixels.
                 if let Some(m) = s.layers[i].mask.as_ref() {
-                    let mrect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 2.0), egui::vec2(36.0, 36.0));
+                    let mrect = egui::Rect::from_min_size(row_rect.min + egui::vec2(x, 1.0), egui::vec2(30.0, 30.0));
                     let mtex = thumbs.get(&ctx, (doc_id, layer_id | (1 << 63)), generation, [36, 36], |mx| {
                         crate::panels::thumbs::mask_thumb(m, mx)
                     });
@@ -543,7 +543,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     if mresp.on_hover_text("Layer mask — click to paint it (white reveals, black hides)").clicked() {
                         mask_click = Some((i, Some(layer_id)));
                     }
-                    x += 40.0;
+                    x += 34.0;
                 }
             }
 
