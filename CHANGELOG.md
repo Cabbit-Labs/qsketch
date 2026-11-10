@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.70.0 — 2026-11-10
 
 - Slimmer, denser interface for high-DPI displays: a smaller, more even text
   scale (11.5 pt body, 9.5 pt small), tighter spacing and widget heights,
