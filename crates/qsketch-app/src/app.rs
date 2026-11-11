@@ -1341,6 +1341,7 @@ impl QSketchApp {
                         }
                     }
                     ui.separator();
+                    self.menu_item(ui, Action::CenterGuides, true);
                     self.menu_item(ui, Action::ClearGuides, has_guides);
                 });
                 let tiled = self.state.settings.canvas.tiled;
@@ -2509,6 +2510,11 @@ impl QSketchApp {
             Action::ToggleLockGuides => {
                 let c = &mut self.state.settings.canvas;
                 c.lock_guides = !c.lock_guides;
+            }
+            Action::CenterGuides => {
+                if let Some(id) = self.state.active_doc {
+                    crate::canvas::guides::add_center_guides(&mut self.state, id);
+                }
             }
             Action::ClearGuides => {
                 if let Some(d) = self.state.active_mut() {
