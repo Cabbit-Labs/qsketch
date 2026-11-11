@@ -100,6 +100,17 @@ fn drag_cursor(vertical: bool, diag: bool) -> CursorIcon {
 /// the pointer this frame (tools must not see the events) and the cursor to
 /// show while the pointer is over a grabbable guide.
 #[allow(clippy::too_many_arguments)]
+/// Guides through the middle of the canvas, both ways (skips ones already there).
+pub fn add_center_guides(state: &mut AppState, doc_id: DocId) {
+    let Some(e) = state.doc_mut(doc_id) else { return };
+    let (w, h) = (e.doc.state().width as f32, e.doc.state().height as f32);
+    for g in [Guide::axis(true, (w / 2.0).round()), Guide::axis(false, (h / 2.0).round())] {
+        if !e.doc.guides.contains(&g) {
+            e.doc.guides.push(g);
+        }
+    }
+}
+
 pub fn handle(
     ui: &Ui,
     state: &mut AppState,
@@ -211,6 +222,10 @@ pub fn handle(
                     // The corner square pulls out a diagonal (45°) guide;
                     // Shift-drag turns any guide.
                     if corner_rect(top, left).contains(pos) {
+                        // Double-click the corner: a guide through the middle each way.
+                        if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
+                            return Some(GuideDrag { doc: doc_id, vertical: true, index: Some(usize::MAX), pos: 0.0, diag: None, pivot: None });
+                        }
                         let d = entry.view.screen_to_doc(pos);
                         let diag = Some(GuideDiag { x: d.x.round(), y: d.y.round(), angle: 45.0 });
                         return Some(GuideDrag { doc: doc_id, vertical: false, index: None, pos: 0.0, diag, pivot: None });
@@ -233,6 +248,12 @@ pub fn handle(
         (started, cursor)
     };
     if let Some(d) = started {
+        if d.index == Some(usize::MAX) {
+            // the corner double-click
+            state.guide_drag = None;
+            add_center_guides(state, doc_id);
+            return (true, None);
+        }
         state.guide_drag = Some(d);
         state.active_doc = Some(doc_id);
         state.focus_doc_request = Some(doc_id);

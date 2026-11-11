@@ -244,6 +244,7 @@ actions! {
     ToggleSnapToGuides => (View, "Snap to Guides", ["Ctrl+Alt+;"]),
     ToggleLockGuides => (View, "Lock Guides", []),
     ClearGuides => (View, "Clear Guides", []),
+    CenterGuides => (View, "Add Center Guides", []),
     TiledOff => (View, "Tiled: Off", []),
     TiledX => (View, "Tiled: Across", []),
     TiledY => (View, "Tiled: Down", []),
