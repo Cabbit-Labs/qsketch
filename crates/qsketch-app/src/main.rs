@@ -55,7 +55,7 @@ fn main() -> eframe::Result<()> {
         .window_rect
         .filter(|r| r[2] >= MIN_WINDOW_SIZE[0] && r[3] >= MIN_WINDOW_SIZE[1] && r[0] > -8000.0 && r[1] > -8000.0);
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("qsketch")
+        .with_title("qsketch (Ash build)")
         .with_app_id("qsketch")
         .with_inner_size(rect.map(|r| [r[2], r[3]]).unwrap_or([1600.0, 950.0]))
         .with_min_inner_size(MIN_WINDOW_SIZE)
