@@ -115,7 +115,10 @@ pub fn default_filter(a: Action, fg: Rgba8, bg: Rgba8) -> Option<Filter> {
 /// foreground / background, as in Photoshop.
 pub fn open(state: &mut AppState, action: Action) {
     let Some(mut f) = filter_for_action(state, action) else { return };
-    if let Some(m) = state.filter_memory.get(f.id()) {
+    // SAI style: relative adjustments open back at zero, so another pass
+    // stacks on top instead of showing the last one's values.
+    const START_AT_ZERO: [&str; 3] = ["brightness_contrast", "hue_saturation", "color_balance"];
+    if let Some(m) = state.filter_memory.get(f.id()).filter(|_| !START_AT_ZERO.contains(&f.id())) {
         f = m.clone();
     }
     match &mut f {
