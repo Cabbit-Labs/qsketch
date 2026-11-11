@@ -287,6 +287,7 @@ pub struct AppState {
     /// Brush used by the Selection Brush tool (paints selection, not pixels).
     pub select_brush: BrushSettings,
     pub smudge: BrushSettings,
+    pub blur: BrushSettings,
     pub clone: BrushSettings,
     pub presets: Vec<BrushSettings>,
 
@@ -415,6 +416,7 @@ impl AppState {
             eraser: paint.eraser,
             select_brush: paint.select_brush,
             smudge: paint.smudge,
+            blur: paint.blur,
             clone: paint.clone,
             presets: paint.presets,
             clipboard: None,
@@ -680,6 +682,7 @@ impl AppState {
             ToolKind::Eraser => Some(&self.eraser),
             ToolKind::SelectBrush => Some(&self.select_brush),
             ToolKind::Smudge => Some(&self.smudge),
+            ToolKind::Blur => Some(&self.blur),
             ToolKind::Clone => Some(&self.clone),
             _ => None,
         }
@@ -697,6 +700,7 @@ impl AppState {
             ToolKind::Eraser => Some(&mut self.eraser),
             ToolKind::SelectBrush => Some(&mut self.select_brush),
             ToolKind::Smudge => Some(&mut self.smudge),
+            ToolKind::Blur => Some(&mut self.blur),
             ToolKind::Clone => Some(&mut self.clone),
             _ => None,
         }
@@ -729,6 +733,7 @@ impl AppState {
         self.settings.paint.eraser = self.eraser.clone();
         self.settings.paint.select_brush = self.select_brush.clone();
         self.settings.paint.smudge = self.smudge.clone();
+        self.settings.paint.blur = self.blur.clone();
         self.settings.paint.clone = self.clone.clone();
         self.settings.paint.presets = self.presets.clone();
         self.settings.paint.foreground = self.fg;

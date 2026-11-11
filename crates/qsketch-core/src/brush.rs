@@ -583,6 +583,9 @@ pub enum PaintMode {
     /// Smudge: the dab picks up what is under it and drags it along; the
     /// brush's opacity is the strength (1 = never fades, never picks up).
     Smudge,
+    /// Blur (SAI's blur tool): softens what is under the brush in place;
+    /// opacity is the strength, the brush size sets how far it blends.
+    Blur,
     /// Shading ink: every pixel under the brush whose color is in the ramp
     /// (see [`StrokeEngine::with_shading`]) steps one slot along it; other
     /// pixels are left alone. Each pixel steps once per stroke.
@@ -1146,10 +1149,95 @@ impl StrokeEngine {
         rect
     }
 
+    /// Blur: mix each pixel under the dab toward a box blur of its
+    /// surroundings (premultiplied, so soft edges don't darken).
+    fn blur_dab(&mut self, raster: &mut Raster, center: Pt, pressure: f32) -> IRect {
+        let r = self.radius_for(pressure).max(0.5);
+        let strength = self.settings.opacity.clamp(0.0, 1.0) * self.alpha_for(pressure).clamp(0.0, 1.0) * 0.6;
+        if strength <= 0.0 {
+            return IRect::EMPTY;
+        }
+        let k = ((r * 0.18).round() as i32).clamp(1, 12);
+        let rect = IRect::from_f32_bounds(center.x - r - 1.0, center.y - r - 1.0, center.x + r + 1.0, center.y + r + 1.0)
+            .intersect(&raster.rect());
+        if rect.is_empty() {
+            return IRect::EMPTY;
+        }
+        // premultiplied snapshot of the dab area plus a k-pixel margin
+        let src = rect.expand(k).intersect(&raster.rect());
+        let (sw, sh) = (src.w as usize, src.h as usize);
+        let mut a = vec![[0.0f32; 4]; sw * sh];
+        for y in 0..sh {
+            for x in 0..sw {
+                let c = raster.get_pixel(src.x + x as i32, src.y + y as i32).to_f32();
+                a[y * sw + x] = [c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]];
+            }
+        }
+        // separable box blur (edge pixels average over what exists)
+        let mut b = vec![[0.0f32; 4]; sw * sh];
+        for y in 0..sh {
+            for x in 0..sw {
+                let (x0, x1) = (x.saturating_sub(k as usize), (x + k as usize).min(sw - 1));
+                let mut acc = [0.0f32; 4];
+                for xx in x0..=x1 {
+                    for c in 0..4 {
+                        acc[c] += a[y * sw + xx][c];
+                    }
+                }
+                let n = (x1 - x0 + 1) as f32;
+                b[y * sw + x] = [acc[0] / n, acc[1] / n, acc[2] / n, acc[3] / n];
+            }
+        }
+        let hardness = self.settings.hardness;
+        let feather = self.settings.edge_feather;
+        let aa = self.settings.antialias;
+        let sel = self.selection.clone();
+        let alpha_lock = self.alpha_lock;
+        for y in rect.y..rect.bottom() {
+            for x in rect.x..rect.right() {
+                let (px, py) = (x as f32 + 0.5 - center.x, y as f32 + 0.5 - center.y);
+                let mut f = falloff((px * px + py * py).sqrt(), r, hardness, aa, feather) * strength;
+                if let Some(m) = &sel {
+                    f *= m.coverage(x, y);
+                }
+                if f <= 0.0 {
+                    continue;
+                }
+                let (sx, sy) = ((x - src.x) as usize, (y - src.y) as usize);
+                let (y0, y1) = (sy.saturating_sub(k as usize), (sy + k as usize).min(sh - 1));
+                let mut acc = [0.0f32; 4];
+                for yy in y0..=y1 {
+                    for c in 0..4 {
+                        acc[c] += b[yy * sw + sx][c];
+                    }
+                }
+                let n = (y1 - y0 + 1) as f32;
+                let bl = [acc[0] / n, acc[1] / n, acc[2] / n, acc[3] / n];
+                let cur = a[sy * sw + sx];
+                let mut pm = [0.0f32; 4];
+                for c in 0..4 {
+                    pm[c] = cur[c] + (bl[c] - cur[c]) * f;
+                }
+                let alpha = if alpha_lock { cur[3] } else { pm[3] };
+                let out = if pm[3] > 1e-6 {
+                    [pm[0] / pm[3], pm[1] / pm[3], pm[2] / pm[3], alpha]
+                } else {
+                    [0.0, 0.0, 0.0, if alpha_lock { cur[3] } else { 0.0 }]
+                };
+                raster.set_pixel(x, y, Rgba8::from_f32(out));
+            }
+        }
+        self.dirty_total = self.dirty_total.union(&rect);
+        rect
+    }
+
     fn dab(&mut self, raster: &mut Raster, center: Pt, pressure: f32) -> IRect {
         self.dabs += 1;
         if self.mode == PaintMode::Smudge {
             return self.smudge_dab(raster, center, pressure);
+        }
+        if self.mode == PaintMode::Blur {
+            return self.blur_dab(raster, center, pressure);
         }
         let shape = self.shape_for(pressure);
         let alpha = self.flow_for(pressure);
@@ -1385,7 +1473,7 @@ impl StrokeEngine {
                         PaintMode::Paint | PaintMode::Clone => {
                             src_over(of, [color[0], color[1], color[2], color[3] * eff])
                         }
-                        PaintMode::Smudge => continue,
+                        PaintMode::Smudge | PaintMode::Blur => continue,
                         PaintMode::Shade => {
                             let Some((ramp, dir)) = &self.shade else { continue };
                             if o.a == 0 || eff < 0.5 {
@@ -1976,6 +2064,24 @@ mod tests {
         let p = r3.get_pixel(23, 32);
         assert!(p.a > 0 && p.r > 100, "red got dragged right: {p:?}");
         assert_eq!(r3.get_pixel(5, 32), Rgba8::new(255, 0, 0, 255), "untouched area stays");
+    }
+
+    #[test]
+    fn blur_softens_an_edge_without_dark_fringes() {
+        let l = layer();
+        let mut base = l.clone();
+        base.raster.fill_rect(IRect::new(0, 0, 32, 64), Rgba8::new(255, 0, 0, 255));
+        let s = BrushSettings { size: 24.0, opacity: 1.0, flow: 1.0, spacing: 0.1, hardness: 0.5, ..BrushSettings::default() };
+        let mut e = StrokeEngine::new(s, PaintMode::Blur, Rgba8::BLACK, &base, None);
+        let mut r = base.raster.clone();
+        for y in 20..44 {
+            e.extend(&mut r, StrokeSample { pos: Pt::new(32.0, y as f32), pressure: 1.0 });
+        }
+        e.finish(&mut r);
+        let (inside, outside) = (r.get_pixel(30, 32), r.get_pixel(33, 32));
+        assert!(inside.a < 255 && outside.a > 0, "edge got soft: {inside:?} {outside:?}");
+        assert!(outside.r > 200 && outside.g < 20, "no dark fringe, still red: {outside:?}");
+        assert_eq!(r.get_pixel(5, 5), Rgba8::new(255, 0, 0, 255), "untouched area stays");
     }
 
     #[test]

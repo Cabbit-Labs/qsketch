@@ -1674,7 +1674,7 @@ impl QSketchApp {
                     }
                     ToolKind::Move => "Shift: constrain · arrows: nudge",
                     ToolKind::Clone => "Alt+click: set source · [ ]: size · Shift+click: straight line (Shift+Ctrl: snap angle)",
-                    ToolKind::Smudge => "Opacity = strength · [ ]: size",
+                    ToolKind::Smudge | ToolKind::Blur => "Opacity = strength · [ ]: size",
                     ToolKind::Zoom => "click: zoom in · Alt+click: zoom out · drag: scrub",
                     ToolKind::Crop => "Enter: apply · Esc: cancel",
                     _ => "",
