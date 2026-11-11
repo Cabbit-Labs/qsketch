@@ -153,6 +153,7 @@ fn brush_for(state: &AppState, tool: ToolKind) -> (BrushSettings, PaintMode, Rgb
         ToolKind::Eraser => (state.eraser.clone(), PaintMode::Erase, state.bg),
         ToolKind::SelectBrush => (state.select_brush.clone(), PaintMode::Paint, Rgba8::WHITE),
         ToolKind::Smudge => (state.smudge.clone(), PaintMode::Smudge, state.fg),
+        ToolKind::Blur => (state.blur.clone(), PaintMode::Blur, state.fg),
         ToolKind::Clone => (state.clone.clone(), PaintMode::Clone, state.fg),
         _ => (state.brush.clone(), PaintMode::Paint, state.fg),
     }
@@ -315,6 +316,7 @@ fn stroke_label(tool: ToolKind) -> &'static str {
         ToolKind::Eraser => "Eraser",
         ToolKind::SelectBrush => "Selection Brush",
         ToolKind::Smudge => "Smudge",
+        ToolKind::Blur => "Blur",
         ToolKind::Clone => "Clone Stamp",
         ToolKind::Line => "Line",
         ToolKind::Rect => "Rectangle",

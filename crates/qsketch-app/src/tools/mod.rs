@@ -56,6 +56,8 @@ pub enum ToolKind {
     RotateView,
     /// Drags colors along under the pointer.
     Smudge,
+    /// Softens what is under the brush (SAI's blur tool).
+    Blur,
     /// Paints pixels copied from a source point (Alt+click sets it).
     Clone,
     /// Named rectangles (9-slice UI parts, sprite sub-images).
@@ -67,7 +69,7 @@ pub enum ToolKind {
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 27] = [
+    pub const ALL: [ToolKind; 28] = [
         ToolKind::Move,
         ToolKind::RectSelect,
         ToolKind::EllipseSelect,
@@ -83,6 +85,7 @@ impl ToolKind {
         ToolKind::Pencil,
         ToolKind::Eraser,
         ToolKind::Smudge,
+        ToolKind::Blur,
         ToolKind::Clone,
         ToolKind::Tile,
         ToolKind::Fill,
@@ -115,6 +118,7 @@ impl ToolKind {
             ToolKind::Pencil => "Pencil",
             ToolKind::Eraser => "Eraser",
             ToolKind::Smudge => "Smudge",
+            ToolKind::Blur => "Blur",
             ToolKind::Clone => "Clone Stamp",
             ToolKind::Fill => "Paint Bucket",
             ToolKind::Gradient => "Gradient",
@@ -153,6 +157,7 @@ impl ToolKind {
             ToolKind::Pencil => icons::PENCIL_SIMPLE,
             ToolKind::Eraser => icons::ERASER,
             ToolKind::Smudge => icons::HAND_SWIPE_RIGHT,
+            ToolKind::Blur => icons::DROP,
             ToolKind::Clone => icons::STAMP,
             ToolKind::Fill => icons::PAINT_BUCKET,
             ToolKind::Gradient => icons::GRADIENT,
@@ -182,6 +187,7 @@ impl ToolKind {
             | ToolKind::Pencil
             | ToolKind::Eraser
             | ToolKind::Smudge
+            | ToolKind::Blur
             | ToolKind::Clone
             | ToolKind::Tile => 3,
             ToolKind::Fill | ToolKind::Gradient => 4,
@@ -204,7 +210,7 @@ impl ToolKind {
     }
 
     pub fn is_paint(self) -> bool {
-        matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Clone)
+        matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Blur | ToolKind::Clone)
     }
 
     /// Tools that lay down brush dabs. The Rectangle and Ellipse tools do not:
@@ -218,6 +224,7 @@ impl ToolKind {
                 | ToolKind::Line
                 | ToolKind::SelectBrush
                 | ToolKind::Smudge
+                | ToolKind::Blur
                 | ToolKind::Clone
         )
     }
@@ -248,7 +255,7 @@ impl ToolKind {
             ToolKind::Hand => egui::CursorIcon::Grab,
             ToolKind::Zoom => egui::CursorIcon::ZoomIn,
             ToolKind::RotateView => egui::CursorIcon::Alias,
-            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Clone => {
+            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Blur | ToolKind::Clone => {
                 egui::CursorIcon::None
             }
             ToolKind::Text => egui::CursorIcon::Text,
@@ -704,6 +711,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         | ToolKind::Eraser
         | ToolKind::SelectBrush
         | ToolKind::Smudge
+        | ToolKind::Blur
         | ToolKind::Clone => paint::handle_stroke(state, doc_id, tool, ev),
         ToolKind::Line | ToolKind::Rect | ToolKind::Ellipse => paint::handle_shape(state, doc_id, tool, ev),
         ToolKind::Contour => contour::handle(state, doc_id, ev),
