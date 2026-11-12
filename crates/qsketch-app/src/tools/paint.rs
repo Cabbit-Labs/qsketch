@@ -153,6 +153,7 @@ fn brush_for(state: &AppState, tool: ToolKind) -> (BrushSettings, PaintMode, Rgb
         ToolKind::Eraser => (state.eraser.clone(), PaintMode::Erase, state.bg),
         ToolKind::SelectBrush => (state.select_brush.clone(), PaintMode::Paint, Rgba8::WHITE),
         ToolKind::Smudge => (state.smudge.clone(), PaintMode::Smudge, state.fg),
+        ToolKind::Blur => (state.blur.clone(), PaintMode::Blur, state.fg),
         ToolKind::Clone => (state.clone.clone(), PaintMode::Clone, state.fg),
         _ => (state.brush.clone(), PaintMode::Paint, state.fg),
     }
@@ -315,6 +316,7 @@ fn stroke_label(tool: ToolKind) -> &'static str {
         ToolKind::Eraser => "Eraser",
         ToolKind::SelectBrush => "Selection Brush",
         ToolKind::Smudge => "Smudge",
+        ToolKind::Blur => "Blur",
         ToolKind::Clone => "Clone Stamp",
         ToolKind::Line => "Line",
         ToolKind::Rect => "Rectangle",
@@ -513,11 +515,11 @@ pub fn handle_stroke(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: Ca
                 return;
             }
             // Shift+click: straight line from the end of the previous stroke.
+            // The anchor is the end of the last stroke that was actually
+            // committed (and not undone), so an Esc-cancelled or undone line
+            // can simply be tried again from the same start point.
             let shift_line = if inp.mods.shift {
-                match state.last_stroke_end {
-                    Some((d, p)) if d == doc_id => Some(p),
-                    _ => None,
-                }
+                state.shift_anchor(doc_id)
             } else {
                 None
             };
@@ -553,7 +555,7 @@ pub fn handle_stroke(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: Ca
                 let to = constrain_brush_line(state, from, inp.doc, inp.mods);
                 feed_line(state, doc_id, from, to, inp.pressure);
                 state.last_stroke_end = Some((doc_id, to));
-                finish(state, doc_id, tool);
+                finish_and_anchor(state, doc_id, tool);
                 return;
             }
             feed_raw(state, doc_id, StrokeSample { pos: inp.doc, pressure: inp.pressure });
@@ -567,10 +569,25 @@ pub fn handle_stroke(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: Ca
         }
         CanvasEvent::Release(_) => {
             if matches!(state.session, Some(ToolSession::Stroke { .. })) {
-                finish(state, doc_id, tool);
+                finish_and_anchor(state, doc_id, tool);
             }
         }
         _ => {}
+    }
+}
+
+/// Finish the stroke and, if it committed a new history state, make its end
+/// the Shift+click anchor for that state.
+fn finish_and_anchor(state: &mut AppState, doc_id: DocId, tool: ToolKind) {
+    let before = state.doc(doc_id).map(|d| d.doc.history.current_id());
+    finish(state, doc_id, tool);
+    let after = state.doc(doc_id).map(|d| d.doc.history.current_id());
+    if after.is_some() && after != before {
+        if let Some((d, end)) = state.last_stroke_end {
+            if d == doc_id {
+                state.record_stroke_anchor(doc_id, end);
+            }
+        }
     }
 }
 

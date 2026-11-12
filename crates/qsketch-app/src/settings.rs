@@ -815,6 +815,9 @@ pub struct CanvasSettings {
     pub pick_loupe_pixels: u32,
     /// Shift snaps lines to 45°; Shift+Ctrl snaps to this finer step (degrees).
     pub fine_angle_step: f32,
+    /// Transforming the same pixels again picks the last transform box back
+    /// up, so repeated rotates/scales resample the original only once.
+    pub lossless_transform: bool,
 }
 
 impl Default for CanvasSettings {
@@ -863,6 +866,7 @@ impl Default for CanvasSettings {
             pick_loupe_size: 86.0,
             pick_loupe_pixels: 13,
             fine_angle_step: 15.0,
+            lossless_transform: true,
         }
     }
 }
@@ -1135,6 +1139,7 @@ pub struct PaintSettings {
     pub eraser: BrushSettings,
     pub select_brush: BrushSettings,
     pub smudge: BrushSettings,
+    pub blur: BrushSettings,
     pub clone: BrushSettings,
     pub presets: Vec<BrushSettings>,
     pub foreground: Rgba8,
@@ -1166,6 +1171,15 @@ impl Default for PaintSettings {
                 opacity: 0.7,
                 flow: 1.0,
                 spacing: 0.08,
+                ..BrushSettings::preset("Soft Round")
+            },
+            blur: BrushSettings {
+                name: "Blur".into(),
+                size: 40.0,
+                hardness: 0.3,
+                opacity: 0.6,
+                flow: 1.0,
+                spacing: 0.1,
                 ..BrushSettings::preset("Soft Round")
             },
             clone: BrushSettings { name: "Clone".into(), size: 40.0, ..BrushSettings::preset("Soft Round") },

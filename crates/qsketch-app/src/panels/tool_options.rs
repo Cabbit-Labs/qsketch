@@ -49,7 +49,8 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
             | ToolKind::Line
             | ToolKind::Rect
             | ToolKind::Ellipse
-            | ToolKind::Smudge => brush_options(ui, state, tool),
+            | ToolKind::Smudge
+            | ToolKind::Blur => brush_options(ui, state, tool),
             ToolKind::Clone => {
                 brush_options(ui, state, tool);
                 group(ui, &theme, Section::Tools, |ui| {

@@ -16,7 +16,9 @@ use std::time::Duration;
 
 use crate::settings::Settings;
 
-const LOCK_FILE: &str = "instance.lock";
+/// Ash build: its own lock, so a running official qSketch never swallows
+/// this build's launch (they share the config folder).
+const LOCK_FILE: &str = "instance-ash.lock";
 /// Set on the process the updater relaunches: the old instance is on its way
 /// out, so never try to hand files to it.
 pub const NO_FORWARD_ENV: &str = "QSKETCH_NO_FORWARD";

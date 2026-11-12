@@ -257,8 +257,8 @@ impl QSketchApp {
         }
         // Window title
         let title = match self.state.active() {
-            Some(d) => format!("{} — qsketch", d.doc.display_title()),
-            None => "qsketch".to_string(),
+            Some(d) => format!("{} — qsketch (Ash build)", d.doc.display_title()),
+            None => "qsketch (Ash build)".to_string(),
         };
         if title != self.last_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
@@ -1341,6 +1341,7 @@ impl QSketchApp {
                         }
                     }
                     ui.separator();
+                    self.menu_item(ui, Action::CenterGuides, true);
                     self.menu_item(ui, Action::ClearGuides, has_guides);
                 });
                 let tiled = self.state.settings.canvas.tiled;
@@ -1673,7 +1674,7 @@ impl QSketchApp {
                     }
                     ToolKind::Move => "Shift: constrain · arrows: nudge",
                     ToolKind::Clone => "Alt+click: set source · [ ]: size · Shift+click: straight line (Shift+Ctrl: snap angle)",
-                    ToolKind::Smudge => "Opacity = strength · [ ]: size",
+                    ToolKind::Smudge | ToolKind::Blur => "Opacity = strength · [ ]: size",
                     ToolKind::Zoom => "click: zoom in · Alt+click: zoom out · drag: scrub",
                     ToolKind::Crop => "Enter: apply · Esc: cancel",
                     _ => "",
@@ -2509,6 +2510,11 @@ impl QSketchApp {
             Action::ToggleLockGuides => {
                 let c = &mut self.state.settings.canvas;
                 c.lock_guides = !c.lock_guides;
+            }
+            Action::CenterGuides => {
+                if let Some(id) = self.state.active_doc {
+                    crate::canvas::guides::add_center_guides(&mut self.state, id);
+                }
             }
             Action::ClearGuides => {
                 if let Some(d) = self.state.active_mut() {
