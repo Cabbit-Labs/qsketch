@@ -210,7 +210,10 @@ impl ToolKind {
     }
 
     pub fn is_paint(self) -> bool {
-        matches!(self, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Blur | ToolKind::Clone)
+        matches!(
+            self,
+            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Blur | ToolKind::Clone
+        )
     }
 
     /// Tools that lay down brush dabs. The Rectangle and Ellipse tools do not:
@@ -255,9 +258,12 @@ impl ToolKind {
             ToolKind::Hand => egui::CursorIcon::Grab,
             ToolKind::Zoom => egui::CursorIcon::ZoomIn,
             ToolKind::RotateView => egui::CursorIcon::Alias,
-            ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Blur | ToolKind::Clone => {
-                egui::CursorIcon::None
-            }
+            ToolKind::Brush
+            | ToolKind::Pencil
+            | ToolKind::Eraser
+            | ToolKind::Smudge
+            | ToolKind::Blur
+            | ToolKind::Clone => egui::CursorIcon::None,
             ToolKind::Text => egui::CursorIcon::Text,
             _ => egui::CursorIcon::Crosshair,
         }

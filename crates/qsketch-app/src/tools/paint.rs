@@ -518,11 +518,7 @@ pub fn handle_stroke(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: Ca
             // The anchor is the end of the last stroke that was actually
             // committed (and not undone), so an Esc-cancelled or undone line
             // can simply be tried again from the same start point.
-            let shift_line = if inp.mods.shift {
-                state.shift_anchor(doc_id)
-            } else {
-                None
-            };
+            let shift_line = if inp.mods.shift { state.shift_anchor(doc_id) } else { None };
             // Clone stamp: the offset from where the stroke starts to the
             // source point, kept between strokes when aligned.
             if tool == ToolKind::Clone {

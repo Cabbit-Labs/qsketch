@@ -56,25 +56,6 @@ pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, size: f32, selected:
     }
 }
 
-/// [`icon_button`] with a box that need not be square: `size` is the box and
-/// the glyph keeps `glyph_size`, so a strip can widen its buttons to fill its
-/// width without the icons growing.
-pub fn icon_button_sized(
-    ui: &mut Ui,
-    glyph: &str,
-    tooltip: &str,
-    size: Vec2,
-    glyph_size: f32,
-    selected: bool,
-) -> Response {
-    let r = icon_box(ui, glyph, size, glyph_size, selected, None);
-    if tooltip.is_empty() {
-        r
-    } else {
-        r.on_hover_text(tooltip)
-    }
-}
-
 /// The shared painter behind [`icon_button`] and [`icon_toggle`]: a fixed
 /// square that senses clicks, with a state-dependent fill / outline and a
 /// centred glyph (`glyph_color` overrides the state's text color).

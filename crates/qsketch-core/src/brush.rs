@@ -1158,8 +1158,9 @@ impl StrokeEngine {
             return IRect::EMPTY;
         }
         let k = ((r * 0.18).round() as i32).clamp(1, 12);
-        let rect = IRect::from_f32_bounds(center.x - r - 1.0, center.y - r - 1.0, center.x + r + 1.0, center.y + r + 1.0)
-            .intersect(&raster.rect());
+        let rect =
+            IRect::from_f32_bounds(center.x - r - 1.0, center.y - r - 1.0, center.x + r + 1.0, center.y + r + 1.0)
+                .intersect(&raster.rect());
         if rect.is_empty() {
             return IRect::EMPTY;
         }
@@ -2071,7 +2072,14 @@ mod tests {
         let l = layer();
         let mut base = l.clone();
         base.raster.fill_rect(IRect::new(0, 0, 32, 64), Rgba8::new(255, 0, 0, 255));
-        let s = BrushSettings { size: 24.0, opacity: 1.0, flow: 1.0, spacing: 0.1, hardness: 0.5, ..BrushSettings::default() };
+        let s = BrushSettings {
+            size: 24.0,
+            opacity: 1.0,
+            flow: 1.0,
+            spacing: 0.1,
+            hardness: 0.5,
+            ..BrushSettings::default()
+        };
         let mut e = StrokeEngine::new(s, PaintMode::Blur, Rgba8::BLACK, &base, None);
         let mut r = base.raster.clone();
         for y in 20..44 {

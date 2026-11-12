@@ -96,10 +96,6 @@ fn drag_cursor(vertical: bool, diag: bool) -> CursorIcon {
     }
 }
 
-/// Pointer handling for rulers and guides. Returns whether a guide drag owns
-/// the pointer this frame (tools must not see the events) and the cursor to
-/// show while the pointer is over a grabbable guide.
-#[allow(clippy::too_many_arguments)]
 /// Guides through the middle of the canvas, both ways (skips ones already there).
 pub fn add_center_guides(state: &mut AppState, doc_id: DocId) {
     let Some(e) = state.doc_mut(doc_id) else { return };
@@ -111,6 +107,10 @@ pub fn add_center_guides(state: &mut AppState, doc_id: DocId) {
     }
 }
 
+/// Pointer handling for rulers and guides. Returns whether a guide drag owns
+/// the pointer this frame (tools must not see the events) and the cursor to
+/// show while the pointer is over a grabbable guide.
+#[allow(clippy::too_many_arguments)]
 pub fn handle(
     ui: &Ui,
     state: &mut AppState,
@@ -224,19 +224,47 @@ pub fn handle(
                     if corner_rect(top, left).contains(pos) {
                         // Double-click the corner: a guide through the middle each way.
                         if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
-                            return Some(GuideDrag { doc: doc_id, vertical: true, index: Some(usize::MAX), pos: 0.0, diag: None, pivot: None });
+                            return Some(GuideDrag {
+                                doc: doc_id,
+                                vertical: true,
+                                index: Some(usize::MAX),
+                                pos: 0.0,
+                                diag: None,
+                                pivot: None,
+                            });
                         }
                         let d = entry.view.screen_to_doc(pos);
                         let diag = Some(GuideDiag { x: d.x.round(), y: d.y.round(), angle: 45.0 });
-                        return Some(GuideDrag { doc: doc_id, vertical: false, index: None, pos: 0.0, diag, pivot: None });
+                        return Some(GuideDrag {
+                            doc: doc_id,
+                            vertical: false,
+                            index: None,
+                            pos: 0.0,
+                            diag,
+                            pivot: None,
+                        });
                     }
                     if top.contains(pos) {
                         let p = guide_pos_at(state, &entry.view, false, pos);
-                        return Some(GuideDrag { doc: doc_id, vertical: false, index: None, pos: p, diag: None, pivot: None });
+                        return Some(GuideDrag {
+                            doc: doc_id,
+                            vertical: false,
+                            index: None,
+                            pos: p,
+                            diag: None,
+                            pivot: None,
+                        });
                     }
                     if left.contains(pos) {
                         let p = guide_pos_at(state, &entry.view, true, pos);
-                        return Some(GuideDrag { doc: doc_id, vertical: true, index: None, pos: p, diag: None, pivot: None });
+                        return Some(GuideDrag {
+                            doc: doc_id,
+                            vertical: true,
+                            index: None,
+                            pos: p,
+                            diag: None,
+                            pivot: None,
+                        });
                     }
                 }
             }

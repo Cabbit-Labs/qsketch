@@ -860,8 +860,10 @@ fn draw_shift_line_preview(
     tool: ToolKind,
 ) {
     let Some(pos) = hover else { return };
-    if !matches!(tool, ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Blur | ToolKind::Clone)
-        || state.session.is_some()
+    if !matches!(
+        tool,
+        ToolKind::Brush | ToolKind::Pencil | ToolKind::Eraser | ToolKind::Smudge | ToolKind::Blur | ToolKind::Clone
+    ) || state.session.is_some()
     {
         return;
     }

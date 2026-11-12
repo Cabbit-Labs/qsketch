@@ -1866,7 +1866,9 @@ mod tests {
                 }
                 let id = state.add_document(doc);
                 let mut off = (0, 0);
-                for (step, (gx, gy, tx, ty)) in [(20.0f32, 20.0f32, 37.3f32, 24.6f32), (37.0, 25.0, 30.0, 33.0)].into_iter().enumerate() {
+                for (step, (gx, gy, tx, ty)) in
+                    [(20.0f32, 20.0f32, 37.3f32, 24.6f32), (37.0, 25.0, 30.0, 33.0)].into_iter().enumerate()
+                {
                     if step == 1 && !twice {
                         break;
                     }
