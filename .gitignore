@@ -4,3 +4,7 @@
 .DS_Store
 Thumbs.db
 /.env
+
+# Local scratch: logs and stray screenshots
+*.log
+/shot*.png

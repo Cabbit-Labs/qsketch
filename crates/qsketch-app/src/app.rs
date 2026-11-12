@@ -257,8 +257,8 @@ impl QSketchApp {
         }
         // Window title
         let title = match self.state.active() {
-            Some(d) => format!("{} — qsketch (Ash build)", d.doc.display_title()),
-            None => "qsketch (Ash build)".to_string(),
+            Some(d) => format!("{} — qsketch", d.doc.display_title()),
+            None => "qsketch".to_string(),
         };
         if title != self.last_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
