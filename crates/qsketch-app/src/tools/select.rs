@@ -184,6 +184,49 @@ pub fn close_poly_lasso(state: &mut AppState, doc_id: DocId, mods: egui::Modifie
     apply_selection(state, doc_id, mask, op, "Polygonal Lasso");
 }
 
+/// Grow a wand selection over the soft rim around it: up to `steps` pixels
+/// outward, into pixels that are see-through but not empty (the anti-aliased
+/// edge of a shape on its own layer). The first ring also takes any visible
+/// pixel, which catches a darker line-art edge. Only grows next to what is
+/// already selected, so a shape touching another one isn't swallowed.
+pub fn grow_soft_edges(m: &Mask, sample: &dyn Fn(i32, i32) -> Rgba8, steps: u32) -> Mask {
+    let (w, h) = (m.width() as i32, m.height() as i32);
+    let mut out = m.clone();
+    if m.is_empty() {
+        return out;
+    }
+    for step in 0..steps {
+        let b = out.bounds();
+        let (x0, y0, x1, y1) = ((b.x - 1).max(0), (b.y - 1).max(0), (b.right() + 1).min(w), (b.bottom() + 1).min(h));
+        let mut add = Vec::new();
+        for y in y0..y1 {
+            for x in x0..x1 {
+                if out.get(x, y) == 255 {
+                    continue;
+                }
+                let a = sample(x, y).a;
+                if a == 0 || (step > 0 && a >= 250) {
+                    continue;
+                }
+                let near = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)]
+                    .iter()
+                    .any(|(dx, dy)| out.get(x + dx, y + dy) >= 128);
+                if near {
+                    add.push((x, y));
+                }
+            }
+        }
+        if add.is_empty() {
+            break;
+        }
+        for (x, y) in add {
+            out.set(x, y, 255);
+        }
+        out.recompute_bounds();
+    }
+    out
+}
+
 pub fn handle_wand(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     let CanvasEvent::Press(inp) = ev else { return };
     if inp.button != egui::PointerButton::Primary {
@@ -193,17 +236,20 @@ pub fn handle_wand(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
     let tol = state.tool_opts.wand_tolerance;
     let contiguous = state.tool_opts.wand_contiguous;
     let merged = state.tool_opts.wand_sample_merged;
+    let soft = state.tool_opts.wand_soft_edges;
     let Some(entry) = state.doc(doc_id) else { return };
     let (w, h) = (entry.doc.width(), entry.doc.height());
     let seed = (inp.doc.x.floor() as i32, inp.doc.y.floor() as i32);
     let mask = if merged {
         let comp = &entry.doc.composite;
         let sample = |x: i32, y: i32| Rgba8::from_array(comp.get_premul(x, y));
-        Mask::from_flood(w, h, seed, tol, contiguous, &sample)
+        let m = Mask::from_flood(w, h, seed, tol, contiguous, &sample);
+        if soft { grow_soft_edges(&m, &sample, 3) } else { m }
     } else {
         let raster = &entry.doc.state().active_layer().raster;
         let sample = |x: i32, y: i32| raster.get_pixel(x, y);
-        Mask::from_flood(w, h, seed, tol, contiguous, &sample)
+        let m = Mask::from_flood(w, h, seed, tol, contiguous, &sample);
+        if soft { grow_soft_edges(&m, &sample, 3) } else { m }
     };
     if mask.is_empty() {
         return;

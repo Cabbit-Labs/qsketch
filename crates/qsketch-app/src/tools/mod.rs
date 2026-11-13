@@ -279,6 +279,9 @@ pub struct ToolOptions {
     pub wand_tolerance: u8,
     pub wand_contiguous: bool,
     pub wand_sample_merged: bool,
+    /// Also take the soft, semi-transparent rim around what the wand picked
+    /// (so moving or adjusting it doesn't leave a faint outline behind).
+    pub wand_soft_edges: bool,
     /// Selection Brush: strokes take away from the selection (SAI's SelErs).
     pub select_brush_erase: bool,
     pub fill_tolerance: u8,
@@ -354,6 +357,7 @@ impl Default for ToolOptions {
             wand_tolerance: 32,
             wand_contiguous: true,
             wand_sample_merged: false,
+            wand_soft_edges: true,
             select_brush_erase: false,
             fill_tolerance: 32,
             fill_contiguous: true,

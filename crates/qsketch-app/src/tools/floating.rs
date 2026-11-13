@@ -1894,6 +1894,43 @@ mod tests {
         }
     }
 
+    /// Ash's fang: wand-select a soft-edged shape, then move it. Without
+    /// "soft edges" the see-through rim stays behind as a faint outline;
+    /// with it nothing is left.
+    #[test]
+    fn wand_soft_edges_leave_no_outline_when_moved() {
+        for soft in [false, true] {
+            let mut state = AppState::new(crate::settings::Settings::default());
+            let mut doc = qsketch_core::Document::new(64, 48, None, "fang");
+            {
+                let r = &mut doc.state_mut().layers[0].raster;
+                *r = qsketch_core::Raster::new(64, 48);
+                for y in 0..48 {
+                    for x in 0..64 {
+                        let d = (((x - 20) * (x - 20) + (y - 20) * (y - 20)) as f32).sqrt();
+                        let a = (255.0 * (1.0 - (d - 8.0) / 3.0)).clamp(0.0, 255.0) as u8;
+                        // the rim is darker than the body, like anti-aliased line art
+                        let c = if a == 255 { Rgba8::new(170, 150, 230, 255) } else { Rgba8::new(90, 70, 150, a) };
+                        if a > 0 { r.set_pixel(x, y, c); }
+                    }
+                }
+            }
+            let id = state.add_document(doc);
+            state.tool_opts.wand_soft_edges = soft;
+            state.tool_opts.wand_tolerance = 32;
+            crate::tools::select::handle_wand(&mut state, id, CanvasEvent::Press(input(20.0, 20.0)));
+            assert!(begin_transform(&mut state, id));
+            assert!(handle(&mut state, id, CanvasEvent::Press(input(20.0, 20.0))));
+            assert!(handle(&mut state, id, CanvasEvent::Drag(input(44.0, 24.0))));
+            refresh(&mut state);
+            assert!(handle(&mut state, id, CanvasEvent::Release(input(44.0, 24.0))));
+            assert!(commit(&mut state));
+            let after = &state.doc(id).unwrap().doc.state().layers[0].raster;
+            let left: u32 = (0..48).flat_map(|y| (0..30).map(move |x| (x, y))).map(|(x, y)| after.get_pixel(x, y).a as u32).sum();
+            if soft { assert_eq!(left, 0, "soft edges: nothing left behind"); } else { assert!(left > 0, "without soft edges the rim stays (repro)"); }
+        }
+    }
+
     #[test]
     fn transforming_again_picks_up_the_last_box() {
         let (mut state, id) = selected_noise(IRect::new(8, 6, 40, 30));

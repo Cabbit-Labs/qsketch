@@ -114,6 +114,8 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                     ui.checkbox(&mut state.tool_opts.wand_contiguous, "Contiguous");
                     ui.checkbox(&mut state.tool_opts.wand_sample_merged, "All layers")
                         .on_hover_text("Sample all layers");
+                    ui.checkbox(&mut state.tool_opts.wand_soft_edges, "Soft edges")
+                        .on_hover_text("Also select the soft, see-through rim around what you clicked, so moving or adjusting it doesn't leave a faint outline behind");
                 });
             }
             ToolKind::Fill => {
