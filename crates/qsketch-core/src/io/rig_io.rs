@@ -23,9 +23,9 @@ pub struct RigExportSummary {
     pub animations: usize,
     /// Visible layers left out (groups, adjustments, empty layers).
     pub skipped: Vec<String>,
-    /// How many of the document's other frames were not exported: the
-    /// format has one picture per part, taken from the current frame.
-    pub frames_not_exported: usize,
+    /// Extra pictures written for parts whose art differs between the
+    /// document's frames (see "Frame art" in the format doc).
+    pub frame_images: usize,
 }
 
 /// Make `name` unique among `used` by appending " 2", " 3", …
@@ -81,7 +81,9 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
     }
     let mut doc = doc.clone();
     doc.sync_cels();
-    let frames_not_exported = doc.frame_count().saturating_sub(1);
+    let nframes = doc.frame_count();
+    let cur_frame = doc.frame;
+    let mut frame_images = 0usize;
     std::fs::create_dir_all(dir.join("parts")).with_context(|| format!("creating {}", dir.display()))?;
 
     // Bones, with unique names; parents come first in `rig.bones`.
@@ -124,8 +126,41 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
             continue;
         }
         let mut l = l.clone();
+        // Frame art: when the layer's picture differs between the document's
+        // frames, each distinct picture (by the frame that owns it) is
+        // written and the part lists which one every frame shows.
+        let mut owners: Vec<usize> = (0..nframes).map(|f| l.cel_owner(f)).collect();
+        let mut pictures: Vec<(usize, crate::raster::Raster)> = Vec::new();
+        if nframes > 1 && l.animated() && owners.iter().any(|o| *o != owners[0]) {
+            // Frames that own separate copies of the same pixels count as one
+            // picture: compare what they actually show.
+            let mut shown: Vec<(usize, Vec<u8>)> = Vec::new();
+            for o in owners.iter_mut() {
+                if pictures.iter().any(|(p, _)| p == o) {
+                    continue;
+                }
+                let pic = l.cel_image(*o, cur_frame).cloned().unwrap_or_else(|| l.raster.clone());
+                let mut tmp = l.clone();
+                tmp.raster = pic;
+                tmp.apply_mask();
+                let bytes = tmp.raster.to_rgba();
+                match shown.iter().find(|(_, b)| *b == bytes) {
+                    Some((same, _)) => *o = *same,
+                    None => {
+                        shown.push((*o, bytes));
+                        pictures.push((*o, tmp.raster));
+                    }
+                }
+            }
+        }
+        let swaps = pictures.len() > 1;
+        if !swaps {
+            pictures.clear();
+        }
         l.apply_mask();
-        let Some(content) = l.raster.full_bounds() else {
+        // One rectangle for all of a part's pictures, so they share a transform.
+        let bounds = pictures.iter().filter_map(|(_, p)| p.full_bounds()).chain(l.raster.full_bounds());
+        let Some(content) = bounds.reduce(|a, b| a.union(&b)) else {
             skipped.push(l.name().to_string());
             continue;
         };
@@ -141,7 +176,25 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
             n += 1;
         }
         files.push(file.clone());
-        crate::io::image_io::export_raster(&dir.join(&file), &l.raster.crop(b))?;
+        let mut images: Vec<String> = Vec::new();
+        if swaps {
+            let stem = file.trim_end_matches(".png").to_string();
+            let mut by_owner: Vec<(usize, String)> = Vec::new();
+            for (o, pic) in &pictures {
+                let f = format!("{stem}_f{}.png", o + 1);
+                crate::io::image_io::export_raster(&dir.join(&f), &pic.crop(b))?;
+                by_owner.push((*o, f));
+            }
+            frame_images += by_owner.len();
+            images = owners
+                .iter()
+                .map(|o| by_owner.iter().find(|(p, _)| p == o).map(|(_, f)| f.clone()).unwrap_or_default())
+                .collect();
+            // The part's own image is the current frame's.
+            file = images[cur_frame.min(images.len() - 1)].clone();
+        } else {
+            crate::io::image_io::export_raster(&dir.join(&file), &l.raster.crop(b))?;
+        }
 
         let bone = rig.attached_bone(l.id());
         let place = Xf { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: b.x as f32, f: b.y as f32 };
@@ -159,6 +212,9 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
             "opacity": l.props.opacity,
             "blend": format!("{:?}", l.props.blend).to_lowercase(),
         });
+        if !images.is_empty() {
+            part["images"] = json!(images);
+        }
         let rest = rig.rest_alpha_of(l.id());
         if rest < 0.999 {
             part["alpha"] = json!(rest);
@@ -253,7 +309,7 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         );
     }
 
-    let out = json!({
+    let mut out = json!({
         "format": "qsketch-rig",
         "version": 1,
         "canvas": { "width": doc.width, "height": doc.height },
@@ -262,13 +318,17 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         "parts": parts,
         "animations": Value::Object(animations),
     });
+    if frame_images > 0 {
+        let secs: Vec<f64> = (0..nframes).map(|f| doc.frame_duration(f) as f64 / 1000.0).collect();
+        out["frames"] = json!(secs);
+    }
     std::fs::write(dir.join("rig.json"), serde_json::to_vec_pretty(&out)?)?;
     Ok(RigExportSummary {
         bones: rig.bones.len(),
         parts: parts.len(),
         animations: rig.animations.len(),
         skipped,
-        frames_not_exported,
+        frame_images,
     })
 }
 
@@ -490,15 +550,44 @@ mod tests {
     }
 
     #[test]
-    fn export_reports_frames_it_cannot_carry() {
-        let mut doc = DocState::new(16, 16, None);
-        doc.layers[0].raster.fill_rect(IRect::new(2, 2, 4, 4), Rgba8::new(9, 9, 9, 255));
+    fn frame_art_is_exported_as_image_swaps() {
+        let mut doc = DocState::new(32, 16, None);
+        doc.layers[0].raster.fill_rect(IRect::new(2, 2, 4, 4), Rgba8::new(255, 0, 0, 255));
         doc.rig.add_bone("b", None, 0.0, 0.0, 5.0);
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(export(&doc, dir.path()).unwrap().frames_not_exported, 0);
+        // One frame: no swaps, nothing about frames in the file.
+        assert_eq!(export(&doc, dir.path()).unwrap().frame_images, 0);
+        let j: Value = serde_json::from_slice(&std::fs::read(dir.path().join("rig.json")).unwrap()).unwrap();
+        assert!(j.get("frames").is_none() && j["parts"][0].get("images").is_none());
+
+        // Three frames: the second draws further right, the third links to the first.
         doc.insert_frame(1, crate::NewFrame::Duplicate(0));
+        doc.layers[0].raster.fill_rect(IRect::new(10, 2, 6, 4), Rgba8::new(0, 255, 0, 255));
         doc.insert_frame(2, crate::NewFrame::Duplicate(0));
-        assert_eq!(export(&doc, dir.path()).unwrap().frames_not_exported, 2);
+        doc.link_cels(0, &[0, 2]);
+        doc.set_frame_duration(1, 250);
+        doc.set_frame(1);
+        let sum = export(&doc, dir.path()).unwrap();
+        assert_eq!(sum.frame_images, 2, "two distinct pictures");
+        let j: Value = serde_json::from_slice(&std::fs::read(dir.path().join("rig.json")).unwrap()).unwrap();
+        assert_eq!(j["frames"], json!([0.1, 0.25, 0.1]));
+        let part = &j["parts"][0];
+        let images: Vec<&str> = part["images"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(images.len(), 3);
+        assert_eq!(images[0], images[2], "linked frames share a file");
+        assert_ne!(images[0], images[1]);
+        assert_eq!(part["image"], images[1], "the part's own image is the current frame's");
+        // Every picture has the same rectangle: the union of both drawings.
+        assert_eq!((part["x"].as_i64(), part["width"].as_i64()), (Some(2), Some(14)));
+        for f in &images {
+            let img = image_io_size(&dir.path().join(f));
+            assert_eq!(img, (14, 4), "{f}");
+        }
+    }
+
+    fn image_io_size(path: &std::path::Path) -> (u32, u32) {
+        let r = crate::io::image_io::decode_bytes(&std::fs::read(path).unwrap()).unwrap();
+        (r.width(), r.height())
     }
 
     #[test]

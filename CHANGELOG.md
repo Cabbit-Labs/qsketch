@@ -67,8 +67,7 @@ All notable changes to qSketch are documented in this file.
   (GIF, sheet, PNG sequence, video) has a Rig option that bakes an animation
   first, so the export is posed. The live pose preview follows the Timeline's
   current frame and no longer draws onion skins over a posed picture. Meshes
-  cover a layer's art in every frame. Export for games says when it could not
-  carry the other frames (the format has one picture per part).
+  cover a layer's art in every frame.
 - Frames and the rig scrub together: with the Bone tool and an animation
   selected, a document with several frames gets a frames band on the Rig track
   (the frames cycle across the animation, the one in use highlighted) and a
@@ -76,6 +75,12 @@ All notable changes to qSketch are documented in this file.
   frame in the Timeline moves the rig playhead to that frame in the cycle it
   is in. Baked frames always cycle, even under an animation that plays once,
   so a short hand-drawn flicker lasts a whole fire breath.
+- Export for games carries frame art: a part whose picture differs between the
+  document's frames is written as one image per distinct picture, with a
+  per-frame `images` list and the frame lengths in `frames` (see "Frame art" in
+  `docs/RIG_FORMAT.md`). The reference runtime (`QRig.frameAt`, `partImage`)
+  and player swap the pictures as the frames cycle. Parts that never change
+  still get one image.
 - Keying a bone's position or rotation for the first time at a later time also
   keys its rest value at 0, so animations start from the setup pose instead of
   already being posed at the first frame.

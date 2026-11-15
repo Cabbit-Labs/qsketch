@@ -41,6 +41,15 @@
     }
     const part = rig.parts.find((p) => p.name === "body");
     compare(`${label} part ${part.name}`, QRig.partMatrix(rig, part, world), s.part);
+    // Which document frame (image swap) shows.
+    if (s.anim != null) {
+      checked++;
+      const got = QRig.frameAt(rig, s.t);
+      if (got !== s.frame) {
+        failed++;
+        log.push(`FAIL ${label} frame: got ${got}, want ${s.frame}`);
+      }
+    }
     // How shown each part is (rest value, keyed show / hide / fade).
     for (const n of ["body", "cloth"]) {
       const got = QRig.partAlpha(rig, rig.parts.find((p) => p.name === n), s.anim, s.t);

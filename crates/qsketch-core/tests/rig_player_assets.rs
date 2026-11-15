@@ -125,6 +125,17 @@ fn fixture_doc() -> (DocState, BoneId) {
     doc.rig.animations[b].looped = false;
     rot(&mut doc, b, thigh, &[(0, 0.0, Curve::Linear), (400, -25.0, EASE), (800, 10.0, Curve::Linear)]);
     mov(&mut doc, b, foot, &[(0, 0.0, 0.0, Curve::Linear), (800, 5.0, -15.0, Curve::Linear)]);
+
+    // Frame art: three frames of different lengths; the body is redrawn in each.
+    let body_i = doc.layers.iter().position(|l| l.name() == "body").unwrap();
+    for (f, c) in [(1, Rgba8::new(60, 200, 60, 255)), (2, Rgba8::new(60, 60, 200, 255))] {
+        doc.insert_frame(f, qsketch_core::NewFrame::Duplicate(f - 1));
+        doc.layers[body_i].raster.fill_rect(IRect::new(40, 30, 16, 10), c);
+    }
+    for (f, ms) in [(0, 100), (1, 200), (2, 150)] {
+        doc.set_frame_duration(f, ms);
+    }
+    doc.set_frame(0);
     (doc, spine)
 }
 
@@ -155,6 +166,7 @@ fn fixture_expected(doc: &DocState, spine: BoneId) -> String {
             "t": t_ms as f64 / 1000.0,
             "bones": bones,
             "part": matrix(delta * place),
+            "frame": qsketch_core::rig::frame_showing(doc, t_ms, true),
             "alpha": {
                 "body": num(rig.alpha_at(anim.map(|a| (a, t_ms)), body)),
                 "cloth": num(rig.alpha_at(anim.map(|a| (a, t_ms)), cloth)),

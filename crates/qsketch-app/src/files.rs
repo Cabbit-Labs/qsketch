@@ -430,12 +430,8 @@ pub fn export_rig(state: &mut AppState, doc_id: DocId) -> bool {
             if !s.skipped.is_empty() {
                 msg.push_str(&format!(" (left out: {})", s.skipped.join(", ")));
             }
-            if s.frames_not_exported > 0 {
-                msg.push_str(&format!(
-                    ". Only the current frame's art was written; the other {} frame{} aren't part of the rig format",
-                    s.frames_not_exported,
-                    if s.frames_not_exported == 1 { "" } else { "s" }
-                ));
+            if s.frame_images > 0 {
+                msg.push_str(&format!(", with {} frame images for parts that change between frames", s.frame_images));
             }
             state.toasts.push(Level::Success, msg);
             true

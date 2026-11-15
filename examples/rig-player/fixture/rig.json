@@ -376,6 +376,11 @@
     "width": 128
   },
   "format": "qsketch-rig",
+  "frames": [
+    0.1,
+    0.2,
+    0.15
+  ],
   "ik": [
     {
       "bend": 1,
@@ -403,7 +408,12 @@
       "blend": "normal",
       "bone": "spine",
       "height": 10,
-      "image": "parts/body.png",
+      "image": "parts/body_f1.png",
+      "images": [
+        "parts/body_f1.png",
+        "parts/body_f2.png",
+        "parts/body_f3.png"
+      ],
       "name": "body",
       "opacity": 1.0,
       "transform": [

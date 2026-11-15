@@ -36,7 +36,8 @@ for (const part of rig.parts) {                  // already in draw order
   const m = QRig.partMatrix(rig, part, world);   // image pixels -> canvas
   ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
   ctx.globalAlpha = part.opacity;
-  ctx.drawImage(images[part.image], 0, 0);
+  // frame art: the picture changes with the document's frames
+  ctx.drawImage(images[QRig.partImage(rig, part, "walk", seconds)], 0, 0);
 }
 ```
 
@@ -46,7 +47,7 @@ pose. Blend names map to Canvas modes with `QRig.canvasBlend(part.blend)`.
 ## Does it match the editor?
 
 Open `test.html` (through the server). It poses `fixture/rig.json` in the
-setup pose and at 18 times in each animation, and checks all 407 results: every
+setup pose and at 18 times in each animation, and checks every result: every
 bone matrix, one part's matrix, and every skinned vertex of a mesh against what qSketch's
 own rig code computed (`fixture/expected.json`). The fixture covers Bézier and
 stepped easing, scale keys, a mesh weighted to all nine bones, IK with a keyed mix and a stepped bend flip, a

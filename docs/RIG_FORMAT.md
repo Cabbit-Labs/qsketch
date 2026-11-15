@@ -9,9 +9,8 @@ writes a folder:
   parts/<layer>.png      one cropped picture per visible pixel layer
 ```
 
-The format has one picture per part, taken from the document's current frame:
-the other frames of a frame-animated document are not exported (the editor
-says so). Layers that are hidden are skipped; groups and adjustment layers are listed
+A part whose art differs between the document's frames gets one picture per
+distinct frame (see "Frame art"). Layers that are hidden are skipped; groups and adjustment layers are listed
 in the export message and skipped. Layer masks are baked into the pictures.
 Shape, text and smart-object layers are exported as their drawn pixels.
 
@@ -161,6 +160,28 @@ triangle with the texture coordinates onto the triangle at the posed
 positions. **A meshed part ignores `bone` and `transform`**; the weights are
 the whole story. Its image is exactly the mesh rectangle, so the grid always
 covers it.
+
+## Frame art (image swaps)
+
+When the document has several frames and a layer's picture differs between
+them (a hand-drawn flame flicker, mouth shapes), the file has
+
+```jsonc
+"frames": [0.09, 0.09, 0.09, 0.09],          // top level: each frame's length, seconds
+"parts": [ { "name": "fire", "image": "parts/fire_f1.png",
+             "images": ["parts/fire_f1.png", "parts/fire_f2.png",
+                        "parts/fire_f3.png", "parts/fire_f4.png"], ... } ]
+```
+
+`images` has one entry per frame (frames that share a picture repeat the same
+file). All of a part's pictures have the same size and use the part's one
+`x`, `y`, `width`, `height`, `transform` and `mesh`, so only the texture
+changes. The frames **cycle** for as long as an animation plays, whether or
+not the animation loops. To find the frame at a playhead of `seconds`, work in
+whole milliseconds: `t = round(seconds × 1000) mod (sum of the frame lengths in
+ms)`, then walk the frames subtracting each length until `t` is less than the
+next one. Draw `images[frame]`. A part without `images` always draws `image`,
+and the setup pose draws every part's `image`.
 
 ## Showing, hiding and fading parts
 

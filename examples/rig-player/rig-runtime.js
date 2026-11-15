@@ -294,6 +294,31 @@
     return Math.min(1, Math.max(0, sample(keys, loopTime(anim, seconds), ["alpha"]).alpha));
   }
 
+  /**
+   * The document frame showing at `seconds` (see "Frame art" in the doc):
+   * the frames cycle, in whole milliseconds. 0 when the file has no frames.
+   */
+  function frameAt(rig, seconds) {
+    const frames = rig.json.frames;
+    if (!frames || frames.length === 0) return 0;
+    const ms = frames.map((s) => Math.round(s * 1000));
+    const total = ms.reduce((a, b) => a + b, 0);
+    if (total <= 0) return 0;
+    let t = Math.round(seconds * 1000) % total;
+    if (t < 0) t += total;
+    for (let i = 0; i < ms.length; i++) {
+      if (t < ms[i]) return i;
+      t -= ms[i];
+    }
+    return ms.length - 1;
+  }
+
+  /** The image path `part` draws: its frame art while an animation plays. */
+  function partImage(rig, part, animName, seconds) {
+    if (animName == null || !part.images || part.images.length === 0) return part.image;
+    return part.images[frameAt(rig, seconds)] || part.image;
+  }
+
   /** The matrix that draws `part`'s image (pixel 0,0 at its top-left). */
   function partMatrix(rig, part, world) {
     const [a, b, c, d, e, f] = part.transform;
@@ -326,7 +351,7 @@
   const canvasBlend = (name) => BLEND[name] || "source-over";
 
   const QRig = {
-    IDENTITY, mul, apply, inverse, trs, wrap180, ease, sample, load, pose, partMatrix, partAlpha, meshPoints, meshTriangles, canvasBlend,
+    IDENTITY, mul, apply, inverse, trs, wrap180, ease, sample, load, pose, partMatrix, partAlpha, frameAt, partImage, meshPoints, meshTriangles, canvasBlend,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = QRig;
   else root.QRig = QRig;

@@ -39,8 +39,8 @@
     const rig = QRig.load(json);
     const images = new Map();
     await Promise.all(
-      rig.parts.map(async (p) => {
-        images.set(p.image, await loadImage(urlFor(p.image)));
+      [...new Set(rig.parts.flatMap((p) => [p.image, ...(p.images || [])]))].map(async (path) => {
+        images.set(path, await loadImage(urlFor(path)));
       })
     );
     state.rig = rig;
@@ -120,7 +120,7 @@
   function drawMesh(rig, part, world, scale) {
     const mesh = part.mesh;
     const pts = QRig.meshPoints(rig, part, world);
-    const img = state.images.get(part.image);
+    const img = state.images.get(QRig.partImage(rig, part, state.anim, state.time));
     const stride = mesh.cols + 1;
     const uv = (v) => [(part.width * (v % stride)) / mesh.cols, (part.height * Math.floor(v / stride)) / mesh.rows];
     for (const [i0, i1, i2] of QRig.meshTriangles(mesh)) {
@@ -180,7 +180,7 @@
       const m = QRig.partMatrix(rig, part, world);
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
-      ctx.drawImage(state.images.get(part.image), 0, 0);
+      ctx.drawImage(state.images.get(QRig.partImage(rig, part, state.anim, state.time)), 0, 0);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
