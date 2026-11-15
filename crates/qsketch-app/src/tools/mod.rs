@@ -1,5 +1,6 @@
 //! Tools: kinds, per-tool options, in-progress sessions and event dispatch.
 
+pub mod bone;
 mod contour;
 pub mod fill;
 pub mod floating;
@@ -66,10 +67,12 @@ pub enum ToolKind {
     Tile,
     /// Pixel-art vector shapes: points on a shape layer, redrawn crisp.
     Shape,
+    /// Skeleton bones: build a rig and pose it on the canvas.
+    Bone,
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 28] = [
+    pub const ALL: [ToolKind; 29] = [
         ToolKind::Move,
         ToolKind::RectSelect,
         ToolKind::EllipseSelect,
@@ -80,6 +83,7 @@ impl ToolKind {
         ToolKind::Crop,
         ToolKind::Slice,
         ToolKind::Shape,
+        ToolKind::Bone,
         ToolKind::Eyedropper,
         ToolKind::Brush,
         ToolKind::Pencil,
@@ -112,6 +116,7 @@ impl ToolKind {
             ToolKind::Crop => "Crop",
             ToolKind::Slice => "Slice",
             ToolKind::Shape => "Shape",
+            ToolKind::Bone => "Bone",
             ToolKind::Tile => "Tile",
             ToolKind::Eyedropper => "Eyedropper",
             ToolKind::Brush => "Brush",
@@ -151,6 +156,7 @@ impl ToolKind {
             ToolKind::Crop => icons::CROP,
             ToolKind::Slice => icons::GRID_NINE,
             ToolKind::Shape => icons::PENTAGON,
+            ToolKind::Bone => icons::BONE,
             ToolKind::Tile => icons::SQUARES_FOUR,
             ToolKind::Eyedropper => icons::EYEDROPPER,
             ToolKind::Brush => icons::PAINT_BRUSH,
@@ -182,7 +188,7 @@ impl ToolKind {
             | ToolKind::PolyLasso
             | ToolKind::MagicWand
             | ToolKind::SelectBrush => 1,
-            ToolKind::Crop | ToolKind::Slice | ToolKind::Shape | ToolKind::Eyedropper => 2,
+            ToolKind::Crop | ToolKind::Slice | ToolKind::Shape | ToolKind::Bone | ToolKind::Eyedropper => 2,
             ToolKind::Brush
             | ToolKind::Pencil
             | ToolKind::Eraser
@@ -491,6 +497,12 @@ pub enum ToolSession {
     TileStamp {
         erase: bool,
     },
+    /// Bone tool gesture: dragging out a bone or a bone's handle.
+    Bone {
+        gesture: bone::BoneGesture,
+        cur: Pt,
+        moved: bool,
+    },
     /// Slice tool drag: creating, moving or resizing a slice.
     Slice {
         drag: slice::SliceDrag,
@@ -737,6 +749,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         ToolKind::Slice => slice::handle(state, doc_id, ev),
         ToolKind::Tile => tile::handle(state, doc_id, ev),
         ToolKind::Shape => vector::handle(state, doc_id, ev),
+        ToolKind::Bone => bone::handle(state, doc_id, ev),
     }
 }
 
@@ -878,6 +891,7 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     }
     text::draw_overlay(state, doc_id, painter);
     slice::draw_overlay(state, doc_id, painter);
+    bone::draw_overlay(state, doc_id, painter);
     vector::draw_overlay(state, doc_id, painter);
     tile::draw_grid(state, doc_id, painter);
     fill::draw_pick_loupe(state, doc_id, painter);

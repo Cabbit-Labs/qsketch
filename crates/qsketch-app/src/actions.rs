@@ -331,6 +331,7 @@ actions! {
     ToolSlice => (Tools, "Slice", ["Shift+C"]),
     ToolTile => (Tools, "Tile", ["Shift+T"]),
     ToolShape => (Tools, "Shape", ["P"]),
+    ToolBone => (Tools, "Bone", ["Shift+B"]),
     ToolRotateView => (Tools, "Rotate View", ["Shift+R"]),
     // Brush
     BrushSizeUp => (Brush, "Increase Brush Size", ["]"]),
@@ -424,6 +425,7 @@ impl Action {
             Action::ToolSlice => ToolKind::Slice,
             Action::ToolTile => ToolKind::Tile,
             Action::ToolShape => ToolKind::Shape,
+            Action::ToolBone => ToolKind::Bone,
             Action::ToolRotateView => ToolKind::RotateView,
             _ => return None,
         })
@@ -457,6 +459,7 @@ impl Action {
             ToolKind::Hand => Action::ToolHand,
             ToolKind::Slice => Action::ToolSlice,
             ToolKind::Shape => Action::ToolShape,
+            ToolKind::Bone => Action::ToolBone,
             ToolKind::Tile => Action::ToolTile,
             ToolKind::RotateView => Action::ToolRotateView,
         }

@@ -16,8 +16,9 @@ use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
 use crate::workspace::PanelKind;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum Easing {
+    #[default]
     Linear,
     Stepped,
     Ease,
@@ -26,9 +27,9 @@ pub enum Easing {
 }
 
 impl Easing {
-    const ALL: [Easing; 5] = [Easing::Linear, Easing::Stepped, Easing::Ease, Easing::EaseIn, Easing::EaseOut];
+    pub const ALL: [Easing; 5] = [Easing::Linear, Easing::Stepped, Easing::Ease, Easing::EaseIn, Easing::EaseOut];
 
-    fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Easing::Linear => "Linear",
             Easing::Stepped => "Stepped",
@@ -38,7 +39,7 @@ impl Easing {
         }
     }
 
-    fn curve(self) -> Curve {
+    pub fn curve(self) -> Curve {
         match self {
             Easing::Linear => Curve::Linear,
             Easing::Stepped => Curve::Stepped,

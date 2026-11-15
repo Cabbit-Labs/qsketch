@@ -1896,6 +1896,13 @@ impl QSketchApp {
             {
                 crate::tools::slice::delete_selected(&mut self.state);
             }
+            // With the Bone tool, Delete removes the selected bone.
+            Action::Clear
+                if self.state.effective_tool() == ToolKind::Bone
+                    && self.state.active().is_some_and(|d| d.rig_ui.sel.is_some()) =>
+            {
+                crate::tools::bone::delete_selected(&mut self.state);
+            }
             // With the Shape tool, Delete removes the selected point.
             Action::Clear
                 if self.state.effective_tool() == ToolKind::Shape

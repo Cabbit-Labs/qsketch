@@ -71,6 +71,8 @@ pub struct DocEntry {
     pub frame_sel: Option<(usize, usize)>,
     /// Point of the active shape layer selected with the Shape tool.
     pub shape_sel: Option<usize>,
+    /// Bone tool: selected bone, animation and time.
+    pub rig_ui: crate::tools::bone::RigUi,
 }
 
 impl DocEntry {
@@ -96,6 +98,7 @@ impl DocEntry {
             last_export: None,
             frame_sel: None,
             shape_sel: None,
+            rig_ui: Default::default(),
         }
     }
 

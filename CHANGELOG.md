@@ -2,6 +2,16 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Skeletal animation: a bone rig saved with the document. File ▸ Rig Animation…
+  edits bones, attaches layers to bones, keys move / rotate / scale with
+  easing, previews the pose live, and bakes an animation to ordinary frames
+  (GIF, sprite sheet, PNG sequence).
+- New Bone tool (Shift+B): drag on the canvas to add bones, drag a tip to turn
+  or resize one, a head to move it. With an animation selected the same drags
+  key the pose at the current time and the canvas shows the layers posed.
+
 ## 0.70.0 — 2026-11-10
 
 - Slimmer, denser interface for high-DPI displays: a smaller, more even text

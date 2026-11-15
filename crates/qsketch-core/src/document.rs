@@ -588,6 +588,9 @@ pub struct Document {
     dirty: TileSet,
     /// Rendered onion-skin frames, keyed by frame (see `refresh_onion`).
     onion_cache: std::collections::HashMap<usize, OnionEntry>,
+    /// A posed copy of the document (see `crate::rig`) drawn in place of
+    /// the layers while the Bone tool poses a skeleton; never saved.
+    pose_preview: Option<DocState>,
     /// Bumped by view-only changes (layer visibility) that the onion cache
     /// must notice without a history step.
     view_rev: u64,
@@ -627,6 +630,7 @@ impl Document {
             composite: Composite::new(w, h),
             dirty,
             onion_cache: Default::default(),
+            pose_preview: None,
             view_rev: 0,
         };
         doc.update_composite();
@@ -903,9 +907,24 @@ impl Document {
         let mut dirty = std::mem::replace(&mut self.dirty, TileSet::for_size(self.working.width, self.working.height));
         // Layer effects reach beyond the pixels that changed: refresh the
         // styled copies first, which adds the tiles their effects touch.
-        self.composite.styles.update(&self.working, &mut dirty);
-        self.composite.update(&self.working, &dirty);
+        let shown = self.pose_preview.as_ref().unwrap_or(&self.working);
+        self.composite.styles.update(shown, &mut dirty);
+        self.composite.update(shown, &dirty);
         dirty
+    }
+
+    /// Show `posed` (a copy of the working state with a skeleton pose
+    /// applied) in place of the layers, or the layers again with `None`.
+    pub fn set_pose_preview(&mut self, posed: Option<DocState>) {
+        if posed.is_none() && self.pose_preview.is_none() {
+            return;
+        }
+        self.pose_preview = posed;
+        self.dirty.insert_all();
+    }
+
+    pub fn has_pose_preview(&self) -> bool {
+        self.pose_preview.is_some()
     }
 
     pub fn has_pending_composite(&self) -> bool {

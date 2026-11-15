@@ -164,6 +164,17 @@ fn yes() -> bool {
     true
 }
 
+/// Which handle of a bone is being dragged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoneDrag {
+    /// The head: moves the bone.
+    Move,
+    /// The tip: turns the bone toward the pointer.
+    Aim,
+    /// The tip, in the setup pose: turns the bone and sets its length.
+    AimStretch,
+}
+
 /// Which property of a bone a key sets.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum KeyValue {
@@ -425,6 +436,79 @@ impl Rig {
         v
     }
 
+    /// World position of a bone's head (its origin) in `pose`.
+    pub fn head(&self, bone: BoneId, pose: &[Xf]) -> Option<Pt> {
+        Some(pose.get(self.bone_index(bone)?)?.apply(Pt::new(0.0, 0.0)))
+    }
+
+    /// World position of a bone's tip (one `length` along its x axis).
+    pub fn tip(&self, bone: BoneId, pose: &[Xf]) -> Option<Pt> {
+        let i = self.bone_index(bone)?;
+        Some(pose.get(i)?.apply(Pt::new(self.bones[i].length, 0.0)))
+    }
+
+    /// Move or turn `bone` by dragging a handle to `target` (document
+    /// space). Without an animation this edits the setup pose; with one it
+    /// writes a key at `t_ms` (offsets from the setup pose), leaving the
+    /// other properties alone. Keys keep their easing when overwritten.
+    pub fn drag_bone(
+        &mut self,
+        anim: Option<usize>,
+        t_ms: u32,
+        bone: BoneId,
+        drag: BoneDrag,
+        target: Pt,
+        curve: Curve,
+    ) {
+        let Some(bi) = self.bone_index(bone) else { return };
+        // The parent's pose doesn't depend on this bone's own values.
+        let pose = self.pose(anim.map(|a| (a, t_ms)));
+        let parent = self.bones[bi].parent.and_then(|p| self.bone_index(p)).and_then(|i| pose.get(i).copied());
+        let parent = parent.unwrap_or(Xf::IDENTITY);
+        let head_world = pose[bi].apply(Pt::new(0.0, 0.0));
+        let b = self.bones[bi].clone();
+        match drag {
+            BoneDrag::Move => {
+                let local = parent.inverse().map_or(target, |inv| inv.apply(target));
+                match anim {
+                    None => {
+                        let b = &mut self.bones[bi];
+                        (b.x, b.y) = (local.x, local.y);
+                    }
+                    Some(a) => {
+                        let off = [local.x - b.x, local.y - b.y];
+                        self.set_key(a, bone, t_ms, KeyValue::Translate(off), curve);
+                    }
+                }
+            }
+            BoneDrag::Aim | BoneDrag::AimStretch => {
+                let (dx, dy) = (target.x - head_world.x, target.y - head_world.y);
+                if dx.abs() < 1e-3 && dy.abs() < 1e-3 {
+                    return;
+                }
+                let world_deg = dy.atan2(dx).to_degrees();
+                let parent_deg = parent.b.atan2(parent.a).to_degrees();
+                let local = world_deg - parent_deg;
+                match anim {
+                    None => {
+                        let bm = &mut self.bones[bi];
+                        bm.rotation = local;
+                        if drag == BoneDrag::AimStretch {
+                            bm.length = (dx * dx + dy * dy).sqrt().max(1.0);
+                        }
+                    }
+                    Some(a) => {
+                        let cur = self.offsets(a, bone, t_ms).1;
+                        let want = local - b.rotation;
+                        // Take the turn the short way from where it is now.
+                        let off = cur + (want - cur + 540.0).rem_euclid(360.0) - 180.0;
+                        self.set_key(a, bone, t_ms, KeyValue::Rotate(off), curve);
+                    }
+                }
+            }
+        }
+    }
+
     /// World transform of every bone (in `bones` order). With an animation,
     /// its keys at `t_ms` are applied on top of the setup pose.
     pub fn pose(&self, anim: Option<(usize, u32)>) -> Vec<Xf> {
@@ -668,6 +752,37 @@ mod tests {
         };
         assert_eq!(left(0), Some(4));
         assert_eq!(left(2), Some(24), "halfway through the slide");
+    }
+
+    #[test]
+    fn dragging_the_tip_aims_the_bone_through_a_turned_parent() {
+        let mut rig = Rig::default();
+        let root = rig.add_bone("root", None, 0.0, 0.0, 10.0);
+        let arm = rig.add_bone("arm", Some(root), 10.0, 0.0, 10.0);
+        rig.bone_mut(root).unwrap().rotation = 90.0;
+        // Setup: aim the arm at (10, 30), straight down the page from its head.
+        rig.drag_bone(None, 0, arm, BoneDrag::AimStretch, Pt::new(0.0, 30.0), Curve::Linear);
+        let pose = rig.pose(None);
+        let (head, tip) = (rig.head(arm, &pose).unwrap(), rig.tip(arm, &pose).unwrap());
+        assert!(near(head.x, 0.0) && near(head.y, 10.0), "{head:?}");
+        assert!(near(tip.x, 0.0) && near(tip.y, 30.0), "{tip:?}");
+        assert!(near(rig.bone(arm).unwrap().length, 20.0));
+    }
+
+    #[test]
+    fn dragging_in_an_animation_keys_offsets_and_takes_the_short_turn() {
+        let mut rig = Rig::default();
+        let b = rig.add_bone("b", None, 5.0, 5.0, 10.0);
+        let a = rig.add_animation("a", 1000);
+        // Aim straight down (90°), then aim just past 180° the short way.
+        rig.drag_bone(Some(a), 0, b, BoneDrag::Aim, Pt::new(5.0, 50.0), Curve::Linear);
+        assert!(near(rig.offsets(a, b, 0).1, 90.0));
+        rig.drag_bone(Some(a), 0, b, BoneDrag::Aim, Pt::new(-50.0, 6.0), Curve::Linear);
+        let r = rig.offsets(a, b, 0).1;
+        assert!(r > 90.0 && r < 181.0, "{r}");
+        rig.drag_bone(Some(a), 500, b, BoneDrag::Move, Pt::new(25.0, 5.0), Curve::Linear);
+        assert!(near(rig.offsets(a, b, 500).0[0], 20.0));
+        assert!(rig.bone(b).unwrap().x == 5.0, "the setup pose is untouched");
     }
 
     #[test]

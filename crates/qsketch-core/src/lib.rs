@@ -61,7 +61,7 @@ pub use layer::{Layer, LayerId, LayerKind};
 pub use mask::Mask;
 pub use palette::Palette;
 pub use raster::{Raster, Tile, TILE, TILE_BYTES, TILE_PX};
-pub use rig::{Attachment, Bone, BoneId, BoneTrack, Curve, Key, KeyValue, Rig, RigAnim, Xf};
+pub use rig::{Attachment, Bone, BoneDrag, BoneId, BoneTrack, Curve, Key, KeyValue, Rig, RigAnim, Xf};
 pub use slice::Slice;
 pub use style::LayerStyle;
 pub use text::TextLayer;
