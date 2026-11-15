@@ -240,7 +240,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let mut track = TrackOut::default();
 
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
+        ui.spacing_mut().item_spacing = egui::vec2(8.0, 5.0);
         // --- animation -------------------------------------------------------
         ui.horizontal_wrapped(|ui| {
             ui.strong("Animation");
@@ -321,110 +321,82 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         }
         ui.separator();
 
-        // --- limb, mesh, layer ---------------------------------------------------
-        ui.columns(3, |cols| {
-            cols[0].strong("Limb (IK)");
+        // --- limb, mesh, layer: one wrapped row of compact groups ----------------
+        ui.horizontal_wrapped(|ui| {
+            ui.strong("Limb");
             match ik_edit.as_mut() {
                 Some(c) => {
-                    let ui = &mut cols[0];
-                    ui.label(format!("{} — reaches for “{}”", c.name, target_name(rig, c.target)));
-                    ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut c.mix).speed(0.01).range(0.0..=1.0).prefix("mix "))
-                            .on_hover_text("How much IK replaces the keyed rotations");
-                        if ui.button("Flip bend").on_hover_text("Fold the joint the other way").clicked() {
-                            c.bend = if c.bend < 0 { 1 } else { -1 };
-                        }
-                        if cur.is_some()
-                            && ui.button("Key mix & bend").on_hover_text("Key them at the playhead").clicked()
-                        {
-                            key_ik = true;
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.button(format!("{} Remove IK", icons::TRASH)).clicked() {
-                            del_ik = true;
-                        }
-                    });
+                    ui.label(format!("{} → {}", c.name, target_name(rig, c.target)));
+                    ui.add(egui::DragValue::new(&mut c.mix).speed(0.01).range(0.0..=1.0).prefix("mix "))
+                        .on_hover_text("How much IK replaces the keyed rotations");
+                    if ui.button("Flip bend").on_hover_text("Fold the joint the other way").clicked() {
+                        c.bend = if c.bend < 0 { 1 } else { -1 };
+                    }
+                    if cur.is_some() && ui.button("Key").on_hover_text("Key the mix and bend at the playhead").clicked() {
+                        key_ik = true;
+                    }
+                    if ui.button(format!("{} Remove", icons::TRASH)).on_hover_text("Remove this IK").clicked() {
+                        del_ik = true;
+                    }
+                }
+                None if can_add_ik => {
+                    add_ik = ui
+                        .button("Add IK")
+                        .on_hover_text("The selected bone and its parent become a limb reaching for a new target bone")
+                        .clicked();
                 }
                 None => {
-                    let ui = &mut cols[0];
-                    if can_add_ik {
-                        ui.label(egui::RichText::new("The selected bone and its parent can reach for a target.").weak());
-                        ui.horizontal(|ui| {
-                            add_ik = ui.button("Add IK").on_hover_text("Creates a target bone on this bone's tip").clicked();
-                        });
-                    } else {
-                        ui.label(egui::RichText::new("Select a bone that has a parent to add IK.").weak());
-                    }
+                    ui.label(egui::RichText::new("select a bone that has a parent").weak());
                 }
             }
 
-            cols[1].strong(format!("Mesh — {layer_name}"));
-            {
-                let ui = &mut cols[1];
-                match mesh_dims {
-                    Some((c, r)) => {
-                        ui.label(format!("{c} × {r} cells"));
-                        ui.horizontal_wrapped(|ui| {
-                            ui.toggle_value(&mut rui.weights, "Paint weights")
-                                .on_hover_text("Drag on the art to add the selected bone's weight; hold Alt to remove it");
-                            auto_near = ui
-                                .button("Auto weights")
-                                .on_hover_text("Weight each vertex to this layer's bone, its parent and its children")
-                                .clicked();
-                            auto_all = ui.button("All bones").on_hover_text("Auto weights from every bone").clicked();
-                        });
-                        if rui.weights {
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut rui.brush).range(2.0..=200.0).prefix("size ").suffix(" px"));
-                                ui.add(egui::DragValue::new(&mut rui.strength).speed(0.01).range(0.01..=1.0).prefix("strength "));
-                            });
-                        }
-                        ui.horizontal(|ui| {
-                            if ui.button(format!("{} Remove mesh", icons::TRASH)).clicked() {
-                                del_mesh = true;
-                            }
-                        });
+            ui.separator();
+            ui.strong("Mesh");
+            ui.label(egui::RichText::new(&layer_name).weak());
+            match mesh_dims {
+                Some((c, r)) => {
+                    ui.label(format!("{c}×{r}"));
+                    ui.toggle_value(&mut rui.weights, "Paint weights")
+                        .on_hover_text("Drag on the art to add the selected bone's weight; hold Alt to remove it");
+                    if rui.weights {
+                        ui.add(egui::DragValue::new(&mut rui.brush).range(2.0..=200.0).prefix("size ").suffix(" px"));
+                        ui.add(egui::DragValue::new(&mut rui.strength).speed(0.01).range(0.01..=1.0).prefix("strength "));
                     }
-                    None => {
-                        ui.label(egui::RichText::new("A mesh lets the layer bend where its bones' weights blend.").weak());
-                        ui.horizontal(|ui| {
-                            ui.add(egui::DragValue::new(&mut rui.cell).range(4..=64).suffix(" px"))
-                                .on_hover_text("Mesh cell size");
-                            make_mesh = ui
-                                .add_enabled(layer_bounds.is_some(), egui::Button::new("Make mesh"))
-                                .on_hover_text("Lay a grid over the active layer; it starts rigid")
-                                .clicked();
-                        });
+                    auto_near = ui
+                        .button("Auto weights")
+                        .on_hover_text("Weight each vertex to this layer's bone, its parent and its children")
+                        .clicked();
+                    auto_all = ui.button("All bones").on_hover_text("Auto weights from every bone").clicked();
+                    if ui.button(format!("{} Remove", icons::TRASH)).on_hover_text("Remove this layer's mesh").clicked() {
+                        del_mesh = true;
                     }
+                }
+                None => {
+                    ui.add(egui::DragValue::new(&mut rui.cell).range(4..=64).suffix(" px")).on_hover_text("Mesh cell size");
+                    make_mesh = ui
+                        .add_enabled(layer_bounds.is_some(), egui::Button::new("Make mesh"))
+                        .on_hover_text("Lay a grid over the active layer so it can bend; it starts rigid")
+                        .clicked();
                 }
             }
 
-            cols[2].strong("Layer follows");
+            ui.separator();
+            ui.strong("Layer");
+            ui.label(match &attached {
+                Some(b) => format!("{layer_name} → {b}"),
+                None => format!("{layer_name}: not attached"),
+            });
+            if rui.sel.is_some() && rui.sel == layer_bone {
+                detach = ui.button("Detach").on_hover_text("Stop the active layer following its bone").clicked();
+            } else if ui
+                .add_enabled(sel_name.is_some(), egui::Button::new("Attach"))
+                .on_hover_text(match &sel_name {
+                    Some(n) => format!("Make the active layer follow “{n}”"),
+                    None => "Select a bone on the canvas first".to_string(),
+                })
+                .clicked()
             {
-                let ui = &mut cols[2];
-                let label = match &attached {
-                    Some(b) => format!("{layer_name} → {b}"),
-                    None => format!("{layer_name}: not attached"),
-                };
-                ui.label(label);
-                let sel_attached = rui.sel.is_some() && rui.sel == layer_bone;
-                ui.horizontal(|ui| {
-                    if sel_attached {
-                        detach = ui.button("Detach").on_hover_text("Stop the active layer following its bone").clicked();
-                    } else if ui
-                        .add_enabled(sel_name.is_some(), egui::Button::new("Attach"))
-                        .on_hover_text("Make the active layer follow the selected bone")
-                        .clicked()
-                    {
-                        attach = true;
-                    }
-                    if let Some(n) = &sel_name {
-                        ui.label(egui::RichText::new(format!("selected bone: {n}")).weak());
-                    } else {
-                        ui.label(egui::RichText::new("select a bone on the canvas").weak());
-                    }
-                });
+                attach = true;
             }
         });
     });

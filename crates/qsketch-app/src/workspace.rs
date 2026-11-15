@@ -428,8 +428,8 @@ impl Workspace {
                 .or_else(|| self.dock.iter_all_tabs().find(|(_, t)| **t == PanelKind::Home))
                 .map(|(p, _)| NodePath { surface: p.surface, node: p.node });
             if let Some(np) = anchor {
-                // The Rig panel needs more room than the Timeline.
-                let ratio = if kind == PanelKind::Rig { 0.58 } else { 0.72 };
+                // The Rig panel is sized to its content (header, key track, one row).
+                let ratio = if kind == PanelKind::Rig { 0.70 } else { 0.72 };
                 let [_, below] = self.dock[np.surface].split_below(np.node, ratio, vec![kind]);
                 self.dock.set_focused_node_and_surface(NodePath { surface: np.surface, node: below });
                 return;

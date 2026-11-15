@@ -43,6 +43,9 @@ All notable changes to qSketch are documented in this file.
   bone now selects it only on a plain click, and a drag paints, so you can paint
   across the bones that lie over the art; the transport row wraps in a narrow
   panel.
+- The Rig panel is more compact: Limb, Mesh and Layer share one wrapped row
+  instead of three stacked columns, and the panel opens at about 28% of the
+  window instead of 42%, so the canvas keeps its room.
 - Keying a bone's position or rotation for the first time at a later time also
   keys its rest value at 0, so animations start from the setup pose instead of
   already being posed at the first frame.
