@@ -38,6 +38,11 @@ All notable changes to qSketch are documented in this file.
   and sections for IK, the active layer's mesh and weights, and what the layer
   follows, plus Export for games and Bake. The options bar is now just a status
   line and hint.
+- Rig panel, from more testing: drag a key on the track to retime it (5 ms steps,
+  replaces a key it lands on; undoable); while painting weights, pressing on a
+  bone now selects it only on a plain click, and a drag paints, so you can paint
+  across the bones that lie over the art; the transport row wraps in a narrow
+  panel.
 - Keying a bone's position or rotation for the first time at a later time also
   keys its rest value at 0, so animations start from the setup pose instead of
   already being posed at the first frame.

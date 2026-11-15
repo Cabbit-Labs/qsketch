@@ -98,6 +98,9 @@ pub enum BoneGesture {
     Idle,
     /// Painting the selected bone's weight on the active layer's mesh.
     Paint { remove: bool },
+    /// Pressed on a bone while painting weights: a click selects it, but a
+    /// drag paints (bones always lie over the art being painted).
+    PaintOrSelect { bone: BoneId, remove: bool, start: Pt, start_screen: egui::Pos2 },
 }
 
 /// What a press landed on.
@@ -166,10 +169,12 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             let gesture = if weights_on {
                 // Clicking a bone picks which weight to paint; anywhere else paints.
                 match hit_test(entry, inp.screen) {
-                    Some(Hit::Tip(b) | Hit::Head(b) | Hit::Body(b)) => {
-                        entry.rig_ui.sel = Some(b);
-                        BoneGesture::Idle
-                    }
+                    Some(Hit::Tip(bone) | Hit::Head(bone) | Hit::Body(bone)) => BoneGesture::PaintOrSelect {
+                        bone,
+                        remove: inp.mods.alt,
+                        start: inp.doc,
+                        start_screen: inp.screen,
+                    },
                     None => {
                         paint_at(entry, inp.doc, inp.mods.alt);
                         BoneGesture::Paint { remove: inp.mods.alt }
@@ -220,6 +225,18 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             let Some(ToolSession::Bone { gesture, cur, moved }) = &mut state.session else { return };
             *cur = inp.doc;
             *moved = true;
+            // A drag that began on a bone turns into painting once it has moved.
+            if let BoneGesture::PaintOrSelect { remove, start, start_screen, .. } = *gesture {
+                if (inp.screen - start_screen).length() < 5.0 {
+                    return;
+                }
+                *gesture = BoneGesture::Paint { remove };
+                if let Some(entry) = state.doc_mut(doc_id) {
+                    paint_at(entry, start, remove);
+                    paint_at(entry, inp.doc, remove);
+                }
+                return;
+            }
             let gesture = *gesture;
             if let BoneGesture::Paint { remove } = gesture {
                 if let Some(entry) = state.doc_mut(doc_id) {
@@ -268,6 +285,8 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                     }
                 }
                 BoneGesture::Paint { .. } => entry.doc.commit("Paint Weights"),
+                // Never dragged: it was a click on a bone, so select it.
+                BoneGesture::PaintOrSelect { bone, .. } => entry.rig_ui.sel = Some(bone),
                 BoneGesture::Idle => {}
             }
         }

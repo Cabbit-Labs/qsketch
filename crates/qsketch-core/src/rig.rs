@@ -762,6 +762,46 @@ impl Rig {
         }
     }
 
+    /// Move every key of `bone` at `from_ms` to `to_ms` (clamped to the
+    /// animation), replacing any of the same kind already there.
+    pub fn move_keys(&mut self, anim: usize, bone: BoneId, from_ms: u32, to_ms: u32) {
+        let Some(an) = self.animations.get_mut(anim) else { return };
+        let to_ms = to_ms.min(an.duration_ms);
+        if from_ms == to_ms {
+            return;
+        }
+        let Some(t) = an.tracks.iter_mut().find(|t| t.bone == bone) else { return };
+        fn shift<T: Clone>(keys: &mut Vec<Key<T>>, from: u32, to: u32) {
+            if let Some(i) = keys.iter().position(|k| k.time_ms == from) {
+                let mut k = keys.remove(i);
+                keys.retain(|o| o.time_ms != to);
+                k.time_ms = to;
+                let at = keys.partition_point(|o| o.time_ms < to);
+                keys.insert(at, k);
+            }
+        }
+        shift(&mut t.translate, from_ms, to_ms);
+        shift(&mut t.rotate, from_ms, to_ms);
+        shift(&mut t.scale, from_ms, to_ms);
+    }
+
+    /// Move the IK keys of constraint `id` from `from_ms` to `to_ms`.
+    pub fn move_ik_keys(&mut self, anim: usize, id: u32, from_ms: u32, to_ms: u32) {
+        let Some(an) = self.animations.get_mut(anim) else { return };
+        let to_ms = to_ms.min(an.duration_ms);
+        if from_ms == to_ms {
+            return;
+        }
+        let Some(t) = an.ik.iter_mut().find(|t| t.constraint == id) else { return };
+        if let Some(i) = t.keys.iter().position(|k| k.time_ms == from_ms) {
+            let mut k = t.keys.remove(i);
+            t.keys.retain(|o| o.time_ms != to_ms);
+            k.time_ms = to_ms;
+            let at = t.keys.partition_point(|o| o.time_ms < to_ms);
+            t.keys.insert(at, k);
+        }
+    }
+
     /// Remove the IK keys of constraint `id` at `time_ms`.
     pub fn remove_ik_keys_at(&mut self, anim: usize, id: u32, time_ms: u32) {
         let Some(an) = self.animations.get_mut(anim) else { return };
@@ -1222,6 +1262,34 @@ mod tests {
         assert_eq!(back.rig, doc.rig);
         // And it still poses the same.
         assert_eq!(back.rig.pose(Some((an, 450))), doc.rig.pose(Some((an, 450))));
+    }
+
+    #[test]
+    fn keys_can_be_moved_along_the_timeline() {
+        let mut rig = Rig::default();
+        let b = rig.add_bone("b", None, 0.0, 0.0, 10.0);
+        let a = rig.add_animation("a", 1000);
+        rig.set_key(a, b, 100, KeyValue::Rotate(10.0), Curve::Linear);
+        rig.set_key(a, b, 100, KeyValue::Translate([1.0, 2.0]), Curve::Stepped);
+        rig.set_key(a, b, 400, KeyValue::Rotate(40.0), Curve::Linear);
+        rig.move_keys(a, b, 100, 250);
+        assert_eq!(rig.key_times(a, b), vec![250, 400]);
+        // Both kinds moved together and kept their easing.
+        assert!(near(rig.offsets(a, b, 250).1, 10.0) && near(rig.offsets(a, b, 250).0[1], 2.0));
+        assert_eq!(rig.animations[a].tracks[0].translate[0].curve, Curve::Stepped);
+        // Dropping onto another key replaces it; past the end clamps to the end.
+        rig.move_keys(a, b, 250, 400);
+        assert_eq!(rig.key_times(a, b), vec![400]);
+        assert!(near(rig.offsets(a, b, 400).1, 10.0));
+        rig.move_keys(a, b, 400, 5000);
+        assert_eq!(rig.key_times(a, b), vec![1000]);
+        // IK keys move too.
+        let c = rig.add_bone("c", Some(b), 10.0, 0.0, 10.0);
+        let (ik, _) = rig.add_ik(c).unwrap();
+        rig.set_ik_key(a, ik, 200, IkValue { mix: 0.5, bend: 1 }, Curve::Linear);
+        rig.move_ik_keys(a, ik, 200, 600);
+        assert!(near(rig.ik_at(a, ik, 600).unwrap().mix, 0.5));
+        assert_eq!(rig.animations[a].ik[0].keys.len(), 1);
     }
 
     #[test]

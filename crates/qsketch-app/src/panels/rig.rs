@@ -23,6 +23,18 @@ struct TrackOut {
     delete_bone_key: Option<u32>,
     /// An IK key was right-clicked.
     delete_ik_key: Option<u32>,
+    /// A bone key was dragged to a new time: (from, to).
+    move_bone_key: Option<(u32, u32)>,
+    /// An IK key was dragged to a new time.
+    move_ik_key: Option<(u32, u32)>,
+}
+
+/// A key being dragged along the track: which row (false: bone, true: IK)
+/// and the time it started at.
+#[derive(Clone, Copy, Default)]
+struct KeyDrag {
+    ik_row: bool,
+    from: u32,
 }
 
 /// A pleasant ruler step (ms) so ticks sit at least ~70 px apart.
@@ -127,7 +139,40 @@ fn key_track(
 
     // Interaction.
     let near = |keys: &[u32], x: f32| keys.iter().copied().find(|&k| (to_x(k) - x).abs() <= 7.0);
-    if let Some(p) = resp.interact_pointer_pos() {
+    let drag_id = ui.id().with("key_drag");
+    if resp.drag_started() {
+        if let Some(p) = ui.input(|i| i.pointer.press_origin()) {
+            let ik_row = p.y > row_b - 11.0;
+            let hit = if ik_row { near(ik_keys, p.x) } else { near(bone_keys, p.x) };
+            if let Some(from) = hit {
+                ui.data_mut(|d| d.insert_temp(drag_id, KeyDrag { ik_row, from }));
+            }
+        }
+    }
+    let key_drag: Option<KeyDrag> = ui.data(|d| d.get_temp(drag_id));
+    if let Some(kd) = key_drag {
+        // Dragging a key retimes it (in 5 ms steps); the playhead stays put.
+        if let Some(p) = resp.interact_pointer_pos().or_else(|| ui.input(|i| i.pointer.latest_pos())) {
+            let to = (to_t(p.x) + 2) / 5 * 5;
+            let y = if kd.ik_row { row_b } else { row_a };
+            let c = Color32::from_rgb(255, 200, 40);
+            diamond(&painter, Pos2::new(to_x(to), y), r, c.gamma_multiply(0.85), Stroke::new(1.5, Color32::WHITE));
+            painter.text(Pos2::new(to_x(to) + 9.0, y - 5.0), Align2::LEFT_TOP, format!("{to} ms"), font.clone(), text);
+            if resp.drag_stopped() {
+                ui.data_mut(|d| d.remove_temp::<KeyDrag>(drag_id));
+                if to != kd.from {
+                    if kd.ik_row {
+                        out.move_ik_key = Some((kd.from, to));
+                    } else {
+                        out.move_bone_key = Some((kd.from, to));
+                    }
+                }
+            }
+        }
+        if resp.drag_stopped() {
+            ui.data_mut(|d| d.remove_temp::<KeyDrag>(drag_id));
+        }
+    } else if let Some(p) = resp.interact_pointer_pos() {
         if resp.dragged() || resp.clicked() {
             let snap = !ui.input(|i| i.modifiers.shift);
             let mut t = to_t(p.x);
@@ -148,7 +193,9 @@ fn key_track(
             }
         }
     }
-    resp.on_hover_text("Click or drag to scrub (Shift: no snapping to keys). Right-click a key to delete it.");
+    resp.on_hover_text(
+        "Click or drag to scrub (Shift: no snapping to keys). Drag a key to retime it; right-click a key to delete it.",
+    );
     out
 }
 
@@ -232,7 +279,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 
         // --- transport and keys ------------------------------------------------
         if let Some(a) = &anim_edit {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let glyph = if rui.playing { icons::PAUSE } else { icons::PLAY };
                 if ui.button(glyph).on_hover_text(if rui.playing { "Pause" } else { "Play the animation" }).clicked() {
                     rui.playing = !rui.playing;
@@ -431,6 +478,18 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         if let (Some(b), Some(a)) = (sel, cur) {
             e.doc.state_mut().rig.remove_keys_at(a, b, time);
             e.doc.commit("Delete Keys");
+        }
+    } else if let Some((from, to)) = track.move_bone_key {
+        if let (Some(b), Some(a)) = (sel, cur) {
+            e.doc.state_mut().rig.move_keys(a, b, from, to);
+            e.rig_ui.time_ms = to;
+            e.doc.commit("Move Keys");
+        }
+    } else if let Some((from, to)) = track.move_ik_key {
+        if let (Some(c), Some(a)) = (&ik_info, cur) {
+            e.doc.state_mut().rig.move_ik_keys(a, c.id, from, to);
+            e.rig_ui.time_ms = to;
+            e.doc.commit("Move IK Key");
         }
     } else if let Some(t) = track.delete_bone_key {
         if let (Some(b), Some(a)) = (sel, cur) {
