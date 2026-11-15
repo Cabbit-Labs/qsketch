@@ -4,6 +4,21 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Guides: drag from the ruler corner for a 45 degree guide, Shift-drag turns any
+  guide (Shift+Alt for free angles), snapping works on diagonals and their
+  crossings, and View > Rulers & Guides > Add Center Guides (or double-click the
+  ruler corner) adds the middle ones.
+- Straight lines: Shift+click starts from the end of the last committed stroke,
+  and right-click cancels a stroke or shape you are holding.
+- Re-transforming pixels you just transformed resumes from the original pixels
+  so nothing softens (a Preferences toggle).
+- Brightness/Contrast, Hue/Saturation and Color Balance open at zero.
+- New Blur brush tool, and a Soft edges option for the Magic Wand (on by
+  default) so moved selections leave no faint outline.
+- Sliders: double-click a percent slider to reset it, right-click a value for
+  quick values. Layers: a layer finder (Ctrl+Shift+right-click on the canvas),
+  an outline of the hovered layer, a half-opacity toggle on each row, colored
+  H/S/V bars, and Ctrl+Q no longer quits twice when rebound.
 - Skeletal animation: a bone rig saved with the document. File ▸ Rig Animation…
   edits bones, attaches layers to bones, keys move / rotate / scale with
   easing, previews the pose live, and bakes an animation to ordinary frames
