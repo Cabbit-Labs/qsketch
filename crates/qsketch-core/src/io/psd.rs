@@ -245,6 +245,7 @@ pub fn load(path: &Path) -> anyhow::Result<DocState> {
         frames: vec![crate::anim::Frame::default()],
         frame: 0,
         tags: Vec::new(),
+        rig: Default::default(),
     })
 }
 

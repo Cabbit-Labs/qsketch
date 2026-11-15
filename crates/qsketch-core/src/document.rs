@@ -45,6 +45,8 @@ pub struct DocState {
     pub frame: usize,
     /// Named frame ranges.
     pub tags: Vec<crate::anim::Tag>,
+    /// Skeleton, attachments and keyframed animations (see `crate::rig`).
+    pub rig: crate::rig::Rig,
 }
 
 impl DocState {
@@ -90,6 +92,7 @@ impl DocState {
             frames: vec![crate::anim::Frame::default()],
             frame: 0,
             tags: Vec::new(),
+            rig: Default::default(),
         }
     }
 
@@ -110,6 +113,7 @@ impl DocState {
             frames: vec![crate::anim::Frame::default()],
             frame: 0,
             tags: Vec::new(),
+            rig: Default::default(),
         }
     }
 

@@ -208,6 +208,7 @@ pub fn decode_snapshot(bytes: &[u8]) -> Result<(DocState, String)> {
             frames: vec![qsketch_core::Frame::default()],
             frame: 0,
             tags: Vec::new(),
+            rig: Default::default(),
         },
         h.title,
     ))

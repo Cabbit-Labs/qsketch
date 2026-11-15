@@ -64,6 +64,9 @@ struct Manifest {
     frame: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tags: Vec<crate::anim::Tag>,
+    /// Skeleton and keyframed animations (0.71+); older versions ignore it.
+    #[serde(default, skip_serializing_if = "crate::rig::Rig::is_empty")]
+    rig: crate::rig::Rig,
 }
 
 /// One cel of a layer in a `.qsk` with several frames.
@@ -333,6 +336,7 @@ pub fn save_with_meta(path: &Path, doc: &DocState, meta: DocMeta<'_>) -> anyhow:
             frames: if nframes > 1 { doc.frames.clone() } else { Vec::new() },
             frame: doc.frame,
             tags: doc.tags.clone(),
+            rig: doc.rig.clone(),
         };
         if let Some(t) = meta.timelapse {
             for (i, frame) in t.frames.iter().enumerate() {
@@ -498,6 +502,7 @@ pub fn load_with_meta(path: &Path) -> anyhow::Result<(DocState, LoadedMeta)> {
         frames: if manifest.frames.is_empty() { vec![crate::anim::Frame::default()] } else { manifest.frames },
         frame: manifest.frame,
         tags: manifest.tags,
+        rig: manifest.rig,
     };
     doc.repair_groups();
     doc.repair_animation();

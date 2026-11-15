@@ -962,6 +962,7 @@ impl AseSprite {
             frames,
             frame: 0,
             tags,
+            rig: Default::default(),
         };
         doc.repair_groups();
         doc.repair_animation();
