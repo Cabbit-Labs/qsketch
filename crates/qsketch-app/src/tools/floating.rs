@@ -1894,7 +1894,7 @@ mod tests {
         }
     }
 
-    /// Ash's fang: wand-select a soft-edged shape, then move it. Without
+    /// A fang: wand-select a soft-edged shape, then move it. Without
     /// "soft edges" the see-through rim stays behind as a faint outline;
     /// with it nothing is left.
     #[test]

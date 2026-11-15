@@ -88,7 +88,13 @@ impl QSketchApp {
         // egui grows/shrinks the whole UI on Ctrl+= / Ctrl+- by default, on
         // top of the canvas zoom those keys mean here; the UI scale lives in
         // Preferences instead.
-        cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        cc.egui_ctx.options_mut(|o| {
+            o.zoom_with_keyboard = false;
+            // egui closes the window on Ctrl+Q all by itself; qSketch's own Quit
+            // action (rebindable in the keymap) does that job, so a Ctrl+Q given
+            // to another command no longer also starts the quit prompts.
+            o.quit_shortcuts.clear();
+        });
         let applied_theme = (settings.ui.clone(), settings.ui.scale);
         let applied_native_frame = settings.ui.native_frame;
         let app_icon = {
