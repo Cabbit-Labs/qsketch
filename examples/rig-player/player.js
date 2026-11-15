@@ -169,7 +169,9 @@
     ctx.imageSmoothingEnabled = !state.pixel;
     const world = QRig.pose(rig, state.anim, state.time);
     for (const part of rig.parts) {
-      ctx.globalAlpha = part.opacity;
+      const alpha = QRig.partAlpha(rig, part, state.anim, state.time);
+      if (alpha <= 0) continue;
+      ctx.globalAlpha = part.opacity * alpha;
       ctx.globalCompositeOperation = QRig.canvasBlend(part.blend);
       if (part.mesh) {
         drawMesh(rig, part, world, scale);

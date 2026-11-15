@@ -52,6 +52,14 @@ All notable changes to qSketch are documented in this file.
   animation to scale it (a flame growing out of a mouth). Ctrl also works
   wherever the Bone tool used Alt (new root bone, removing weight), since many
   window managers take Alt+drag.
+- Show, hide and fade layers in an animation: each layer can be hidden at rest
+  (Rig panel > Visibility > at rest) and keyed on an "opacity" row of the key
+  track (Show, Hide, or a typed opacity; stepped easing switches instantly,
+  linear fades). A flame can now appear only while a dragon breathes fire. It
+  works in the live preview, Bake (as cel opacity) and the game export, whose
+  `parts` timelines and part `alpha` are in `docs/RIG_FORMAT.md` and the
+  reference player. Scrubbing the Rig track now snaps to 5 ms steps, so keys
+  land on round times.
 - Keying a bone's position or rotation for the first time at a later time also
   keys its rest value at 0, so animations start from the setup pose instead of
   already being posed at the first frame.

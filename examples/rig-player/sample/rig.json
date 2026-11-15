@@ -178,7 +178,8 @@
       },
       "duration": 2.0,
       "ik": {},
-      "loop": true
+      "loop": true,
+      "parts": {}
     },
     "walk": {
       "bones": {
@@ -479,7 +480,8 @@
       },
       "duration": 1.0,
       "ik": {},
-      "loop": true
+      "loop": true,
+      "parts": {}
     },
     "wave": {
       "bones": {
@@ -628,7 +630,8 @@
       },
       "duration": 1.2,
       "ik": {},
-      "loop": false
+      "loop": false,
+      "parts": {}
     }
   },
   "bones": [

@@ -1,6 +1,10 @@
 {
   "samples": [
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": null,
       "bones": {
         "lower": [
@@ -129,6 +133,10 @@
       "t": 0.0
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -257,6 +265,10 @@
       "t": 0.0
     },
     {
+      "alpha": {
+        "body": 0.8666666746139526,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -385,6 +397,10 @@
       "t": 0.05
     },
     {
+      "alpha": {
+        "body": 0.46666663885116577,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -513,6 +529,10 @@
       "t": 0.2
     },
     {
+      "alpha": {
+        "body": 0.2885690927505493,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -641,6 +661,10 @@
       "t": 0.399
     },
     {
+      "alpha": {
+        "body": 0.29041334986686707,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -769,6 +793,10 @@
       "t": 0.4
     },
     {
+      "alpha": {
+        "body": 0.40493956208229065,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -897,6 +925,10 @@
       "t": 0.45
     },
     {
+      "alpha": {
+        "body": 0.8077234029769897,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -1025,6 +1057,10 @@
       "t": 0.599
     },
     {
+      "alpha": {
+        "body": 0.8095865845680237,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -1153,6 +1189,10 @@
       "t": 0.6
     },
     {
+      "alpha": {
+        "body": 0.8114308714866638,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -1281,6 +1321,10 @@
       "t": 0.601
     },
     {
+      "alpha": {
+        "body": 0.8999999761581421,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -1409,6 +1453,10 @@
       "t": 0.7
     },
     {
+      "alpha": {
+        "body": 0.8999999761581421,
+        "cloth": 0.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -1537,6 +1585,10 @@
       "t": 0.8
     },
     {
+      "alpha": {
+        "body": 0.8999999761581421,
+        "cloth": 0.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -1665,6 +1717,10 @@
       "t": 0.9
     },
     {
+      "alpha": {
+        "body": 0.0,
+        "cloth": 0.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -1793,6 +1849,10 @@
       "t": 1.0
     },
     {
+      "alpha": {
+        "body": 0.0,
+        "cloth": 0.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -1921,6 +1981,10 @@
       "t": 1.1
     },
     {
+      "alpha": {
+        "body": 0.0,
+        "cloth": 0.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -2049,6 +2113,10 @@
       "t": 1.199
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -2177,6 +2245,10 @@
       "t": 1.2
     },
     {
+      "alpha": {
+        "body": 0.20000000298023224,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -2305,6 +2377,10 @@
       "t": 1.5
     },
     {
+      "alpha": {
+        "body": 0.7333333492279053,
+        "cloth": 1.0
+      },
       "anim": "loopy",
       "bones": {
         "lower": [
@@ -2433,6 +2509,10 @@
       "t": 2.5
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -2561,6 +2641,10 @@
       "t": 0.0
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -2689,6 +2773,10 @@
       "t": 0.05
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -2817,6 +2905,10 @@
       "t": 0.2
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -2945,6 +3037,10 @@
       "t": 0.399
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -3073,6 +3169,10 @@
       "t": 0.4
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -3201,6 +3301,10 @@
       "t": 0.45
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -3329,6 +3433,10 @@
       "t": 0.599
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -3457,6 +3565,10 @@
       "t": 0.6
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -3585,6 +3697,10 @@
       "t": 0.601
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -3713,6 +3829,10 @@
       "t": 0.7
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -3841,6 +3961,10 @@
       "t": 0.8
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -3969,6 +4093,10 @@
       "t": 0.9
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -4097,6 +4225,10 @@
       "t": 1.0
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -4225,6 +4357,10 @@
       "t": 1.1
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -4353,6 +4489,10 @@
       "t": 1.199
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -4481,6 +4621,10 @@
       "t": 1.2
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [
@@ -4609,6 +4753,10 @@
       "t": 1.5
     },
     {
+      "alpha": {
+        "body": 1.0,
+        "cloth": 0.5
+      },
       "anim": "once",
       "bones": {
         "lower": [

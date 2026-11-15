@@ -174,22 +174,23 @@
     ch.rot = ch.rot + mix * wrap180(rotC - ch.rot);
   }
 
+  /** The time to sample `anim` at: wrapped when it loops, else held at the ends. */
+  function loopTime(anim, seconds) {
+    if (anim.loop) {
+      // `%` is exact; adding the duration first would not be.
+      const t = seconds % anim.duration;
+      return t < 0 ? t + anim.duration : t;
+    }
+    return Math.min(Math.max(seconds, 0), anim.duration);
+  }
+
   /**
    * World matrix of every bone. `animName` null (or unknown) gives the setup
    * pose, which is plain forward kinematics; IK applies only to animations.
    */
   function pose(rig, animName, seconds) {
     const anim = animName != null ? rig.animations[animName] : null;
-    let t = seconds;
-    if (anim) {
-      if (anim.loop) {
-        // `%` is exact; adding the duration first would not be.
-        t = seconds % anim.duration;
-        if (t < 0) t += anim.duration;
-      } else {
-        t = Math.min(Math.max(seconds, 0), anim.duration);
-      }
-    }
+    const t = anim ? loopTime(anim, seconds) : seconds;
     const locals = rig.bones.map((b) => {
       const l = { x: b.x, y: b.y, rot: b.rotation, sx: b.scaleX, sy: b.scaleY };
       const tr = anim && anim.bones[b.name];
@@ -280,6 +281,19 @@
     return tris;
   }
 
+  /**
+   * How shown `part` is (0..1): its own timeline in `animName` at `seconds`
+   * when it has one, else its rest `alpha` (1 when absent). Multiply it into
+   * the part's `opacity`.
+   */
+  function partAlpha(rig, part, animName, seconds) {
+    const rest = part.alpha == null ? 1 : part.alpha;
+    const anim = animName != null ? rig.animations[animName] : null;
+    const keys = anim && anim.parts && anim.parts[part.name];
+    if (!keys || keys.length === 0) return rest;
+    return Math.min(1, Math.max(0, sample(keys, loopTime(anim, seconds), ["alpha"]).alpha));
+  }
+
   /** The matrix that draws `part`'s image (pixel 0,0 at its top-left). */
   function partMatrix(rig, part, world) {
     const [a, b, c, d, e, f] = part.transform;
@@ -312,7 +326,7 @@
   const canvasBlend = (name) => BLEND[name] || "source-over";
 
   const QRig = {
-    IDENTITY, mul, apply, inverse, trs, wrap180, ease, sample, load, pose, partMatrix, meshPoints, meshTriangles, canvasBlend,
+    IDENTITY, mul, apply, inverse, trs, wrap180, ease, sample, load, pose, partMatrix, partAlpha, meshPoints, meshTriangles, canvasBlend,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = QRig;
   else root.QRig = QRig;

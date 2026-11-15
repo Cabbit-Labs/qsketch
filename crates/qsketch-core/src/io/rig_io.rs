@@ -108,6 +108,7 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
     let mut part_names: Vec<String> = Vec::new();
     let mut files: Vec<String> = Vec::new();
     let mut parts = Vec::new();
+    let mut part_by_layer: Vec<(crate::layer::LayerId, String)> = Vec::new();
     let mut skipped = Vec::new();
     for i in 0..doc.layers.len() {
         if !doc.effectively_visible(i) {
@@ -128,6 +129,7 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         let mesh = rig.mesh_of(l.id());
         let b = mesh.map_or(content, |m| m.rect);
         let name = unique(&mut part_names, l.name(), "part");
+        part_by_layer.push((l.id(), name.clone()));
         let mut file = format!("parts/{}.png", file_stem(&name));
         let mut n = 2;
         while files.contains(&file) {
@@ -153,6 +155,10 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
             "opacity": l.props.opacity,
             "blend": format!("{:?}", l.props.blend).to_lowercase(),
         });
+        let rest = rig.rest_alpha_of(l.id());
+        if rest < 0.999 {
+            part["alpha"] = json!(rest);
+        }
         if let Some(m) = mesh {
             // Bones are listed once, vertices refer to them by position:
             // each vertex is [bone, weight, bone, weight, ...].
@@ -223,6 +229,13 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
                 ik_tracks.insert(n.clone(), keys_json(&t.keys, |v| json!({ "mix": v.mix, "bend": v.bend })));
             }
         }
+        let mut part_tracks = serde_json::Map::new();
+        for t in &a.alpha {
+            let Some((_, n)) = part_by_layer.iter().find(|(id, _)| *id == t.layer) else { continue };
+            if !t.keys.is_empty() {
+                part_tracks.insert(n.clone(), keys_json(&t.keys, |v| json!({ "alpha": v })));
+            }
+        }
         let name = unique(&mut anim_names, &a.name, "animation");
         animations.insert(
             name,
@@ -231,6 +244,7 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
                 "loop": a.looped,
                 "bones": Value::Object(tracks),
                 "ik": Value::Object(ik_tracks),
+                "parts": Value::Object(part_tracks),
             }),
         );
     }

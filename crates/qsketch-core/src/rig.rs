@@ -161,6 +161,9 @@ pub struct RigAnim {
     /// Mix / bend keys of the IK constraints.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ik: Vec<IkTrack>,
+    /// Opacity keys of layers (show, hide, fade).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alpha: Vec<AlphaTrack>,
 }
 
 fn yes() -> bool {
@@ -212,6 +215,14 @@ pub struct IkConstraint {
     pub mix: f32,
 }
 
+/// The opacity keys of one layer in one animation (0 = hidden, 1 = shown).
+/// Use a stepped curve for an instant show or hide, linear to fade.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AlphaTrack {
+    pub layer: LayerId,
+    pub keys: Vec<Key<f32>>,
+}
+
 /// What an IK key sets: the constraint's mix and bend.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct IkValue {
@@ -237,6 +248,10 @@ pub struct Rig {
     pub animations: Vec<RigAnim>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ik: Vec<IkConstraint>,
+    /// Layers that are not fully shown when no animation keys them (0 =
+    /// hidden at rest); absent layers are fully shown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rest_alpha: Vec<(LayerId, f32)>,
     /// Layers drawn through a weighted mesh (see `crate::rigmesh`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub meshes: Vec<crate::rigmesh::PartMesh>,
@@ -358,7 +373,11 @@ impl RigAnim {
 
 impl Rig {
     pub fn is_empty(&self) -> bool {
-        self.bones.is_empty() && self.animations.is_empty() && self.attachments.is_empty() && self.meshes.is_empty()
+        self.bones.is_empty()
+            && self.animations.is_empty()
+            && self.attachments.is_empty()
+            && self.meshes.is_empty()
+            && self.rest_alpha.is_empty()
     }
 
     pub fn bone_index(&self, id: BoneId) -> Option<usize> {
@@ -436,6 +455,88 @@ impl Rig {
     pub fn prune(&mut self, doc_layers: &[LayerId]) {
         self.attachments.retain(|a| doc_layers.contains(&a.layer));
         self.meshes.retain(|m| doc_layers.contains(&m.layer));
+        self.rest_alpha.retain(|(l, _)| doc_layers.contains(l));
+        for a in &mut self.animations {
+            a.alpha.retain(|t| doc_layers.contains(&t.layer));
+        }
+    }
+
+    /// How shown `layer` is when no animation keys it.
+    pub fn rest_alpha_of(&self, layer: LayerId) -> f32 {
+        self.rest_alpha.iter().find(|(l, _)| *l == layer).map_or(1.0, |(_, a)| *a)
+    }
+
+    /// Set how shown `layer` is at rest (1 removes the setting).
+    pub fn set_rest_alpha(&mut self, layer: LayerId, alpha: f32) {
+        self.rest_alpha.retain(|(l, _)| *l != layer);
+        let a = alpha.clamp(0.0, 1.0);
+        if a < 0.999 {
+            self.rest_alpha.push((layer, a));
+        }
+    }
+
+    /// How shown `layer` is: its keys in the animation at `t_ms` when it has
+    /// any, else its rest value.
+    pub fn alpha_at(&self, anim: Option<(usize, u32)>, layer: LayerId) -> f32 {
+        let keyed = anim.and_then(|(i, t)| {
+            let a = self.animations.get(i)?;
+            let tr = a.alpha.iter().find(|tr| tr.layer == layer)?;
+            sample(&tr.keys, a.local_time(t))
+        });
+        keyed.unwrap_or_else(|| self.rest_alpha_of(layer)).clamp(0.0, 1.0)
+    }
+
+    /// Whether anything about `layer` is shown differently over time or at rest.
+    pub fn alpha_matters(&self, anim: usize, layer: LayerId) -> bool {
+        self.rest_alpha_of(layer) < 0.999
+            || self.animations.get(anim).is_some_and(|a| a.alpha.iter().any(|t| t.layer == layer))
+    }
+
+    /// Set (or add) an opacity key of `layer` at `time_ms`.
+    pub fn set_alpha_key(&mut self, anim: usize, layer: LayerId, time_ms: u32, alpha: f32, curve: Curve) {
+        let Some(an) = self.animations.get_mut(anim) else { return };
+        let time_ms = time_ms.min(an.duration_ms);
+        let ti = match an.alpha.iter().position(|t| t.layer == layer) {
+            Some(i) => i,
+            None => {
+                an.alpha.push(AlphaTrack { layer, keys: Vec::new() });
+                an.alpha.len() - 1
+            }
+        };
+        upsert(&mut an.alpha[ti].keys, time_ms, alpha.clamp(0.0, 1.0), curve);
+    }
+
+    /// The times of `layer`'s opacity keys in animation `anim`.
+    pub fn alpha_key_times(&self, anim: usize, layer: LayerId) -> Vec<u32> {
+        self.animations
+            .get(anim)
+            .and_then(|a| a.alpha.iter().find(|t| t.layer == layer))
+            .map(|t| t.keys.iter().map(|k| k.time_ms).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn remove_alpha_keys_at(&mut self, anim: usize, layer: LayerId, time_ms: u32) {
+        let Some(an) = self.animations.get_mut(anim) else { return };
+        if let Some(t) = an.alpha.iter_mut().find(|t| t.layer == layer) {
+            t.keys.retain(|k| k.time_ms != time_ms);
+        }
+        an.alpha.retain(|t| !t.keys.is_empty());
+    }
+
+    pub fn move_alpha_keys(&mut self, anim: usize, layer: LayerId, from_ms: u32, to_ms: u32) {
+        let Some(an) = self.animations.get_mut(anim) else { return };
+        let to_ms = to_ms.min(an.duration_ms);
+        if from_ms == to_ms {
+            return;
+        }
+        let Some(t) = an.alpha.iter_mut().find(|t| t.layer == layer) else { return };
+        if let Some(i) = t.keys.iter().position(|k| k.time_ms == from_ms) {
+            let mut k = t.keys.remove(i);
+            t.keys.retain(|o| o.time_ms != to_ms);
+            k.time_ms = to_ms;
+            let at = t.keys.partition_point(|o| o.time_ms < to_ms);
+            t.keys.insert(at, k);
+        }
     }
 
     pub fn add_animation(&mut self, name: impl Into<String>, duration_ms: u32) -> usize {
@@ -444,6 +545,7 @@ impl Rig {
             duration_ms: duration_ms.max(1),
             looped: true,
             ik: Vec::new(),
+            alpha: Vec::new(),
             tracks: Vec::new(),
         });
         self.animations.len() - 1
@@ -841,6 +943,9 @@ impl Rig {
         for tr in &mut an.ik {
             added += hold(&mut tr.keys, t);
         }
+        for tr in &mut an.alpha {
+            added += hold(&mut tr.keys, t);
+        }
         added
     }
 
@@ -864,6 +969,9 @@ impl Rig {
             added += close(&mut t.translate, end) + close(&mut t.rotate, end) + close(&mut t.scale, end);
         }
         for t in &mut an.ik {
+            added += close(&mut t.keys, end);
+        }
+        for t in &mut an.alpha {
             added += close(&mut t.keys, end);
         }
         added
@@ -960,13 +1068,22 @@ fn pose_picture(raster: &Raster, kind: &PoseKind, width: u32, height: u32, filte
 /// attached layer (their masks baked in, since a mask can't follow a bone).
 pub fn posed_copy(doc: &DocState, anim: Option<usize>, t_ms: u32, filter: ResizeFilter) -> DocState {
     let mut out = doc.clone();
-    if doc.rig.attachments.is_empty() && doc.rig.meshes.is_empty() {
+    let rig = &doc.rig;
+    if rig.attachments.is_empty()
+        && rig.meshes.is_empty()
+        && rig.rest_alpha.is_empty()
+        && rig.animations.iter().all(|a| a.alpha.is_empty())
+    {
         return out;
     }
     let setup = doc.rig.pose(None);
     let pose = doc.rig.pose(anim.map(|a| (a, t_ms)));
     let (w, h) = (doc.width, doc.height);
     for l in &mut out.layers {
+        let alpha = rig.alpha_at(anim.map(|a| (a, t_ms)), l.id());
+        if alpha < 0.999 {
+            l.props.opacity *= alpha;
+        }
         if !l.owns_pixels() {
             continue;
         }
@@ -1010,11 +1127,16 @@ pub fn bake(doc: &DocState, anim: usize, fps: u32, filter: ResizeFilter) -> Resu
     let step = 1000.0 / fps as f32;
 
     // Each frame's pose, computed once for all layers.
-    let poses: Vec<Vec<Xf>> = (0..n).map(|i| doc.rig.pose(Some((anim, (i as f32 * step).round() as u32)))).collect();
+    let times: Vec<u32> = (0..n).map(|i| (i as f32 * step).round() as u32).collect();
+    let poses: Vec<Vec<Xf>> = times.iter().map(|&t| doc.rig.pose(Some((anim, t)))).collect();
 
     for l in &mut out.layers {
         let id = l.id();
-        let rigged = (doc.rig.attached_bone(id).is_some() || doc.rig.mesh_of(id).is_some()) && l.owns_pixels();
+        // A layer gets a cel per frame when its bones move it, or when it is
+        // shown differently at rest or over time (a flame that comes and goes).
+        let rigged =
+            (doc.rig.attached_bone(id).is_some() || doc.rig.mesh_of(id).is_some() || doc.rig.alpha_matters(anim, id))
+                && l.owns_pixels();
         if !rigged && !l.animated() {
             l.cels.clear();
             continue;
@@ -1031,9 +1153,14 @@ pub fn bake(doc: &DocState, anim: usize, fps: u32, filter: ResizeFilter) -> Resu
             let base = l.raster.clone();
             l.cels = poses
                 .iter()
-                .map(|pose| match pose_kind(&doc.rig, id, pose, &setup) {
-                    Some(kind) => Cel::own(pose_picture(&base, &kind, w, h, filter)),
-                    None => Cel::own(base.clone()),
+                .zip(&times)
+                .map(|(pose, &t)| {
+                    let mut cel = match pose_kind(&doc.rig, id, pose, &setup) {
+                        Some(kind) => Cel::own(pose_picture(&base, &kind, w, h, filter)),
+                        None => Cel::own(base.clone()),
+                    };
+                    cel.opacity = doc.rig.alpha_at(Some((anim, t)), id);
+                    cel
                 })
                 .collect();
         } else {
@@ -1371,6 +1498,61 @@ mod tests {
         assert_eq!(rig.key_all(an, 100), 2);
         assert!(near(rig.offsets(an, a_bone, 100).1, 10.0));
         assert_eq!(rig.key_all(an, 400), 1, "a already has a key at 400");
+    }
+
+    #[test]
+    fn a_layer_can_be_hidden_at_rest_and_shown_by_keys() {
+        let mut rig = Rig::default();
+        let an = rig.add_animation("breathe fire", 1000);
+        let other = rig.add_animation("idle", 1000);
+        rig.set_rest_alpha(9, 0.0);
+        // Hidden at rest and in an animation that doesn't key it.
+        assert!(near(rig.alpha_at(None, 9), 0.0) && near(rig.alpha_at(Some((other, 300)), 9), 0.0));
+        // Stepped keys switch it on and off; a linear pair fades it.
+        rig.set_alpha_key(an, 9, 0, 0.0, Curve::Stepped);
+        rig.set_alpha_key(an, 9, 300, 1.0, Curve::Linear);
+        rig.set_alpha_key(an, 9, 700, 1.0, Curve::Linear);
+        rig.set_alpha_key(an, 9, 1000, 0.0, Curve::Linear);
+        assert!(near(rig.alpha_at(Some((an, 100)), 9), 0.0), "stepped: still off before 300");
+        assert!(near(rig.alpha_at(Some((an, 300)), 9), 1.0));
+        assert!(near(rig.alpha_at(Some((an, 850)), 9), 0.5), "fading out");
+        assert!(near(rig.alpha_at(Some((other, 300)), 9), 0.0), "other animations unaffected");
+        assert_eq!(rig.alpha_key_times(an, 9), vec![0, 300, 700, 1000]);
+        rig.move_alpha_keys(an, 9, 300, 400);
+        assert_eq!(rig.alpha_key_times(an, 9), vec![0, 400, 700, 1000]);
+        rig.remove_alpha_keys_at(an, 9, 0);
+        assert_eq!(rig.alpha_key_times(an, 9), vec![400, 700, 1000]);
+        // Showing it at rest again drops the setting; deleted layers drop theirs.
+        rig.set_rest_alpha(9, 1.0);
+        assert!(rig.rest_alpha.is_empty());
+        rig.prune(&[1, 2]);
+        assert!(rig.animations[an].alpha.is_empty());
+    }
+
+    #[test]
+    fn hidden_layers_do_not_render_and_bake_into_cel_opacity() {
+        use crate::geom::IRect;
+        let mut doc = DocState::new(32, 32, None);
+        let id = doc.layers[0].id();
+        doc.layers[0].raster.fill_rect(IRect::new(4, 4, 8, 8), Rgba8::new(255, 0, 0, 255));
+        let an = doc.rig.add_animation("pulse", 1000);
+        doc.rig.set_rest_alpha(id, 0.0);
+        doc.rig.set_alpha_key(an, id, 0, 0.0, Curve::Linear);
+        doc.rig.set_alpha_key(an, id, 500, 1.0, Curve::Linear);
+        doc.rig.set_alpha_key(an, id, 1000, 0.0, Curve::Linear);
+
+        let rest = render_pose(&doc, None, 0, ResizeFilter::Nearest);
+        let mid = render_pose(&doc, Some(an), 500, ResizeFilter::Nearest);
+        let quarter = render_pose(&doc, Some(an), 250, ResizeFilter::Nearest);
+        assert_eq!(rest.get_pixel(6, 6).a, 0, "hidden at rest");
+        assert_eq!(mid.get_pixel(6, 6).a, 255);
+        assert!((quarter.get_pixel(6, 6).a as i32 - 128).abs() <= 2, "half faded");
+
+        let baked = bake(&doc, an, 4, ResizeFilter::Nearest).unwrap();
+        let alpha_of = |f: usize| crate::anim::render_frame(&baked, f).get_pixel(6, 6).a as i32;
+        assert_eq!(alpha_of(0), 0);
+        assert_eq!(alpha_of(2), 255, "frame 2 is at 500 ms");
+        assert!((alpha_of(1) - 128).abs() <= 2);
     }
 
     #[test]

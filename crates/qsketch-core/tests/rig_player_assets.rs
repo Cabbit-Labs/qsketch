@@ -111,6 +111,16 @@ fn fixture_doc() -> (DocState, BoneId) {
     doc.rig.set_ik_key(a, ik_arm, 0, IkValue { mix: 1.0, bend }, Curve::Linear);
     doc.rig.set_ik_key(a, ik_arm, 600, IkValue { mix: 1.0, bend: -bend }, Curve::Linear);
 
+    // Opacity: the cloth is half shown at rest, the body fades and snaps.
+    let body = doc.layers.iter().find(|l| l.name() == "body").unwrap().id();
+    doc.rig.set_rest_alpha(cloth, 0.5);
+    doc.rig.set_alpha_key(a, body, 0, 1.0, Curve::Linear);
+    doc.rig.set_alpha_key(a, body, 300, 0.2, EASE);
+    doc.rig.set_alpha_key(a, body, 700, 0.9, Curve::Stepped);
+    doc.rig.set_alpha_key(a, body, 1000, 0.0, Curve::Linear);
+    doc.rig.set_alpha_key(a, cloth, 400, 1.0, Curve::Stepped);
+    doc.rig.set_alpha_key(a, cloth, 800, 0.0, Curve::Linear);
+
     let b = doc.rig.add_animation("once", 800);
     doc.rig.animations[b].looped = false;
     rot(&mut doc, b, thigh, &[(0, 0.0, Curve::Linear), (400, -25.0, EASE), (800, 10.0, Curve::Linear)]);
@@ -128,6 +138,8 @@ fn matrix(m: Xf) -> serde_json::Value {
 
 fn fixture_expected(doc: &DocState, spine: BoneId) -> String {
     let rig = &doc.rig;
+    let layer = |n: &str| doc.layers.iter().find(|l| l.name() == n).unwrap().id();
+    let (body, cloth) = (layer("body"), layer("cloth"));
     let setup = rig.pose(None);
     let place = Xf { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 40.0, f: 30.0 };
     let mut samples = Vec::new();
@@ -143,6 +155,10 @@ fn fixture_expected(doc: &DocState, spine: BoneId) -> String {
             "t": t_ms as f64 / 1000.0,
             "bones": bones,
             "part": matrix(delta * place),
+            "alpha": {
+                "body": num(rig.alpha_at(anim.map(|a| (a, t_ms)), body)),
+                "cloth": num(rig.alpha_at(anim.map(|a| (a, t_ms)), cloth)),
+            },
             "mesh": rig.skin_points(&rig.meshes[0], &pose, &setup).iter().flat_map(|p| [num(p.x), num(p.y)]).collect::<Vec<_>>(),
         }));
     };

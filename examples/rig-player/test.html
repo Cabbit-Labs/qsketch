@@ -41,6 +41,15 @@
     }
     const part = rig.parts.find((p) => p.name === "body");
     compare(`${label} part ${part.name}`, QRig.partMatrix(rig, part, world), s.part);
+    // How shown each part is (rest value, keyed show / hide / fade).
+    for (const n of ["body", "cloth"]) {
+      const got = QRig.partAlpha(rig, rig.parts.find((p) => p.name === n), s.anim, s.t);
+      checked++;
+      if (Math.abs(got - s.alpha[n]) > 2e-3) {
+        failed++;
+        log.push(`FAIL ${label} alpha of ${n}: got ${got.toFixed(4)}, want ${s.alpha[n].toFixed(4)}`);
+      }
+    }
     // The meshed part: every skinned vertex.
     const cloth = rig.parts.find((p) => p.name === "cloth");
     const pts = QRig.meshPoints(rig, cloth, world);

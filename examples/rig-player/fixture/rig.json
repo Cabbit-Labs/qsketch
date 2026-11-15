@@ -187,7 +187,48 @@
           }
         ]
       },
-      "loop": true
+      "loop": true,
+      "parts": {
+        "body": [
+          {
+            "alpha": 1.0,
+            "curve": "linear",
+            "time": 0.0
+          },
+          {
+            "alpha": 0.20000000298023224,
+            "curve": [
+              0.41999998688697815,
+              0.0,
+              0.5799999833106995,
+              1.0
+            ],
+            "time": 0.3
+          },
+          {
+            "alpha": 0.8999999761581421,
+            "curve": "stepped",
+            "time": 0.7
+          },
+          {
+            "alpha": 0.0,
+            "curve": "linear",
+            "time": 1.0
+          }
+        ],
+        "cloth": [
+          {
+            "alpha": 1.0,
+            "curve": "stepped",
+            "time": 0.4
+          },
+          {
+            "alpha": 0.0,
+            "curve": "linear",
+            "time": 0.8
+          }
+        ]
+      }
     },
     "once": {
       "bones": {
@@ -234,7 +275,8 @@
       },
       "duration": 0.8,
       "ik": {},
-      "loop": false
+      "loop": false,
+      "parts": {}
     }
   },
   "bones": [
@@ -377,6 +419,7 @@
       "y": 30
     },
     {
+      "alpha": 0.5,
       "blend": "normal",
       "bone": "thigh",
       "height": 24,

@@ -58,6 +58,8 @@ pub struct RigUi {
     pub strength: f32,
     /// Cell size (pixels) of a new mesh.
     pub cell: u32,
+    /// The opacity the Key button in the Rig panel keys for the active layer.
+    pub alpha_key: f32,
     /// The animation preview is playing; `play_frac` carries the part of a
     /// millisecond not yet added to `time_ms`.
     pub playing: bool,
@@ -79,6 +81,7 @@ impl Default for RigUi {
             brush: 18.0,
             strength: 0.25,
             cell: 12,
+            alpha_key: 1.0,
             playing: false,
             play_frac: 0.0,
             pose_key: None,
@@ -399,12 +402,17 @@ pub fn delete_selected(state: &mut AppState) -> bool {
 /// Keep the canvas showing the pose being edited: while the Bone tool has
 /// an animation selected the layers are drawn posed; otherwise as they are.
 pub fn sync_preview(entry: &mut DocEntry, tool_active: bool) {
-    let anim = tool_active.then(|| entry.rig_ui.anim_in(&entry.doc.state().rig)).flatten();
-    let Some(a) = anim else {
+    let rig = &entry.doc.state().rig;
+    let anim = tool_active.then(|| entry.rig_ui.anim_in(rig)).flatten();
+    // The setup pose is shown as drawn, except that layers hidden at rest
+    // are hidden, so the checkbox has a visible effect.
+    let preview = tool_active && (anim.is_some() || !rig.rest_alpha.is_empty());
+    if !preview {
         entry.rig_ui.pose_key = None;
         entry.doc.set_pose_preview(None);
         return;
-    };
+    }
+    let a = anim.unwrap_or(usize::MAX);
     let hid = entry.doc.history.current_id();
     let (t, nearest) = (entry.rig_ui.time_ms, entry.rig_ui.nearest);
     let fresh = entry.doc.has_pose_preview()
@@ -418,7 +426,7 @@ pub fn sync_preview(entry: &mut DocEntry, tool_active: bool) {
     }
     let key = (hid, entry.doc.state().rig.clone(), a, t, nearest);
     let filter = if key.4 { ResizeFilter::Nearest } else { ResizeFilter::Bilinear };
-    let posed = rig::posed_copy(entry.doc.state(), Some(a), key.3, filter);
+    let posed = rig::posed_copy(entry.doc.state(), anim, key.3, filter);
     entry.doc.set_pose_preview(Some(posed));
     entry.rig_ui.pose_key = Some(key);
 }

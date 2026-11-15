@@ -33,6 +33,7 @@ Shape, text and smart-object layers are exported as their drawn pixels.
       "x": 108, "y": 140,               // top-left in the setup pose (world)
       "transform": [a, b, c, d, e, f],  // see below
       "opacity": 1.0, "blend": "normal",
+      "alpha": 0.0,                     // optional: shown this much at rest
       "mesh": { "cols": 4, "rows": 3,   // optional: see "Meshes"
                 "bones": ["thigh", "shin"],
                 "vertices": [ [0, 1.0], [0, 0.7, 1, 0.3], ... ] } }
@@ -49,6 +50,9 @@ Shape, text and smart-object layers are exported as their drawn pixels.
       },
       "ik": {                           // optional
         "ik 1": [ { "time": 0, "mix": 1, "bend": 1, "curve": "linear" } ]
+      },
+      "parts": {                        // optional: show, hide or fade a part
+        "flame": [ { "time": 0.5, "alpha": 1, "curve": "stepped" } ]
       }
     }
   }
@@ -156,6 +160,17 @@ positions. **A meshed part ignores `bone` and `transform`**; the weights are
 the whole story. Its image is exactly the mesh rectangle, so the grid always
 covers it.
 
+## Showing, hiding and fading parts
+
+A part's `alpha` (absent means 1) is how shown it is when an animation does
+not key it: a flame that only appears in one animation has `"alpha": 0`. An
+animation's `parts` timeline keys the alpha of a part by name. Sample it like
+any other timeline (clamped before the first and after the last key, the
+earlier key's `curve` between keys; `"stepped"` switches instantly, `"linear"`
+fades). A part with no timeline in the playing animation uses its own `alpha`,
+and so does the setup pose. When drawing, multiply the part's `opacity` by
+the alpha; at 0 there is nothing to draw.
+
 ## Drawing a part
 
 For a part without a `mesh` that is attached to a bone, draw its image (pixel (0,0) at the top-left)
@@ -168,7 +183,7 @@ world(bone, animated pose) · transform
 `transform` maps image pixels into the bone's local space *as set up*, so
 nothing else is needed. A part with `"bone": null` is drawn with `transform`
 alone (which is just a translation to `x, y`). Multiply the part's alpha by
-`opacity`.
+`opacity` (and by its animated alpha, see above).
 
 ## Reference player
 
