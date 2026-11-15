@@ -555,9 +555,9 @@ impl DocState {
             }
             // Anything linked to this cel follows it to the new owner.
             if l.cels[f].link.is_none() {
-                for g in 0..n {
-                    if l.cels[g].link == Some(f) {
-                        l.cels[g].link = Some(owner);
+                for c in l.cels.iter_mut().take(n) {
+                    if c.link == Some(f) {
+                        c.link = Some(owner);
                     }
                 }
             }

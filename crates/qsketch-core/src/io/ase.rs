@@ -1206,8 +1206,8 @@ pub fn encode(doc: &DocState) -> anyhow::Result<Vec<u8>> {
     let mut order: Vec<(usize, u16)> = Vec::new();
     walk(collect(doc, None), 0, &mut order);
     // Anything orphaned by a bad parent link still gets written, at root.
-    for qi in 0..doc.layers.len() {
-        if !doc.layers[qi].is_adjustment() && !order.iter().any(|(q, _)| *q == qi) {
+    for (qi, layer) in doc.layers.iter().enumerate() {
+        if !layer.is_adjustment() && !order.iter().any(|(q, _)| *q == qi) {
             order.push((qi, 0));
         }
     }
