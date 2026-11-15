@@ -660,6 +660,9 @@ pub enum ExportRange {
 
 /// Everything the export job needs.
 pub struct ExportSpec {
+    /// Bake this rig animation (index, frames per second) and export the
+    /// baked frames instead of the document's own.
+    pub rig: Option<(usize, u32)>,
     pub format: ExportFormat,
     pub scale: u32,
     pub frames: Vec<usize>,
@@ -675,6 +678,19 @@ pub fn run_export(state: &mut AppState, doc_id: DocId, spec: ExportSpec) {
     let Some(entry) = state.doc(doc_id) else { return };
     let mut doc = entry.doc.state().clone();
     doc.sync_cels();
+    let mut spec = spec;
+    if let Some((anim, fps)) = spec.rig {
+        match qsketch_core::rig::bake(&doc, anim, fps, qsketch_core::raster::ResizeFilter::Bilinear) {
+            Ok(baked) => {
+                spec.frames = (0..baked.frames.len()).collect();
+                doc = baked;
+            }
+            Err(e) => {
+                state.toasts.push(Level::Error, format!("Could not bake the rig animation: {e}"));
+                return;
+            }
+        }
+    }
     let done = Arc::new(AtomicUsize::new(0));
     let (tx, rx) = channel::<Result<String, String>>();
     let total = spec.frames.len();

@@ -23,6 +23,9 @@ pub struct RigExportSummary {
     pub animations: usize,
     /// Visible layers left out (groups, adjustments, empty layers).
     pub skipped: Vec<String>,
+    /// How many of the document's other frames were not exported: the
+    /// format has one picture per part, taken from the current frame.
+    pub frames_not_exported: usize,
 }
 
 /// Make `name` unique among `used` by appending " 2", " 3", …
@@ -78,6 +81,7 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
     }
     let mut doc = doc.clone();
     doc.sync_cels();
+    let frames_not_exported = doc.frame_count().saturating_sub(1);
     std::fs::create_dir_all(dir.join("parts")).with_context(|| format!("creating {}", dir.display()))?;
 
     // Bones, with unique names; parents come first in `rig.bones`.
@@ -259,7 +263,13 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         "animations": Value::Object(animations),
     });
     std::fs::write(dir.join("rig.json"), serde_json::to_vec_pretty(&out)?)?;
-    Ok(RigExportSummary { bones: rig.bones.len(), parts: parts.len(), animations: rig.animations.len(), skipped })
+    Ok(RigExportSummary {
+        bones: rig.bones.len(),
+        parts: parts.len(),
+        animations: rig.animations.len(),
+        skipped,
+        frames_not_exported,
+    })
 }
 
 #[cfg(test)]
@@ -477,6 +487,18 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn export_reports_frames_it_cannot_carry() {
+        let mut doc = DocState::new(16, 16, None);
+        doc.layers[0].raster.fill_rect(IRect::new(2, 2, 4, 4), Rgba8::new(9, 9, 9, 255));
+        doc.rig.add_bone("b", None, 0.0, 0.0, 5.0);
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(export(&doc, dir.path()).unwrap().frames_not_exported, 0);
+        doc.insert_frame(1, crate::NewFrame::Duplicate(0));
+        doc.insert_frame(2, crate::NewFrame::Duplicate(0));
+        assert_eq!(export(&doc, dir.path()).unwrap().frames_not_exported, 2);
     }
 
     #[test]

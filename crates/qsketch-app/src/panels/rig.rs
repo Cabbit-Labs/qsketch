@@ -212,7 +212,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let mut anim_edit = original.clone();
     let layer = e.doc.state().active_layer();
     let (layer_id, layer_name) = (layer.id(), layer.name().to_string());
-    let layer_bounds = layer.raster.full_bounds();
+    // Over every frame's picture, so a mesh covers the art in all of them.
+    let layer_bounds = layer
+        .cels
+        .iter()
+        .filter_map(|c| c.image.full_bounds())
+        .chain(layer.raster.full_bounds())
+        .reduce(|a, b| a.union(&b));
     let mesh_dims = rig.mesh_of(layer_id).map(|m| (m.cols, m.rows));
     let layer_bone = rig.attached_bone(layer_id);
     let attached = layer_bone.and_then(|b| rig.bone(b)).map(|b| b.name.clone());

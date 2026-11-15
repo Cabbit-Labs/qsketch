@@ -65,7 +65,7 @@ pub struct RigUi {
     pub playing: bool,
     play_frac: f32,
     /// What the live preview was last drawn for.
-    pose_key: Option<(u64, Rig, usize, u32, bool)>,
+    pose_key: Option<(u64, Rig, usize, u32, bool, usize)>,
 }
 
 impl Default for RigUi {
@@ -415,16 +415,16 @@ pub fn sync_preview(entry: &mut DocEntry, tool_active: bool) {
     let a = anim.unwrap_or(usize::MAX);
     let hid = entry.doc.history.current_id();
     let (t, nearest) = (entry.rig_ui.time_ms, entry.rig_ui.nearest);
+    // The document's current frame is part of what the pose is drawn from.
+    let frame = entry.doc.state().frame;
     let fresh = entry.doc.has_pose_preview()
-        && entry
-            .rig_ui
-            .pose_key
-            .as_ref()
-            .is_some_and(|k| k.0 == hid && k.2 == a && k.3 == t && k.4 == nearest && k.1 == entry.doc.state().rig);
+        && entry.rig_ui.pose_key.as_ref().is_some_and(|k| {
+            k.0 == hid && k.2 == a && k.3 == t && k.4 == nearest && k.5 == frame && k.1 == entry.doc.state().rig
+        });
     if fresh {
         return;
     }
-    let key = (hid, entry.doc.state().rig.clone(), a, t, nearest);
+    let key = (hid, entry.doc.state().rig.clone(), a, t, nearest, frame);
     let filter = if key.4 { ResizeFilter::Nearest } else { ResizeFilter::Bilinear };
     let posed = rig::posed_copy(entry.doc.state(), anim, key.3, filter);
     entry.doc.set_pose_preview(Some(posed));
@@ -550,6 +550,30 @@ mod tests {
         assert!((seg_dist(egui::pos2(5.0, 3.0), a, b) - 3.0).abs() < 1e-4);
         assert!((seg_dist(egui::pos2(-4.0, 3.0), a, b) - 5.0).abs() < 1e-4);
         assert!((seg_dist(egui::pos2(1.0, 1.0), a, a) - 2f32.sqrt()).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_pose_preview_follows_the_documents_current_frame() {
+        use qsketch_core::rig::KeyValue;
+        use qsketch_core::{Document, NewFrame};
+        let mut entry = DocEntry::new(1, Document::new(16, 16, None, "t"));
+        {
+            let s = entry.doc.state_mut();
+            s.insert_frame(1, NewFrame::Empty);
+            s.set_frame(0);
+            let b = s.rig.add_bone("b", None, 0.0, 0.0, 5.0);
+            let a = s.rig.add_animation("a", 500);
+            s.rig.set_key(a, b, 0, KeyValue::Rotate(0.0), qsketch_core::rig::Curve::Linear);
+        }
+        entry.rig_ui.anim = Some(0);
+        sync_preview(&mut entry, true);
+        assert_eq!(entry.rig_ui.pose_key.as_ref().map(|k| k.5), Some(0));
+        // Stepping to another frame changes the art being posed: it must redraw
+        // even though nothing in the rig or the history changed.
+        entry.doc.state_mut().set_frame(1);
+        sync_preview(&mut entry, true);
+        assert_eq!(entry.rig_ui.pose_key.as_ref().map(|k| k.5), Some(1));
+        assert!(entry.doc.has_pose_preview());
     }
 
     #[test]

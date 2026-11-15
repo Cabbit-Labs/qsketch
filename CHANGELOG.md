@@ -60,6 +60,15 @@ All notable changes to qSketch are documented in this file.
   `parts` timelines and part `alpha` are in `docs/RIG_FORMAT.md` and the
   reference player. Scrubbing the Rig track now snaps to 5 ms steps, so keys
   land on round times.
+- Frame animation and the rig now play nicely together. Bake uses each frame's
+  own art: a document with several frames plays them alongside the rig (the
+  baked frame at time t shows the document frame showing at t, wrapping for a
+  loop), instead of repeating only the current frame's drawing. Export Animation
+  (GIF, sheet, PNG sequence, video) has a Rig option that bakes an animation
+  first, so the export is posed. The live pose preview follows the Timeline's
+  current frame and no longer draws onion skins over a posed picture. Meshes
+  cover a layer's art in every frame. Export for games says when it could not
+  carry the other frames (the format has one picture per part).
 - Keying a bone's position or rotation for the first time at a later time also
   keys its rest value at 0, so animations start from the setup pose instead of
   already being posed at the first frame.

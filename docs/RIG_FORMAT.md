@@ -9,7 +9,9 @@ writes a folder:
   parts/<layer>.png      one cropped picture per visible pixel layer
 ```
 
-Layers that are hidden are skipped; groups and adjustment layers are listed
+The format has one picture per part, taken from the document's current frame:
+the other frames of a frame-animated document are not exported (the editor
+says so). Layers that are hidden are skipped; groups and adjustment layers are listed
 in the export message and skipped. Layer masks are baked into the pictures.
 Shape, text and smart-object layers are exported as their drawn pixels.
 

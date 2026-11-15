@@ -472,8 +472,10 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         ctx.request_repaint();
     }
     tools::bone::sync_preview(entry, tool == ToolKind::Bone);
-    // Onion skins ride along in the composite (never during playback).
-    entry.doc.refresh_onion((!playing).then_some(&onion));
+    // Onion skins ride along in the composite (never during playback, and not
+    // over a posed preview: they are drawn from the unposed frames).
+    let show_onion = !playing && !entry.doc.has_pose_preview();
+    entry.doc.refresh_onion(show_onion.then_some(&onion));
     let dirty = entry.doc.update_composite();
     if !dirty.is_empty() {
         entry.generation += 1;

@@ -54,6 +54,10 @@ pub struct ExportAnimDialog {
     pub sheet: SheetOptions,
     pub video_bg: [u8; 3],
     pub ffmpeg: bool,
+    /// Export a rig animation baked to frames instead of the document's own
+    /// frames: its index into the rig's animations, and the frame rate.
+    pub rig_anim: Option<usize>,
+    pub rig_fps: u32,
 }
 
 /// What Export Animation remembers between uses (in the settings).
@@ -84,6 +88,8 @@ pub fn open_export(state: &mut AppState, doc: DocId) {
         sheet: p.sheet,
         video_bg: p.video_bg,
         ffmpeg: anim_io::ffmpeg_path().is_some(),
+        rig_anim: None,
+        rig_fps: 12,
     });
 }
 
@@ -418,6 +424,10 @@ fn show_export(ctx: &Context, state: &mut AppState) {
     let tags: Vec<(usize, String, usize)> =
         s.tags.iter().enumerate().map(|(i, t)| (i, t.name.clone(), t.len())).collect();
     let sel = entry.frame_sel.map(|(a, b)| (a.min(b), a.max(b)));
+    let rig_names: Vec<String> = s.rig.animations.iter().map(|a| a.name.clone()).collect();
+    if d.rig_anim.is_some_and(|i| i >= rig_names.len()) {
+        d.rig_anim = None;
+    }
     let ((ok, cancel), closed) = modal(ctx, "export_anim", "Export Animation", 400.0, |ui| {
         egui::Grid::new("export_anim_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label("Format");
@@ -434,8 +444,38 @@ fn show_export(ctx: &Context, state: &mut AppState) {
                 ui.label(egui::RichText::new(format!("{ow}×{oh} px per frame, nearest neighbor")).weak());
             });
             ui.end_row();
+            if !rig_names.is_empty() {
+                ui.label("Rig");
+                ui.vertical(|ui| {
+                    let text = d.rig_anim.map_or("None (the frames as drawn)".to_string(), |i| rig_names[i].clone());
+                    egui::ComboBox::from_id_salt("export_rig").selected_text(text).width(240.0).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut d.rig_anim, None, "None (the frames as drawn)");
+                        for (i, name) in rig_names.iter().enumerate() {
+                            ui.selectable_value(&mut d.rig_anim, Some(i), name);
+                        }
+                    });
+                    match d.rig_anim {
+                        Some(i) => {
+                            let frames =
+                                qsketch_core::rig::bake_frame_count(&s.rig.animations[i], d.rig_fps.clamp(1, 240));
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut d.rig_fps).range(1..=120).suffix(" fps"));
+                                ui.label(egui::RichText::new(format!("baked to {frames} frames")).weak());
+                            });
+                        }
+                        None => {
+                            ui.label(egui::RichText::new("Bones are not applied unless you pick an animation.").weak());
+                        }
+                    }
+                });
+                ui.end_row();
+            }
             ui.label("Frames");
             ui.vertical(|ui| {
+                if d.rig_anim.is_some() {
+                    ui.label("All the baked frames");
+                    return;
+                }
                 ui.radio_value(&mut d.range, ExportRange::All, format!("All ({n})"));
                 if let Some((a, b)) = sel {
                     ui.radio_value(&mut d.range, ExportRange::Selected, format!("Selected ({}–{})", a + 1, b + 1));
@@ -538,6 +578,7 @@ fn show_export(ctx: &Context, state: &mut AppState) {
         let Some(entry) = state.doc(d.doc) else { return };
         let s = entry.doc.state();
         let frames = match d.range {
+            _ if d.rig_anim.is_some() => Vec::new(),
             ExportRange::All => anim_io::frame_list(s, None),
             ExportRange::Tag(i) => anim_io::frame_list(s, Some(i)),
             ExportRange::Selected => anim::selected_frames(state, d.doc),
@@ -581,6 +622,7 @@ fn show_export(ctx: &Context, state: &mut AppState) {
         };
         let Some(target) = target else { return };
         let spec = ExportSpec {
+            rig: d.rig_anim.map(|i| (i, d.rig_fps.clamp(1, 240))),
             format: d.format,
             scale: d.scale,
             frames,

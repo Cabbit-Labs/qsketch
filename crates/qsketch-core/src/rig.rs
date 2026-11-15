@@ -1126,9 +1126,14 @@ pub fn bake(doc: &DocState, anim: usize, fps: u32, filter: ResizeFilter) -> Resu
     let setup = doc.rig.pose(None);
     let step = 1000.0 / fps as f32;
 
-    // Each frame's pose, computed once for all layers.
+    // Each frame's time and pose, computed once for all layers.
     let times: Vec<u32> = (0..n).map(|i| (i as f32 * step).round() as u32).collect();
     let poses: Vec<Vec<Xf>> = times.iter().map(|&t| doc.rig.pose(Some((anim, t)))).collect();
+    // A document that already has frames plays them alongside the rig: the
+    // art of baked frame `i` is the frame of the document showing at its time
+    // (wrapping for a looping animation). With one frame this is always 0.
+    let src_frame: Vec<usize> = times.iter().map(|&t| frame_showing(doc, t, an.looped)).collect();
+    let current = out.frame;
 
     for l in &mut out.layers {
         let id = l.id();
@@ -1141,7 +1146,25 @@ pub fn bake(doc: &DocState, anim: usize, fps: u32, filter: ResizeFilter) -> Resu
             l.cels.clear();
             continue;
         }
-        l.apply_mask();
+        // The picture this layer has in each source frame, masks applied
+        // (a mask belongs to the layer, not to one frame's picture).
+        let pictures: Vec<(usize, Raster, f32)> = src_frame
+            .iter()
+            .map(|&f| {
+                let pic = l.cel_image(f, current).cloned().unwrap_or_else(|| Raster::new(w, h));
+                let pic = match l.active_mask() {
+                    Some(_) => {
+                        let mut tmp = l.clone();
+                        tmp.raster = pic;
+                        tmp.masked_raster()
+                    }
+                    None => pic,
+                };
+                (l.cel_owner(f), pic, l.cel_opacity(f))
+            })
+            .collect();
+        l.mask = None;
+        l.props.mask_enabled = true;
         if rigged {
             // Shape, text and smart layers become plain pixels: their
             // frames can no longer be redrawn from points.
@@ -1150,22 +1173,35 @@ pub fn bake(doc: &DocState, anim: usize, fps: u32, filter: ResizeFilter) -> Resu
             l.props.text = None;
             l.props.smart = None;
             l.smart = None;
-            let base = l.raster.clone();
-            l.cels = poses
+            l.cels = pictures
                 .iter()
-                .zip(&times)
-                .map(|(pose, &t)| {
+                .zip(poses.iter().zip(&times))
+                .map(|((_, base, cel_opacity), (pose, &t))| {
                     let mut cel = match pose_kind(&doc.rig, id, pose, &setup) {
-                        Some(kind) => Cel::own(pose_picture(&base, &kind, w, h, filter)),
+                        Some(kind) => Cel::own(pose_picture(base, &kind, w, h, filter)),
                         None => Cel::own(base.clone()),
                     };
-                    cel.opacity = doc.rig.alpha_at(Some((anim, t)), id);
+                    cel.opacity = doc.rig.alpha_at(Some((anim, t)), id) * cel_opacity;
                     cel
                 })
                 .collect();
         } else {
-            let base = l.raster.clone();
-            l.cels = (0..n).map(|i| if i == 0 { Cel::own(base.clone()) } else { Cel::linked(0, w, h) }).collect();
+            // Not moved by the rig: each baked frame shows the source frame's
+            // picture, linked to the first baked frame with the same one.
+            let mut first_with: Vec<(usize, usize)> = Vec::new();
+            l.cels = pictures
+                .into_iter()
+                .enumerate()
+                .map(|(i, (owner, pic, opacity))| match first_with.iter().find(|(o, _)| *o == owner) {
+                    Some(&(_, at)) => Cel::linked(at, w, h),
+                    None => {
+                        first_with.push((owner, i));
+                        let mut cel = Cel::own(pic);
+                        cel.opacity = opacity;
+                        cel
+                    }
+                })
+                .collect();
         }
     }
     let ms = (1000.0 / fps as f32).round().max(1.0) as u32;
@@ -1175,6 +1211,25 @@ pub fn bake(doc: &DocState, anim: usize, fps: u32, filter: ResizeFilter) -> Resu
     out.rig = Rig::default();
     out.load_cels();
     Ok(out)
+}
+
+/// The frame of `doc` showing `t_ms` into its animation: its frames laid end
+/// to end by duration, wrapping when `looped` and holding the last otherwise.
+pub fn frame_showing(doc: &DocState, t_ms: u32, looped: bool) -> usize {
+    let n = doc.frame_count();
+    let total = doc.total_duration_ms().max(1);
+    if n <= 1 {
+        return 0;
+    }
+    let mut t = if looped { t_ms as u64 % total } else { (t_ms as u64).min(total - 1) };
+    for f in 0..n {
+        let d = doc.frame_duration(f) as u64;
+        if t < d {
+            return f;
+        }
+        t -= d;
+    }
+    n - 1
 }
 
 #[cfg(test)]
@@ -1498,6 +1553,45 @@ mod tests {
         assert_eq!(rig.key_all(an, 100), 2);
         assert!(near(rig.offsets(an, a_bone, 100).1, 10.0));
         assert_eq!(rig.key_all(an, 400), 1, "a already has a key at 400");
+    }
+
+    #[test]
+    fn bake_plays_the_documents_frames_alongside_the_rig() {
+        use crate::geom::IRect;
+        use crate::NewFrame;
+        // A 3-frame document: a layer whose square is a different color in
+        // each frame (100 ms each), plus a bone moving it right.
+        let mut doc = DocState::new(64, 16, None);
+        let id = doc.layers[0].id();
+        let colors = [Rgba8::new(255, 0, 0, 255), Rgba8::new(0, 255, 0, 255), Rgba8::new(0, 0, 255, 255)];
+        doc.layers[0].raster.fill_rect(IRect::new(2, 2, 6, 6), colors[0]);
+        doc.insert_frame(1, NewFrame::Duplicate(0));
+        doc.layers[0].raster.fill_rect(IRect::new(2, 2, 6, 6), colors[1]);
+        doc.insert_frame(2, NewFrame::Duplicate(1));
+        doc.layers[0].raster.fill_rect(IRect::new(2, 2, 6, 6), colors[2]);
+        for f in 0..3 {
+            doc.set_frame_duration(f, 100);
+        }
+        doc.set_frame(1); // the "current" frame must not decide the art
+        let bone = doc.rig.add_bone("b", None, 0.0, 0.0, 10.0);
+        doc.rig.attach(id, bone);
+        let an = doc.rig.add_animation("slide", 300);
+        doc.rig.set_key(an, bone, 0, KeyValue::Translate([0.0, 0.0]), Curve::Linear);
+        doc.rig.set_key(an, bone, 300, KeyValue::Translate([30.0, 0.0]), Curve::Linear);
+
+        let baked = bake(&doc, an, 10, ResizeFilter::Nearest).unwrap();
+        assert_eq!(baked.frames.len(), 3, "300 ms looped at 10 fps");
+        for (f, want) in colors.iter().enumerate() {
+            let img = crate::anim::render_frame(&baked, f);
+            let b = img.bounds().unwrap();
+            // Each baked frame shows its own source frame's color, further right.
+            assert_eq!(b.x, 2 + 10 * f as i32, "frame {f} moved");
+            assert_eq!(img.get_pixel(b.x + 2, 4), *want, "frame {f} drew source frame {f}");
+        }
+        assert_eq!(frame_showing(&doc, 0, true), 0);
+        assert_eq!(frame_showing(&doc, 250, true), 2);
+        assert_eq!(frame_showing(&doc, 310, true), 0, "wraps");
+        assert_eq!(frame_showing(&doc, 999, false), 2, "holds the last");
     }
 
     #[test]
