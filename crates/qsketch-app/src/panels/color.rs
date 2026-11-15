@@ -116,24 +116,28 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             egui::Grid::new("color_sliders").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
                 match mode {
                     ColorSliders::Hsv => {
-                        let mut h = hsv.h;
-                        let mut s = hsv.s * 100.0;
-                        let mut v = hsv.v * 100.0;
+                        // SAI-style bars: each bar shows the colors it
+                        // would give, for the color picked now.
+                        let (h0, s0, v0) = (hsv.h, hsv.s, hsv.v);
+                        let c = |hh: f32, ss: f32, vv: f32| rgba_to_color32(Hsv::new(hh, ss, vv).to_rgba8(255));
+                        let mut h = h0;
+                        let mut sv = s0 * 100.0;
+                        let mut vv = v0 * 100.0;
                         ui.label("H");
-                        if ui.add(egui::Slider::new(&mut h, 0.0..=360.0).suffix("°").fixed_decimals(0)).changed() {
+                        if grad_bar(ui, slider_w, &mut h, 360.0, "°", |t| c(t * 360.0, 1.0, 1.0)) {
                             hsv.h = h;
                             changed = true;
                         }
                         ui.end_row();
                         ui.label("S");
-                        if ui.add(egui::Slider::new(&mut s, 0.0..=100.0).suffix("%").fixed_decimals(0)).changed() {
-                            hsv.s = s / 100.0;
+                        if grad_bar(ui, slider_w, &mut sv, 100.0, "", |t| c(h0, t, v0.max(0.0))) {
+                            hsv.s = sv / 100.0;
                             changed = true;
                         }
                         ui.end_row();
                         ui.label("V");
-                        if ui.add(egui::Slider::new(&mut v, 0.0..=100.0).suffix("%").fixed_decimals(0)).changed() {
-                            hsv.v = v / 100.0;
+                        if grad_bar(ui, slider_w, &mut vv, 100.0, "", |t| c(h0, s0, t)) {
+                            hsv.v = vv / 100.0;
                             changed = true;
                         }
                         ui.end_row();
@@ -231,6 +235,64 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     });
     ui.data_mut(|d| d.insert_temp(ui.id().with("hex"), hex));
     ui.data_mut(|d| d.insert_temp(mem_id, mem));
+}
+
+/// A color bar slider: the bar is painted with `color(t)` across,
+/// a small marker sits under the value, and a number box sits at the end.
+/// Click or drag anywhere on the bar to set it. Returns true when changed.
+fn grad_bar(ui: &mut Ui, width: f32, value: &mut f32, max: f32, suffix: &str, color: impl Fn(f32) -> Color32) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 18.0), egui::Sense::click_and_drag());
+        let bar = Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.max.y - 6.0));
+        let n = 48;
+        let mut mesh = Mesh::default();
+        for k in 0..=n {
+            let t = k as f32 / n as f32;
+            let x = bar.left() + t * bar.width();
+            let col = color(t);
+            mesh.colored_vertex(egui::pos2(x, bar.top()), col);
+            mesh.colored_vertex(egui::pos2(x, bar.bottom()), col);
+            if k > 0 {
+                let i = (2 * k) as u32;
+                mesh.add_triangle(i - 2, i - 1, i);
+                mesh.add_triangle(i - 1, i + 1, i);
+            }
+        }
+        ui.painter().add(egui::Shape::mesh(mesh));
+        ui.painter().rect_stroke(
+            bar,
+            0.0,
+            egui::Stroke::new(1.0, Color32::from_black_alpha(140)),
+            egui::StrokeKind::Inside,
+        );
+        let mx = bar.left() + (*value / max).clamp(0.0, 1.0) * bar.width();
+        let tri = vec![
+            egui::pos2(mx, bar.bottom() + 0.5),
+            egui::pos2(mx - 4.5, rect.bottom()),
+            egui::pos2(mx + 4.5, rect.bottom()),
+        ];
+        ui.painter().add(egui::Shape::convex_polygon(
+            tri,
+            ui.visuals().text_color(),
+            egui::Stroke::new(1.0, Color32::from_black_alpha(160)),
+        ));
+        if let Some(p) = resp.interact_pointer_pos() {
+            if resp.dragged() || resp.clicked() || resp.drag_started() {
+                let nv = ((p.x - bar.left()) / bar.width()).clamp(0.0, 1.0) * max;
+                if (nv - *value).abs() > 1e-4 {
+                    *value = nv;
+                    changed = true;
+                }
+            }
+        }
+        let mut num = value.round();
+        if ui.add(egui::DragValue::new(&mut num).range(0.0..=max).suffix(suffix).speed(1.0)).changed() {
+            *value = num;
+            changed = true;
+        }
+    });
+    changed
 }
 
 fn paint_sv_square(ui: &Ui, rect: Rect, hue: f32) {

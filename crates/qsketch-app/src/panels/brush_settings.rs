@@ -601,16 +601,14 @@ fn tip_page(
     }
     heading(ui, "Spacing");
     let mut sp = b.spacing * 100.0;
-    if ui
-        .add(
-            egui::Slider::new(&mut sp, 1.0..=500.0)
-                .logarithmic(true)
-                .suffix("%")
-                .fixed_decimals(0)
-                .clamping(egui::SliderClamping::Always),
-        )
-        .changed()
-    {
+    let qr = ui.add(
+        egui::Slider::new(&mut sp, 1.0..=500.0)
+            .logarithmic(true)
+            .suffix("%")
+            .fixed_decimals(0)
+            .clamping(egui::SliderClamping::Always),
+    );
+    if qr.changed() | crate::ui::widgets::quick_values(&qr, &mut sp, 10.0, &[5.0, 10.0, 25.0, 50.0, 100.0], "%", true) {
         b.spacing = sp / 100.0;
     }
 }
@@ -801,14 +799,11 @@ fn scattering_page(ui: &mut Ui, b: &mut BrushSettings) {
     }
     heading(ui, "Scatter");
     let mut pct = b.scatter * 100.0;
-    if ui
-        .add(
-            egui::Slider::new(&mut pct, 0.0..=500.0)
-                .suffix("%")
-                .fixed_decimals(0)
-                .clamping(egui::SliderClamping::Always),
-        )
-        .changed()
+    let qr = ui.add(
+        egui::Slider::new(&mut pct, 0.0..=500.0).suffix("%").fixed_decimals(0).clamping(egui::SliderClamping::Always),
+    );
+    if qr.changed()
+        | crate::ui::widgets::quick_values(&qr, &mut pct, 100.0, &[0.0, 50.0, 100.0, 200.0, 300.0], "%", true)
     {
         b.scatter = pct / 100.0;
     }
@@ -848,15 +843,15 @@ fn texture_page(ui: &mut Ui, b: &mut BrushSettings, library: &mut BrushLibrary, 
     });
     heading(ui, "Scale");
     let mut pct = b.texture_scale * 100.0;
-    if ui
-        .add(
-            egui::Slider::new(&mut pct, 10.0..=800.0)
-                .logarithmic(true)
-                .suffix("%")
-                .fixed_decimals(0)
-                .clamping(egui::SliderClamping::Always),
-        )
-        .changed()
+    let sr = ui.add(
+        egui::Slider::new(&mut pct, 10.0..=800.0)
+            .logarithmic(true)
+            .suffix("%")
+            .fixed_decimals(0)
+            .clamping(egui::SliderClamping::Always),
+    );
+    if sr.changed()
+        | crate::ui::widgets::quick_values(&sr, &mut pct, 100.0, &[50.0, 100.0, 150.0, 200.0, 300.0], "%", true)
     {
         b.texture_scale = pct / 100.0;
     }

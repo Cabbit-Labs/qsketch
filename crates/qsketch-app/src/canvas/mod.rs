@@ -14,6 +14,32 @@ use crate::state::{AppState, BrushPopup, DocId, TempReason};
 use crate::tools::{self, CanvasEvent, CanvasInput, ToolKind, ToolSession};
 use render::{CanvasCallback, TileUpload, Uniforms};
 
+/// egui temp-data key for the layer row hovered in the Layers panel.
+pub const LAYER_HOVER_ID: &str = "layer_hover";
+
+/// make the topmost visible layer with paint under `pos` the active
+/// one (Ctrl+Shift+right-click), and say which it was in the status bar.
+fn pick_layer_at(state: &mut AppState, doc_id: DocId, pos: Pos2) {
+    let Some(entry) = state.doc_mut(doc_id) else { return };
+    let p = entry.view.screen_to_doc(pos);
+    let (x, y) = (p.x.floor() as i32, p.y.floor() as i32);
+    let s = entry.doc.state();
+    let hit = (0..s.layers.len()).rev().find(|&i| {
+        let l = &s.layers[i];
+        !l.is_group() && s.effectively_visible(i) && l.props.opacity > 0.0 && l.raster.get_pixel(x, y).a > 24
+    });
+    let msg = match hit {
+        Some(i) => {
+            let (id, name) = (s.layers[i].props.id, s.layers[i].props.name.clone());
+            entry.doc.state_mut().active = i;
+            entry.selected = vec![id];
+            format!("Layer: {name}")
+        }
+        None => "No paint under the cursor".to_string(),
+    };
+    state.status_msg = Some((msg, std::time::Instant::now()));
+}
+
 pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     let model_overlay = state.model.canvas_overlay(doc_id, state.active_doc);
     let avail = ui.available_size_before_wrap();
@@ -186,6 +212,16 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                             let p = state.doc(doc_id).unwrap().view.screen_to_doc(*pos);
                             state.tool_opts.clone_source = Some((doc_id, p));
                             state.tool_opts.clone_offset = None;
+                            continue;
+                        }
+                        // Ctrl+Shift+right-click jumps to the layer under the cursor.
+                        if *button == egui::PointerButton::Secondary
+                            && modifiers.command
+                            && modifiers.shift
+                            && !modifiers.alt
+                        {
+                            pick_layer_at(state, doc_id, *pos);
+                            ui.ctx().request_repaint();
                             continue;
                         }
                         // A pick chord without modifiers (bare right-click, say)
@@ -531,6 +567,40 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     let painter = ui.painter().with_clip_rect(rect);
     if let Some(overlay) = &model_overlay {
         overlay.paint(&painter, view, dw as f32, dh as f32);
+    }
+    // outline what's on the layer hovered in the Layers panel.
+    let hov = ui.ctx().data(|d| d.get_temp::<(DocId, qsketch_core::layer::LayerId)>(egui::Id::new(LAYER_HOVER_ID)));
+    if let Some((hd, hl)) = hov.filter(|(d, _)| *d == doc_id) {
+        let cache_id = egui::Id::new("layer_hover_box");
+        let cached =
+            ui.ctx().data(|d| d.get_temp::<(DocId, qsketch_core::layer::LayerId, Option<[i32; 4]>, String)>(cache_id));
+        let boxed = match cached.filter(|c| c.0 == hd && c.1 == hl) {
+            Some(c) => Some((c.2, c.3)),
+            None => {
+                let s = entry.doc.state();
+                s.layers.iter().find(|l| l.props.id == hl).map(|l| {
+                    let b = l.raster.bounds().map(|r| [r.x, r.y, r.w, r.h]);
+                    let name = l.props.name.clone();
+                    ui.ctx().data_mut(|d| d.insert_temp(cache_id, (hd, hl, b, name.clone())));
+                    (b, name)
+                })
+            }
+        };
+        if let Some((Some([bx, by, bw, bh]), name)) = boxed {
+            let (x0, y0, x1, y1) = (bx as f32, by as f32, (bx + bw) as f32, (by + bh) as f32);
+            let pts =
+                [Pt::new(x0, y0), Pt::new(x1, y0), Pt::new(x1, y1), Pt::new(x0, y1)].map(|p| view.doc_to_screen(p));
+            painter.add(egui::Shape::closed_line(pts.to_vec(), Stroke::new(3.0, Color32::from_black_alpha(170))));
+            painter.add(egui::Shape::closed_line(pts.to_vec(), Stroke::new(1.5, Color32::from_rgb(80, 220, 255))));
+            let top = pts.iter().fold(pts[0], |a, b| if b.y < a.y { *b } else { a });
+            painter.text(
+                top + Vec2::new(4.0, -4.0),
+                egui::Align2::LEFT_BOTTOM,
+                name,
+                egui::FontId::proportional(13.0),
+                Color32::from_rgb(80, 220, 255),
+            );
+        }
     }
     // Document border
     let border_pts = [

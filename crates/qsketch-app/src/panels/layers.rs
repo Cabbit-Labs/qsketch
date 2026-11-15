@@ -51,6 +51,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         return;
     };
     let ctx = ui.ctx().clone();
+    // the layer row under the pointer, for the canvas to outline.
+    ctx.data_mut(|d| d.remove::<(DocId, LayerId)>(egui::Id::new(crate::canvas::LAYER_HOVER_ID)));
     let mut changed_props = false;
     let mut toggle_vis: Vec<(LayerId, bool)> = Vec::new();
     // Eye sweep: pressing an eye and dragging over others sets them all to
@@ -68,6 +70,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let accent = state.settings.ui.palette().accent;
     let mut rename_target: Option<(LayerId, String)> = None;
     let mut click: Option<Click> = None;
+    let mut half_toggle: Option<usize> = None;
     let mut reorder: Option<(usize, usize, Option<LayerId>)> = None;
 
     // Borrow disjoint fields of the state.
@@ -301,6 +304,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             let row_h = if is_group { group_h } else { row_h };
             ui.spacing_mut().item_spacing.y = 1.0;
             let (row_rect, row_resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_h), Sense::click());
+            if !is_group && ui.rect_contains_pointer(row_rect) {
+                ctx.data_mut(|d| d.insert_temp(egui::Id::new(crate::canvas::LAYER_HOVER_ID), (doc_id, layer_id)));
+            }
             if is_active && jump_to_active {
                 ui.scroll_to_rect(row_rect, None);
             }
@@ -577,6 +583,44 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 if p.locked || p.alpha_locked || p.clipped {
                     right -= 14.0 * (p.locked as u8 + p.alpha_locked as u8 + p.clipped as u8) as f32 + 4.0;
                 }
+                {
+                    // "½" quick toggle, layer at 50% until clicked again (back to 100%).
+                    let half_on = (p.opacity - 0.5).abs() < 0.001;
+                    let hr = egui::Rect::from_min_max(
+                        egui::pos2(right - 20.0, row_rect.top()),
+                        egui::pos2(right, row_rect.bottom()),
+                    );
+                    let hb = ui.interact(hr, ui.id().with(("half", layer_id)), Sense::click());
+                    let col = if half_on {
+                        ui.visuals().selection.stroke.color
+                    } else if hb.hovered() {
+                        ui.visuals().text_color()
+                    } else {
+                        crate::ui::theme::dim_text(ui.visuals()).gamma_multiply(0.6)
+                    };
+                    if half_on {
+                        let pill = egui::Rect::from_center_size(hr.center(), egui::vec2(18.0, 14.0));
+                        ui.painter().rect_stroke(pill, 3.0, egui::Stroke::new(1.0, col), egui::StrokeKind::Inside);
+                    }
+                    ui.painter().text(
+                        hr.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "½",
+                        egui::FontId::proportional(12.0),
+                        col,
+                    );
+                    if hb
+                        .on_hover_text(if half_on {
+                            "Layer at 50%: click to put it back to 100%"
+                        } else {
+                            "Show this layer at 50% (click again for 100%)"
+                        })
+                        .clicked()
+                    {
+                        half_toggle = Some(i);
+                    }
+                    right -= 22.0;
+                }
                 if !p.style.is_off() {
                     // "fx": the layer has effects; click it to edit them.
                     let fx_rect = egui::Rect::from_min_max(
@@ -786,6 +830,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     });
 
     // --- apply deferred edits ----------------------------------------------
+    if let Some(i) = half_toggle.filter(|&i| i < s.layers.len()) {
+        let o = &mut s.layers[i].props.opacity;
+        *o = if (*o - 0.5).abs() < 0.001 { 1.0 } else { 0.5 };
+        changed_props = true;
+    }
     if let Some(c) = click {
         let ids = |s: &qsketch_core::DocState, r: std::ops::RangeInclusive<usize>| -> Vec<LayerId> {
             r.filter_map(|i| s.layers.get(i).map(|l| l.props.id)).collect()

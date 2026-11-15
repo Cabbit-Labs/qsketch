@@ -148,6 +148,37 @@ pub fn labeled_slider(
     .inner
 }
 
+/// Quick values for a slider: double-click puts it back to
+/// `default`, right-click opens a short list of handy values. `value` and the
+/// presets are in the slider's own units (percent for a % slider). Returns
+/// true when either changed the value.
+pub fn quick_values(resp: &Response, value: &mut f32, default: f32, presets: &[f32], suffix: &str, dbl: bool) -> bool {
+    let mut changed = false;
+    if dbl && resp.double_clicked() {
+        *value = default;
+        changed = true;
+    }
+    resp.context_menu(|ui| {
+        for &v in presets {
+            let txt = format!("{}{suffix}{}", trim_num(v), if (v - default).abs() < 1e-4 { "  (default)" } else { "" });
+            if ui.button(txt).clicked() {
+                *value = v;
+                changed = true;
+                ui.close();
+            }
+        }
+    });
+    changed
+}
+
+fn trim_num(v: f32) -> String {
+    if (v - v.round()).abs() < 1e-4 {
+        format!("{}", v.round() as i64)
+    } else {
+        format!("{v:.2}")
+    }
+}
+
 /// Percentage slider over a `0..=1` float, shown as 0–100%.
 pub fn percent_slider(ui: &mut Ui, label: &str, value: &mut f32) -> bool {
     percent_slider_tip(ui, label, value, "")
@@ -171,6 +202,7 @@ pub fn percent_slider_tip(ui: &mut Ui, label: &str, value: &mut f32, tip: &str) 
         s
     });
     let mut changed = r.inner.changed();
+    changed |= quick_values(&r.inner, &mut pct, 100.0, &[0.0, 25.0, 50.0, 75.0, 100.0], "%", true);
     // The wheel nudges the value while the pointer is over the slider (1 % a
     // notch, 10 % with Shift), and the enclosing scroll area does not see it.
     if r.inner.hovered() {
@@ -329,7 +361,7 @@ pub fn param(
 pub fn param_pct(ui: &mut Ui, label: &str, value: &mut f32) -> bool {
     let mut pct = (*value * 100.0).round();
     let r = param(ui, label, &mut pct, 0.0..=100.0, "%", false, 0);
-    if r.changed() {
+    if r.changed() | quick_values(&r, &mut pct, 100.0, &[0.0, 25.0, 50.0, 75.0, 100.0], "%", false) {
         *value = (pct / 100.0).clamp(0.0, 1.0);
         true
     } else {
