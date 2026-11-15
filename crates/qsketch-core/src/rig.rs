@@ -1132,7 +1132,9 @@ pub fn bake(doc: &DocState, anim: usize, fps: u32, filter: ResizeFilter) -> Resu
     // A document that already has frames plays them alongside the rig: the
     // art of baked frame `i` is the frame of the document showing at its time
     // (wrapping for a looping animation). With one frame this is always 0.
-    let src_frame: Vec<usize> = times.iter().map(|&t| frame_showing(doc, t, an.looped)).collect();
+    // The frames always cycle, even under an animation that plays once: a
+    // short hand-drawn flicker should keep going for a whole fire breath.
+    let src_frame: Vec<usize> = times.iter().map(|&t| frame_showing(doc, t, true)).collect();
     let current = out.frame;
 
     for l in &mut out.layers {

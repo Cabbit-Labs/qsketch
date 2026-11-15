@@ -71,10 +71,19 @@ fn diamond(painter: &egui::Painter, c: Pos2, r: f32, fill: Color32, stroke: Stro
 /// selected bone, its IK, the active layer's opacity). Click or drag to
 /// scrub (keys attract the playhead unless Shift is held); drag a key to
 /// retime it; right-click a key to delete it.
-fn key_track(ui: &mut Ui, duration_ms: u32, time_ms: u32, rows: &[TrackRow; 3]) -> TrackOut {
+fn key_track(
+    ui: &mut Ui,
+    duration_ms: u32,
+    time_ms: u32,
+    rows: &[TrackRow; 3],
+    frames: &[u32],
+    current_frame: usize,
+) -> TrackOut {
+    // With frames to show, a band under the ruler marks where each one plays.
+    let band = if frames.is_empty() { 0.0 } else { 16.0 };
     let mut out = TrackOut::default();
     let width = ui.available_width().max(240.0);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, TRACK_H), Sense::click_and_drag());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, TRACK_H + band), Sense::click_and_drag());
     let painter = ui.painter_at(rect);
     let visuals = ui.visuals().clone();
     let (accent, text) = (visuals.selection.bg_fill, visuals.text_color());
@@ -104,11 +113,34 @@ fn key_track(ui: &mut Ui, duration_ms: u32, time_ms: u32, rows: &[TrackRow; 3]) 
         painter.text(Pos2::new(x + 3.0, rect.top() + 3.0), Align2::LEFT_TOP, label, font.clone(), weak);
         t += step;
     }
+    // The document's frames, cycling over the animation.
+    let cycle: u32 = frames.iter().sum();
+    if cycle > 0 {
+        let (y0, y1) = (rect.top() + 16.0, rect.top() + 29.0);
+        let (mut t, mut i) = (0u32, 0usize);
+        while t < duration_ms {
+            let end = (t + frames[i].max(1)).min(duration_ms);
+            let r = egui::Rect::from_min_max(Pos2::new(to_x(t) + 0.5, y0), Pos2::new(to_x(end) - 0.5, y1));
+            let fill = if i == current_frame {
+                accent.gamma_multiply(0.55)
+            } else if i % 2 == 0 {
+                weak.gamma_multiply(0.22)
+            } else {
+                weak.gamma_multiply(0.10)
+            };
+            painter.rect_filled(r, 2.0, fill);
+            if r.width() >= 14.0 {
+                painter.text(r.center(), Align2::CENTER_CENTER, format!("{}", i + 1), font.clone(), text);
+            }
+            t = end;
+            i = (i + 1) % frames.len();
+        }
+    }
     // Row lines at 36, 60 and 84 px; a press belongs to the nearest row below
     // the one above's midpoint.
-    let row_y = |i: usize| rect.top() + 36.0 + 24.0 * i as f32;
+    let row_y = |i: usize| rect.top() + band + 36.0 + 24.0 * i as f32;
     let row_at = |y: f32| {
-        let i = (((y - (rect.top() + 24.0)) / 24.0).floor().max(0.0) as usize).min(2);
+        let i = (((y - (rect.top() + band + 24.0)) / 24.0).floor().max(0.0) as usize).min(2);
         ROWS[i]
     };
     let row_index = |row: Row| ROWS.iter().position(|r| *r == row).unwrap_or(0);
@@ -225,6 +257,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let sel_name = rui.sel.and_then(|b| rig.bone(b)).map(|b| b.name.clone());
     let bone_keys: Vec<u32> = rui.sel.zip(cur).map(|(b, a)| rig.key_times(a, b)).unwrap_or_default();
     let key_here = bone_keys.contains(&rui.time_ms);
+    let st = e.doc.state();
+    let (frame_count, current_frame) = (st.frame_count(), st.frame);
+    let frame_durs: Vec<u32> = if frame_count > 1 && rui.sync_frames {
+        (0..frame_count).map(|f| st.frame_duration(f)).collect()
+    } else {
+        Vec::new()
+    };
     let alpha_keys: Vec<u32> = cur.map(|a| rig.alpha_key_times(a, layer_id)).unwrap_or_default();
     let rest_alpha_now = rig.rest_alpha_of(layer_id);
     let alpha_now = rig.alpha_at(cur.map(|a| (a, rui.time_ms)), layer_id);
@@ -312,6 +351,12 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 rui.time_ms = rui.time_ms.min(a.duration_ms);
                 ui.label(format!("{:.2} / {:.2} s", rui.time_ms as f32 / 1000.0, a.duration_ms as f32 / 1000.0));
                 ui.separator();
+                if frame_count > 1 {
+                    ui.checkbox(&mut rui.sync_frames, "Sync frames").on_hover_text(
+                        "The playhead also steps the document's frames (they repeat over the animation), and picking a frame in the Timeline moves the playhead there",
+                    );
+                    ui.separator();
+                }
                 ui.label("Easing for new keys");
                 egui::ComboBox::from_id_salt("rig_panel_easing").selected_text(rui.easing.label()).width(100.0).show_ui(
                     ui,
@@ -354,7 +399,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     color: Some(Color32::from_rgb(255, 160, 80)),
                 },
             ];
-            track = key_track(ui, a.duration_ms, rui.time_ms, &rows);
+            track = key_track(ui, a.duration_ms, rui.time_ms, &rows, &frame_durs, current_frame);
         } else {
             ui.label(
                 egui::RichText::new(
@@ -481,6 +526,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     e.rig_ui.cell = rui.cell;
     e.rig_ui.playing = rui.playing;
     e.rig_ui.alpha_key = rui.alpha_key;
+    e.rig_ui.sync_frames = rui.sync_frames;
     e.rig_ui.time_ms = rui.time_ms;
     if let Some(t) = track.scrub {
         e.rig_ui.time_ms = t;

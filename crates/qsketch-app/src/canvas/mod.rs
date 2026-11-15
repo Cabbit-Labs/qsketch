@@ -467,7 +467,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     let render_state = state.render_state.clone();
     let onion = state.settings.anim.onion.clone();
     let playing = state.playback.as_ref().is_some_and(|p| p.doc == doc_id);
+    let frames_free = crate::anim::can_change_frame(state);
     let Some(entry) = state.doc_mut(doc_id) else { return };
+    tools::bone::sync_frame(entry, tool == ToolKind::Bone && frames_free);
     if tools::bone::tick(entry, tool == ToolKind::Bone, ctx.input(|i| i.stable_dt) * 1000.0) {
         ctx.request_repaint();
     }

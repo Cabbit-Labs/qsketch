@@ -69,6 +69,13 @@ All notable changes to qSketch are documented in this file.
   current frame and no longer draws onion skins over a posed picture. Meshes
   cover a layer's art in every frame. Export for games says when it could not
   carry the other frames (the format has one picture per part).
+- Frames and the rig scrub together: with the Bone tool and an animation
+  selected, a document with several frames gets a frames band on the Rig track
+  (the frames cycle across the animation, the one in use highlighted) and a
+  Sync frames toggle. Scrubbing or playing the rig steps the frames; picking a
+  frame in the Timeline moves the rig playhead to that frame in the cycle it
+  is in. Baked frames always cycle, even under an animation that plays once,
+  so a short hand-drawn flicker lasts a whole fire breath.
 - Keying a bone's position or rotation for the first time at a later time also
   keys its rest value at 0, so animations start from the setup pose instead of
   already being posed at the first frame.

@@ -58,6 +58,12 @@ pub struct RigUi {
     pub strength: f32,
     /// Cell size (pixels) of a new mesh.
     pub cell: u32,
+    /// The rig playhead and the document's frames move together: scrubbing
+    /// or playing steps the frames (they cycle over the animation), and
+    /// picking a frame in the Timeline moves the playhead to it.
+    pub sync_frames: bool,
+    /// The document frame as of the last sync (to notice Timeline changes).
+    synced_frame: Option<usize>,
     /// The opacity the Key button in the Rig panel keys for the active layer.
     pub alpha_key: f32,
     /// The animation preview is playing; `play_frac` carries the part of a
@@ -81,6 +87,8 @@ impl Default for RigUi {
             brush: 18.0,
             strength: 0.25,
             cell: 12,
+            sync_frames: true,
+            synced_frame: None,
             alpha_key: 1.0,
             playing: false,
             play_frac: 0.0,
@@ -334,6 +342,42 @@ pub fn tick(entry: &mut DocEntry, tool_active: bool, dt_ms: f32) -> bool {
     }
     entry.rig_ui.time_ms = ms;
     entry.rig_ui.playing
+}
+
+/// Keep the document's current frame and the rig playhead together (see
+/// `RigUi::sync_frames`). Only with the Bone tool, an animation selected and
+/// more than one frame.
+pub fn sync_frame(entry: &mut DocEntry, tool_active: bool) {
+    let s = entry.doc.state();
+    let anim = entry.rig_ui.anim_in(&s.rig);
+    let (Some(a), true) = (anim, tool_active && entry.rig_ui.sync_frames && s.frame_count() > 1) else {
+        entry.rig_ui.synced_frame = None;
+        return;
+    };
+    let cur = s.frame;
+    let want = rig::frame_showing(s, entry.rig_ui.time_ms, true);
+    match entry.rig_ui.synced_frame {
+        // The frame was changed elsewhere (the Timeline): the playhead goes
+        // to the start of that frame...
+        Some(last) if last != cur && want != cur => {
+            // ...within the cycle of the frames the playhead is in now, so
+            // stepping frames stays near what you were looking at.
+            let start: u32 = (0..cur).map(|f| s.frame_duration(f)).sum();
+            let cycle = (s.total_duration_ms() as u32).max(1);
+            let dur = s.rig.animations[a].duration_ms;
+            let mut t = entry.rig_ui.time_ms / cycle * cycle + start;
+            if t > dur && t >= cycle {
+                t -= cycle;
+            }
+            entry.rig_ui.time_ms = t.min(dur);
+            entry.rig_ui.playing = false;
+        }
+        _ if want != cur => {
+            entry.doc.set_frame(want);
+        }
+        _ => {}
+    }
+    entry.rig_ui.synced_frame = Some(entry.doc.state().frame);
 }
 
 /// A bone's tip in the setup pose (document pixels).
