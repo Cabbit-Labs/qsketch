@@ -23,6 +23,14 @@ All notable changes to qSketch are documented in this file.
   the weights on the art with a brush (Alt removes). Meshes show in the live
   pose, in Bake, and in the game export and reference player (see
   `docs/RIG_FORMAT.md`).
+- Bone tool polish, from using it in the app: Shift+drag grows a child bone from
+  the selected bone's tip (and a bone started near that tip snaps onto it);
+  moving a bone by its body follows the pointer instead of jumping; a new mesh
+  starts rigid and only blends once you ask for auto weights or paint; there is
+  a Play/Pause button for the animation preview; the options bar keeps rarely
+  used and destructive actions (animation settings, flip bend, remove IK,
+  auto weights, remove mesh) in small menus so it fits and nothing destructive
+  sits next to a common button; bone outlines no longer spike at the tip.
 - A reference rig player in `examples/rig-player/`: a browser page that plays
   exported rigs, a dependency-free JavaScript runtime to port to other engines,
   and a test that checks it against the editor's own poses.

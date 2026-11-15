@@ -1172,6 +1172,32 @@ mod tests {
     }
 
     #[test]
+    fn a_full_rig_survives_a_qsk_save_and_load() {
+        use crate::geom::IRect;
+        let mut doc = DocState::new(64, 64, None);
+        let id = doc.layers[0].id();
+        doc.layers[0].raster.fill_rect(IRect::new(10, 10, 20, 30), Rgba8::new(10, 200, 30, 255));
+        let a = doc.rig.add_bone("upper", None, 20.0, 12.0, 14.0);
+        let b = doc.rig.add_bone("lower", Some(a), 14.0, 0.0, 14.0);
+        doc.rig.attach(id, a);
+        assert!(doc.rig.add_mesh(id, IRect::new(10, 10, 20, 30), 8));
+        doc.rig.auto_weights(id, false);
+        let (ik, target) = doc.rig.add_ik(b).unwrap();
+        let an = doc.rig.add_animation("reach", 900);
+        doc.rig.set_key(an, target, 0, KeyValue::Translate([0.0, 0.0]), Curve::Linear);
+        doc.rig.set_key(an, target, 900, KeyValue::Translate([-6.0, 9.0]), Curve::Bezier([0.2, 0.0, 0.8, 1.0]));
+        doc.rig.set_ik_key(an, ik, 400, crate::rig::IkValue { mix: 0.5, bend: -1 }, Curve::Stepped);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rig.qsk");
+        crate::io::qsk::save(&path, &doc).unwrap();
+        let back = crate::io::qsk::load(&path).unwrap();
+        assert_eq!(back.rig, doc.rig);
+        // And it still poses the same.
+        assert_eq!(back.rig.pose(Some((an, 450))), doc.rig.pose(Some((an, 450))));
+    }
+
+    #[test]
     fn rig_survives_json() {
         let mut rig = Rig::default();
         let b = rig.add_bone("b", None, 1.0, 2.0, 3.0);

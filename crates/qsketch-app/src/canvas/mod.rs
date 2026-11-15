@@ -468,6 +468,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     let onion = state.settings.anim.onion.clone();
     let playing = state.playback.as_ref().is_some_and(|p| p.doc == doc_id);
     let Some(entry) = state.doc_mut(doc_id) else { return };
+    if tools::bone::tick(entry, tool == ToolKind::Bone, ctx.input(|i| i.stable_dt) * 1000.0) {
+        ctx.request_repaint();
+    }
     tools::bone::sync_preview(entry, tool == ToolKind::Bone);
     // Onion skins ride along in the composite (never during playback).
     entry.doc.refresh_onion((!playing).then_some(&onion));

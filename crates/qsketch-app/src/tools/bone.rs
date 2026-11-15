@@ -24,6 +24,9 @@ use crate::state::{AppState, DocEntry, DocId};
 const HANDLE: f32 = 9.0;
 /// Screen distance within which a bone's body is grabbed.
 const BODY: f32 = 6.0;
+/// A new bone whose press lands this close (screen points) to its parent's
+/// tip starts exactly at that tip.
+const SNAP_TIP: f32 = 24.0;
 /// Shortest bone (screen points) a drag creates.
 const MIN_NEW: f32 = 8.0;
 
@@ -48,6 +51,10 @@ pub struct RigUi {
     pub strength: f32,
     /// Cell size (pixels) of a new mesh.
     pub cell: u32,
+    /// The animation preview is playing; `play_frac` carries the part of a
+    /// millisecond not yet added to `time_ms`.
+    pub playing: bool,
+    play_frac: f32,
     /// What the live preview was last drawn for.
     pose_key: Option<(u64, Rig, usize, u32, bool)>,
 }
@@ -65,6 +72,8 @@ impl Default for RigUi {
             brush: 18.0,
             strength: 0.25,
             cell: 12,
+            playing: false,
+            play_frac: 0.0,
             pose_key: None,
         }
     }
@@ -81,8 +90,10 @@ impl RigUi {
 pub enum BoneGesture {
     /// Dragging out a new bone from `head` under `parent`.
     Create { parent: Option<BoneId>, head: Pt },
-    /// Dragging a handle of an existing bone.
-    Handle { bone: BoneId, drag: BoneDrag },
+    /// Dragging a handle of an existing bone. For a move, `grab` is where on
+    /// the bone it was taken, relative to its head, so the bone follows the
+    /// pointer by the distance dragged instead of jumping to it.
+    Handle { bone: BoneId, drag: BoneDrag, grab: Pt },
     /// Pressed on nothing in Animate mode: just deselects.
     Idle,
     /// Painting the selected bone's weight on the active layer's mesh.
@@ -149,6 +160,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 return;
             }
             let Some(entry) = state.doc_mut(doc_id) else { return };
+            entry.rig_ui.playing = false;
             let animating = entry.rig_ui.anim_in(&entry.doc.state().rig).is_some();
             let weights_on = painting_weights(entry);
             let gesture = if weights_on {
@@ -163,6 +175,12 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                         BoneGesture::Paint { remove: inp.mods.alt }
                     }
                 }
+            } else if !animating && inp.mods.shift && !inp.mods.alt && entry.rig_ui.sel.is_some() {
+                // Shift: a new bone grows from the selected bone's tip, wherever
+                // the drag starts (so a tip can be chained without grabbing it).
+                let parent = entry.rig_ui.sel;
+                let head = parent.and_then(|p| setup_tip(entry, p)).unwrap_or(inp.doc);
+                BoneGesture::Create { parent, head }
             } else {
                 match hit_test(entry, inp.screen) {
                     Some(hit) => {
@@ -171,7 +189,15 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                             Hit::Head(b) | Hit::Body(b) => (b, BoneDrag::Move),
                         };
                         entry.rig_ui.sel = Some(bone);
-                        BoneGesture::Handle { bone, drag }
+                        let rig = &entry.doc.state().rig;
+                        let pose = rig.pose(entry.rig_ui.anim_in(rig).map(|a| (a, entry.rig_ui.time_ms)));
+                        let head = rig.head(bone, &pose).unwrap_or(inp.doc);
+                        let grab = if drag == BoneDrag::Move {
+                            Pt::new(inp.doc.x - head.x, inp.doc.y - head.y)
+                        } else {
+                            Pt::new(0.0, 0.0)
+                        };
+                        BoneGesture::Handle { bone, drag, grab }
                     }
                     None if animating => {
                         entry.rig_ui.sel = None;
@@ -179,7 +205,11 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                     }
                     None => {
                         let parent = if inp.mods.alt { None } else { entry.rig_ui.sel };
-                        BoneGesture::Create { parent, head: inp.doc }
+                        // Near the parent's tip: start right on it.
+                        let snapped = parent
+                            .and_then(|p| setup_tip(entry, p))
+                            .filter(|tip| entry.view.doc_to_screen(*tip).distance(inp.screen) <= SNAP_TIP);
+                        BoneGesture::Create { parent, head: snapped.unwrap_or(inp.doc) }
                     }
                 }
             };
@@ -197,11 +227,12 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 }
                 return;
             }
-            if let BoneGesture::Handle { bone, drag } = gesture {
+            if let BoneGesture::Handle { bone, drag, grab } = gesture {
                 let Some(entry) = state.doc_mut(doc_id) else { return };
                 let (anim, t, curve) =
                     (entry.rig_ui.anim_in(&entry.doc.state().rig), entry.rig_ui.time_ms, entry.rig_ui.easing.curve());
-                entry.doc.state_mut().rig.drag_bone(anim, t, bone, drag, inp.doc, curve);
+                let target = Pt::new(inp.doc.x - grab.x, inp.doc.y - grab.y);
+                entry.doc.state_mut().rig.drag_bone(anim, t, bone, drag, target, curve);
             }
         }
         CanvasEvent::Release(inp) => {
@@ -242,6 +273,41 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
         }
         _ => {}
     }
+}
+
+/// Advance the playhead by `dt_ms` while the preview plays. True while it
+/// still is (the caller keeps repainting). A looping animation wraps; one
+/// that doesn't stops on its last pose.
+pub fn tick(entry: &mut DocEntry, tool_active: bool, dt_ms: f32) -> bool {
+    if !entry.rig_ui.playing {
+        return false;
+    }
+    let rig = &entry.doc.state().rig;
+    let Some(a) = entry.rig_ui.anim_in(rig).filter(|_| tool_active) else {
+        entry.rig_ui.playing = false;
+        return false;
+    };
+    let (dur, looped) = (rig.animations[a].duration_ms.max(1), rig.animations[a].looped);
+    let t = entry.rig_ui.time_ms as f32 + entry.rig_ui.play_frac + dt_ms;
+    let whole = t.floor();
+    entry.rig_ui.play_frac = t - whole;
+    let mut ms = whole as u32;
+    if ms >= dur {
+        if looped {
+            ms %= dur;
+        } else {
+            ms = dur;
+            entry.rig_ui.playing = false;
+        }
+    }
+    entry.rig_ui.time_ms = ms;
+    entry.rig_ui.playing
+}
+
+/// A bone's tip in the setup pose (document pixels).
+fn setup_tip(entry: &DocEntry, bone: BoneId) -> Option<Pt> {
+    let rig = &entry.doc.state().rig;
+    rig.tip(bone, &rig.pose(None))
 }
 
 /// Whether a press paints weights: the mode is on and the active layer has a mesh.
@@ -355,8 +421,13 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
         let side = egui::vec2(-dir.y, dir.x) * (len * 0.12).clamp(2.5, 7.0);
         let waist = *h + axis * 0.2;
         let shape = vec![*h, waist + side, *t, waist - side];
-        painter.add(egui::Shape::closed_line(shape.clone(), shadow));
-        painter.add(egui::Shape::convex_polygon(shape, col.gamma_multiply(0.35), Stroke::new(1.5, col)));
+        painter.add(egui::Shape::convex_polygon(shape.clone(), col.gamma_multiply(0.35), Stroke::NONE));
+        // The outline edge by edge: a closed stroke spikes at the sharp tip.
+        for i in 0..4 {
+            let edge = [shape[i], shape[(i + 1) % 4]];
+            painter.line_segment(edge, shadow);
+            painter.line_segment(edge, Stroke::new(1.5, col));
+        }
         painter.circle_filled(*h, 4.0, col);
         painter.circle_stroke(*h, 4.0, Stroke::new(1.0, Color32::BLACK));
         if sel {
