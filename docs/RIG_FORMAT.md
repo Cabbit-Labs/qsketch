@@ -133,3 +133,10 @@ world(bone, animated pose) · transform
 nothing else is needed. A part with `"bone": null` is drawn with `transform`
 alone (which is just a translation to `x, y`). Multiply the part's alpha by
 `opacity`.
+
+## Reference player
+
+`examples/rig-player/` has a JavaScript runtime written from this document
+(`rig-runtime.js`), a canvas player, and a test that checks the runtime
+against the editor's own poses. Start there when writing a runtime for
+another engine.

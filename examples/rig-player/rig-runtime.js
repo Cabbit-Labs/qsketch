@@ -1,0 +1,256 @@
+/*
+ * qSketch rig runtime: poses a `qsketch-rig` (version 1) skeleton.
+ *
+ * This file knows nothing about the DOM or any renderer. It is written from
+ * docs/RIG_FORMAT.md alone, so it doubles as a template for a runtime in
+ * another engine. Matrices are {a, b, c, d, e, f} like an SVG matrix():
+ *   x' = a*x + c*y + e,   y' = b*x + d*y + f
+ *
+ * Usage:
+ *   const rig = QRig.load(json);                     // parse once
+ *   const world = QRig.pose(rig, "walk", seconds);   // one matrix per bone
+ *   const m = QRig.partMatrix(rig, part, world);     // image pixels -> canvas
+ *   QRig.pose(rig, null, 0)                          // the setup pose
+ */
+(function (root) {
+  "use strict";
+
+  const IDENTITY = Object.freeze({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+
+  /** `p * q`: apply q first, then p. */
+  function mul(p, q) {
+    return {
+      a: p.a * q.a + p.c * q.b,
+      b: p.b * q.a + p.d * q.b,
+      c: p.a * q.c + p.c * q.d,
+      d: p.b * q.c + p.d * q.d,
+      e: p.a * q.e + p.c * q.f + p.e,
+      f: p.b * q.e + p.d * q.f + p.f,
+    };
+  }
+
+  function apply(m, x, y) {
+    return { x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f };
+  }
+
+  /** translate(x, y) * rotate(deg, clockwise on screen) * scale(sx, sy) */
+  function trs(x, y, deg, sx, sy) {
+    const r = (deg * Math.PI) / 180;
+    const s = Math.sin(r);
+    const c = Math.cos(r);
+    return { a: c * sx, b: s * sx, c: -s * sy, d: c * sy, e: x, f: y };
+  }
+
+  /** Degrees wrapped into -180..180. */
+  function wrap180(deg) {
+    return ((((deg + 540) % 360) + 360) % 360) - 180;
+  }
+
+  /** Eased progress for a key's `curve` ("linear", "stepped" or 4 numbers). */
+  function ease(curve, t) {
+    t = Math.min(1, Math.max(0, t));
+    if (curve === "stepped") return 0;
+    if (!Array.isArray(curve)) return t;
+    const [x1, y1, x2, y2] = curve;
+    const cx1 = Math.min(1, Math.max(0, x1));
+    const cx2 = Math.min(1, Math.max(0, x2));
+    const bez = (p, q, s) => {
+      const u = 1 - s;
+      return 3 * u * u * s * p + 3 * u * s * s * q + s * s * s;
+    };
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2;
+      if (bez(cx1, cx2, mid) < t) lo = mid;
+      else hi = mid;
+    }
+    return bez(y1, y2, (lo + hi) / 2);
+  }
+
+  /**
+   * Sample a timeline at `t` seconds: clamped before the first and after the
+   * last key, otherwise interpolated with the EARLIER key's curve. `fields`
+   * names the numeric properties of a key (e.g. ["x", "y"]); the result has
+   * the same names. Returns null for an empty or missing timeline.
+   */
+  function sample(keys, t, fields) {
+    if (!keys || keys.length === 0) return null;
+    const pick = (k) => Object.fromEntries(fields.map((f) => [f, k[f]]));
+    if (t <= keys[0].time) return pick(keys[0]);
+    const last = keys[keys.length - 1];
+    if (t >= last.time) return pick(last);
+    let i = 1;
+    while (keys[i].time <= t) i++;
+    const a = keys[i - 1];
+    const b = keys[i];
+    const p = ease(a.curve, (t - a.time) / Math.max(b.time - a.time, 1e-9));
+    return Object.fromEntries(fields.map((f) => [f, a[f] + (b[f] - a[f]) * p]));
+  }
+
+  /** The bend of the last key at or before `t` (bends are stepped). */
+  function sampleBend(keys, t, fallback) {
+    if (!keys || keys.length === 0) return fallback;
+    let bend = keys[0].bend;
+    for (const k of keys) if (k.time <= t) bend = k.bend;
+    return bend;
+  }
+
+  /** Index the file's bones, IK and parts for fast posing. */
+  function load(json) {
+    if (json.format !== "qsketch-rig" || json.version !== 1) {
+      throw new Error("not a qsketch-rig version 1 file");
+    }
+    const index = new Map(json.bones.map((b, i) => [b.name, i]));
+    const bones = json.bones.map((b) => ({
+      name: b.name,
+      parent: b.parent == null ? -1 : index.get(b.parent),
+      x: b.x,
+      y: b.y,
+      rotation: b.rotation,
+      scaleX: b.scaleX,
+      scaleY: b.scaleY,
+      length: b.length,
+    }));
+    const ik = (json.ik || []).map((c) => ({
+      name: c.name,
+      parent: index.get(c.bones[0]),
+      child: index.get(c.bones[1]),
+      target: index.get(c.target),
+      bend: c.bend,
+      mix: c.mix,
+    }));
+    return {
+      json,
+      canvas: json.canvas,
+      bones,
+      index,
+      ik,
+      parts: json.parts,
+      animations: json.animations || {},
+    };
+  }
+
+  function worlds(bones, locals) {
+    const out = new Array(bones.length);
+    for (let i = 0; i < bones.length; i++) {
+      const l = locals[i];
+      const local = trs(l.x, l.y, l.rot, l.sx, l.sy);
+      out[i] = bones[i].parent >= 0 ? mul(out[bones[i].parent], local) : local;
+    }
+    return out;
+  }
+
+  const angle = (m) => Math.atan2(m.b, m.a);
+
+  /** Solve one two-bone constraint on `locals` (see "Two-bone IK" in the doc). */
+  function solveIk(rig, locals, c, mix, bend) {
+    if (mix <= 0) return;
+    const bones = rig.bones;
+    if (bones[c.child].parent !== c.parent) return;
+    const w = worlds(bones, locals);
+    const h = apply(w[c.parent], 0, 0);
+    const hc = apply(w[c.child], 0, 0);
+    const t = apply(w[c.target], 0, 0);
+    const a = Math.hypot(hc.x - h.x, hc.y - h.y);
+    const b = bones[c.child].length * Math.hypot(w[c.child].a, w[c.child].b);
+    const dRaw = Math.hypot(t.x - h.x, t.y - h.y);
+    if (a < 1e-4 || b < 1e-4 || dRaw < 1e-4) return;
+    const d = Math.min(a + b, Math.max(Math.max(Math.abs(a - b), 1e-4), dRaw));
+    const cosA = Math.min(1, Math.max(-1, (a * a + d * d - b * b) / (2 * a * d)));
+    const alpha = Math.acos(cosA);
+    const theta = Math.atan2(t.y - h.y, t.x - h.x) + (bend < 0 ? -alpha : alpha);
+    const offset = Math.atan2(hc.y - h.y, hc.x - h.x) - angle(w[c.parent]);
+    const pp = bones[c.parent].parent >= 0 ? angle(w[bones[c.parent].parent]) : 0;
+    const rotP = ((theta - offset - pp) * 180) / Math.PI;
+    const p = locals[c.parent];
+    p.rot = p.rot + mix * wrap180(rotP - p.rot);
+
+    const w2 = worlds(bones, locals);
+    const hc2 = apply(w2[c.child], 0, 0);
+    const rotC = ((Math.atan2(t.y - hc2.y, t.x - hc2.x) - angle(w2[c.parent])) * 180) / Math.PI;
+    const ch = locals[c.child];
+    ch.rot = ch.rot + mix * wrap180(rotC - ch.rot);
+  }
+
+  /**
+   * World matrix of every bone. `animName` null (or unknown) gives the setup
+   * pose, which is plain forward kinematics; IK applies only to animations.
+   */
+  function pose(rig, animName, seconds) {
+    const anim = animName != null ? rig.animations[animName] : null;
+    let t = seconds;
+    if (anim) {
+      if (anim.loop) {
+        // `%` is exact; adding the duration first would not be.
+        t = seconds % anim.duration;
+        if (t < 0) t += anim.duration;
+      } else {
+        t = Math.min(Math.max(seconds, 0), anim.duration);
+      }
+    }
+    const locals = rig.bones.map((b) => {
+      const l = { x: b.x, y: b.y, rot: b.rotation, sx: b.scaleX, sy: b.scaleY };
+      const tr = anim && anim.bones[b.name];
+      if (tr) {
+        const tl = sample(tr.translate, t, ["x", "y"]);
+        if (tl) {
+          l.x += tl.x;
+          l.y += tl.y;
+        }
+        const ro = sample(tr.rotate, t, ["angle"]);
+        if (ro) l.rot += ro.angle;
+        const sc = sample(tr.scale, t, ["x", "y"]);
+        if (sc) {
+          l.sx *= sc.x;
+          l.sy *= sc.y;
+        }
+      }
+      return l;
+    });
+    if (anim) {
+      for (const c of rig.ik) {
+        const keys = anim.ik && anim.ik[c.name];
+        const v = sample(keys, t, ["mix"]);
+        const mix = Math.min(1, Math.max(0, v ? v.mix : c.mix));
+        solveIk(rig, locals, c, mix, sampleBend(keys, t, c.bend));
+      }
+    }
+    return worlds(rig.bones, locals);
+  }
+
+  /** The matrix that draws `part`'s image (pixel 0,0 at its top-left). */
+  function partMatrix(rig, part, world) {
+    const [a, b, c, d, e, f] = part.transform;
+    const m = { a, b, c, d, e, f };
+    if (part.bone == null) return m;
+    return mul(world[rig.index.get(part.bone)], m);
+  }
+
+  /** Canvas 2D `globalCompositeOperation` for an exported blend name. */
+  const BLEND = {
+    normal: "source-over",
+    passthrough: "source-over",
+    darken: "darken",
+    multiply: "multiply",
+    colorburn: "color-burn",
+    lighten: "lighten",
+    screen: "screen",
+    colordodge: "color-dodge",
+    lineardodge: "lighter",
+    overlay: "overlay",
+    softlight: "soft-light",
+    hardlight: "hard-light",
+    difference: "difference",
+    exclusion: "exclusion",
+    hue: "hue",
+    saturation: "saturation",
+    color: "color",
+    luminosity: "luminosity",
+  };
+  const canvasBlend = (name) => BLEND[name] || "source-over";
+
+  const QRig = { IDENTITY, mul, apply, trs, wrap180, ease, sample, load, pose, partMatrix, canvasBlend };
+  if (typeof module !== "undefined" && module.exports) module.exports = QRig;
+  else root.QRig = QRig;
+})(typeof self !== "undefined" ? self : this);

@@ -1,0 +1,52 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qSketch rig player</title>
+<style>
+  :root { color-scheme: dark; --bg: #16181d; --panel: #20242c; --line: #333945; --text: #e4e7ee; --dim: #9aa3b2; --accent: #4ea1ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; gap: 12px; }
+  h1 { font-size: 18px; margin: 0; }
+  h1 small { color: var(--dim); font-weight: 400; margin-left: 8px; }
+  .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; place-items: center; overflow: auto; }
+  canvas { display: block; max-width: 100%; height: auto; border-radius: 4px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .bar label { display: inline-flex; gap: 6px; align-items: center; color: var(--dim); }
+  select, button, input[type=range] { font: inherit; color: var(--text); }
+  select, button { background: #2b303b; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; }
+  button { cursor: pointer; min-width: 74px; }
+  button:hover, select:hover { border-color: var(--accent); }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #time { flex: 1 1 200px; min-width: 160px; accent-color: var(--accent); }
+  #readout { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 9ch; }
+  #status { color: var(--dim); min-height: 1.4em; }
+  #status.error { color: #ff7b72; }
+  .file { position: relative; overflow: hidden; }
+  .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  @media (max-width: 560px) { main { padding: 10px; } }
+</style>
+<main>
+  <h1>qSketch rig player <small>reference runtime for <code>qsketch-rig</code> files</small></h1>
+  <div class="stage"><canvas id="view" width="512" height="512" aria-label="Rig preview"></canvas></div>
+  <div class="bar">
+    <label>Animation <select id="anim"></select></label>
+    <button id="play" type="button">Pause</button>
+    <input id="time" type="range" min="0" max="1" step="0.001" value="0" aria-label="Time">
+    <span id="readout">0.00 s</span>
+  </div>
+  <div class="bar">
+    <label>Speed
+      <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+    </label>
+    <label>Zoom
+      <select id="zoom"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select>
+    </label>
+    <label><input id="bones" type="checkbox"> Bones</label>
+    <label><input id="pixel" type="checkbox"> Pixel art</label>
+    <span class="file"><button type="button">Open exported folder…</button><input id="folder" type="file" webkitdirectory multiple aria-label="Open an exported rig folder"></span>
+  </div>
+  <div id="status" role="status"></div>
+</main>
+<script src="rig-runtime.js"></script>
+<script src="player.js"></script>

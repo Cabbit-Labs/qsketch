@@ -17,6 +17,9 @@ All notable changes to qSketch are documented in this file.
   its parent a limb that reaches for a new target bone. Move the target and the
   limb follows; edit the mix, flip the bend, and key both over time. IK is part
   of the live pose, baking and the game export (see `docs/RIG_FORMAT.md`).
+- A reference rig player in `examples/rig-player/`: a browser page that plays
+  exported rigs, a dependency-free JavaScript runtime to port to other engines,
+  and a test that checks it against the editor's own poses.
 
 ## 0.70.0 — 2026-11-10
 

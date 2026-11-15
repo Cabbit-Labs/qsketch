@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Rig runtime test</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #111; color: #ddd; }
+  #summary { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .pass { color: #7ddc7d; } .fail { color: #ff7b72; }
+  pre { white-space: pre-wrap; }
+</style>
+<div id="summary">Running…</div>
+<pre id="log"></pre>
+<script src="rig-runtime.js"></script>
+<script>
+// Checks the JavaScript runtime against the world matrices the qSketch
+// editor computed for fixture/rig.json (fixture/expected.json).
+(async () => {
+  const [rigJson, expected] = await Promise.all([
+    fetch("fixture/rig.json").then((r) => r.json()),
+    fetch("fixture/expected.json").then((r) => r.json()),
+  ]);
+  const rig = QRig.load(rigJson);
+  const log = [];
+  let checked = 0;
+  let failed = 0;
+  // Tolerances: the editor works in f32, this in f64.
+  const close = (x, y, tol) => Math.abs(x - y) <= tol;
+  const compare = (what, got, want) => {
+    const m = [got.a, got.b, got.c, got.d, got.e, got.f];
+    const ok = m.every((v, i) => close(v, want[i], i < 4 ? 2e-3 : 0.03));
+    checked++;
+    if (!ok) {
+      failed++;
+      log.push(`FAIL ${what}\n  got  ${m.map((v) => v.toFixed(4))}\n  want ${want.map((v) => v.toFixed(4))}`);
+    }
+  };
+  for (const s of expected.samples) {
+    const label = `${s.anim ?? "setup"} @ ${s.t}s`;
+    const world = QRig.pose(rig, s.anim, s.t);
+    for (const [name, want] of Object.entries(s.bones)) {
+      compare(`${label} bone ${name}`, world[rig.index.get(name)], want);
+    }
+    const part = rig.parts[0];
+    compare(`${label} part ${part.name}`, QRig.partMatrix(rig, part, world), s.part);
+  }
+  document.getElementById("summary").textContent =
+    failed === 0 ? `PASS: ${checked} matrices match the editor` : `FAIL: ${failed} of ${checked} differ`;
+  document.getElementById("summary").className = failed === 0 ? "pass" : "fail";
+  document.getElementById("log").textContent = log.slice(0, 12).join("\n");
+  document.title = failed === 0 ? "PASS" : "FAIL";
+})().catch((e) => {
+  document.getElementById("summary").textContent = "ERROR: " + e.message;
+  document.getElementById("summary").className = "fail";
+  document.title = "ERROR";
+});
+</script>
