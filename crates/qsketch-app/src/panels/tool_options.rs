@@ -931,11 +931,11 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
     hint(
         ui,
         if painting {
-            "Painting weights: drag over the art to add the selected bone (red = all of it), Alt removes; click a bone to choose. Pick an animation and scrub to see it bend."
+            "Painting weights: drag over the art to add the selected bone (red = all of it), Ctrl removes; click a bone to choose. Pick an animation and scrub to see it bend."
         } else if cur.is_some() {
-            "Drag a bone's tip to rotate it, its head or body to move it: each drag keys the pose at the playhead. Move an IK target to swing its limb. Controls are in the Rig panel below."
+            "Drag a bone's tip to rotate it (Ctrl: scale), its head or body to move it: each drag keys the pose at the playhead. Controls are in the Rig panel below."
         } else {
-            "Drag to add a bone (Shift: grow from the selected bone's tip; Alt: new root). Drag a tip to turn or resize, a head to move. Controls are in the Rig panel below."
+            "Drag to add a bone (Shift: grow from the selected bone's tip; Ctrl: new root). Drag a tip to turn or resize, a head to move. Controls are in the Rig panel below."
         },
     );
 }

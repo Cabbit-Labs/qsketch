@@ -176,6 +176,9 @@ pub enum BoneDrag {
     Aim,
     /// The tip, in the setup pose: turns the bone and sets its length.
     AimStretch,
+    /// The tip, in an animation: scales the bone (and what hangs off it) by
+    /// how far the tip is from the head, relative to its setup length.
+    Scale,
 }
 
 /// Which property of a bone a key sets.
@@ -566,6 +569,16 @@ impl Rig {
                     }
                 }
             }
+            BoneDrag::Scale => {
+                let Some(a) = anim else { return };
+                let parent_scale = (parent.a * parent.a + parent.b * parent.b).sqrt().max(1e-3);
+                let reach = (b.length.max(1.0) * parent_scale * b.scale[0].abs().max(1e-3)).max(1e-3);
+                let s = (head_world.dist(target) / reach).clamp(0.02, 8.0);
+                if t_ms > 0 && !self.animated_property(a, bone, |t| !t.scale.is_empty()) {
+                    self.set_key(a, bone, 0, KeyValue::Scale([1.0, 1.0]), Curve::Linear);
+                }
+                self.set_key(a, bone, t_ms, KeyValue::Scale([s, s]), curve);
+            }
             BoneDrag::Aim | BoneDrag::AimStretch => {
                 let (dx, dy) = (target.x - head_world.x, target.y - head_world.y);
                 if dx.abs() < 1e-3 && dy.abs() < 1e-3 {
@@ -800,6 +813,60 @@ impl Rig {
             let at = t.keys.partition_point(|o| o.time_ms < to_ms);
             t.keys.insert(at, k);
         }
+    }
+
+    /// Key every animated property of animation `anim` at `time_ms` with the
+    /// value it has there now, so each bone holds its pose from that moment.
+    /// Timelines that already have a key at `time_ms` are left alone. Returns
+    /// how many keys it added.
+    pub fn key_all(&mut self, anim: usize, time_ms: u32) -> usize {
+        let Some(an) = self.animations.get_mut(anim) else { return 0 };
+        let t = time_ms.min(an.duration_ms);
+        fn hold<T: Lerp>(keys: &mut Vec<Key<T>>, t: u32) -> usize {
+            if keys.is_empty() || keys.iter().any(|k| k.time_ms == t) {
+                return 0;
+            }
+            match sample(keys, t as f32) {
+                Some(v) => {
+                    upsert(keys, t, v, Curve::Linear);
+                    1
+                }
+                None => 0,
+            }
+        }
+        let mut added = 0;
+        for tr in &mut an.tracks {
+            added += hold(&mut tr.translate, t) + hold(&mut tr.rotate, t) + hold(&mut tr.scale, t);
+        }
+        for tr in &mut an.ik {
+            added += hold(&mut tr.keys, t);
+        }
+        added
+    }
+
+    /// Make animation `anim` loop seamlessly: every timeline that doesn't
+    /// already have a key at the very end gets one copying its first key, so
+    /// the last pose runs back into the first. Returns how many keys it added.
+    pub fn close_loop(&mut self, anim: usize) -> usize {
+        let Some(an) = self.animations.get_mut(anim) else { return 0 };
+        let end = an.duration_ms;
+        fn close<T: Clone>(keys: &mut Vec<Key<T>>, end: u32) -> usize {
+            match keys.first().cloned() {
+                Some(first) if keys.last().is_some_and(|k| k.time_ms < end) => {
+                    keys.push(Key { time_ms: end, value: first.value, curve: first.curve });
+                    1
+                }
+                _ => 0,
+            }
+        }
+        let mut added = 0;
+        for t in &mut an.tracks {
+            added += close(&mut t.translate, end) + close(&mut t.rotate, end) + close(&mut t.scale, end);
+        }
+        for t in &mut an.ik {
+            added += close(&mut t.keys, end);
+        }
+        added
     }
 
     /// Remove the IK keys of constraint `id` at `time_ms`.
@@ -1262,6 +1329,48 @@ mod tests {
         assert_eq!(back.rig, doc.rig);
         // And it still poses the same.
         assert_eq!(back.rig.pose(Some((an, 450))), doc.rig.pose(Some((an, 450))));
+    }
+
+    #[test]
+    fn scale_drag_keys_a_factor_and_close_loop_repeats_the_first_keys() {
+        let mut rig = Rig::default();
+        let b = rig.add_bone("fire", None, 0.0, 0.0, 10.0);
+        let a = rig.add_animation("a", 1000);
+        // Dragging the tip to twice the setup length keys scale 2 (and the rest
+        // scale 1 at 0 so it grows from its setup size).
+        rig.drag_bone(Some(a), 400, b, BoneDrag::Scale, Pt::new(20.0, 0.0), Curve::Linear);
+        assert!(near(rig.offsets(a, b, 400).2[0], 2.0) && near(rig.offsets(a, b, 0).2[0], 1.0));
+        assert!(near(rig.offsets(a, b, 200).2[0], 1.5));
+        // Not in the setup pose.
+        rig.drag_bone(None, 0, b, BoneDrag::Scale, Pt::new(40.0, 0.0), Curve::Linear);
+        assert!(near(rig.bone(b).unwrap().scale[0], 1.0));
+        // The loop runs out at 400 and holds; closing it returns to the start.
+        assert_eq!(rig.close_loop(a), 1);
+        assert!(near(rig.offsets(a, b, 1000).2[0], 1.0));
+        assert_eq!(rig.close_loop(a), 0, "already closed");
+    }
+
+    #[test]
+    fn key_all_holds_every_animated_property_where_it_is() {
+        let mut rig = Rig::default();
+        let a_bone = rig.add_bone("a", None, 0.0, 0.0, 10.0);
+        let b_bone = rig.add_bone("b", None, 5.0, 0.0, 10.0);
+        let an = rig.add_animation("hold", 1000);
+        rig.set_key(an, a_bone, 0, KeyValue::Rotate(0.0), Curve::Linear);
+        rig.set_key(an, a_bone, 400, KeyValue::Rotate(40.0), Curve::Linear);
+        rig.set_key(an, b_bone, 0, KeyValue::Translate([0.0, 0.0]), Curve::Linear);
+        rig.set_key(an, b_bone, 200, KeyValue::Translate([10.0, 0.0]), Curve::Linear);
+        // At 700 ms both bones are past their last key: holding it adds keys
+        // with those values, so later keys can bring them back from there.
+        assert_eq!(rig.key_all(an, 700), 2);
+        assert!(near(rig.offsets(an, a_bone, 700).1, 40.0) && near(rig.offsets(an, b_bone, 700).0[0], 10.0));
+        rig.set_key(an, a_bone, 1000, KeyValue::Rotate(0.0), Curve::Linear);
+        assert!(near(rig.offsets(an, a_bone, 700).1, 40.0), "held until 700");
+        assert!(near(rig.offsets(an, a_bone, 850).1, 20.0), "then back to rest by 1000");
+        // Between keys it keys the interpolated value; existing keys are untouched.
+        assert_eq!(rig.key_all(an, 100), 2);
+        assert!(near(rig.offsets(an, a_bone, 100).1, 10.0));
+        assert_eq!(rig.key_all(an, 400), 1, "a already has a key at 400");
     }
 
     #[test]

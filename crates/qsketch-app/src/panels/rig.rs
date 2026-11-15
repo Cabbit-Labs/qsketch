@@ -237,6 +237,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let (mut add_ik, mut del_ik, mut key_ik) = (false, false, false);
     let (mut make_mesh, mut auto_near, mut auto_all, mut del_mesh) = (false, false, false, false);
     let mut export_rig = false;
+    let mut close_loop = false;
+    let mut key_all = false;
     let mut track = TrackOut::default();
 
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -263,6 +265,14 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 ui.add(egui::DragValue::new(&mut a.duration_ms).range(1..=600_000).suffix(" ms"))
                     .on_hover_text("Length of the animation");
                 ui.checkbox(&mut a.looped, "Loop");
+                if a.looped
+                    && ui
+                        .button("Close loop")
+                        .on_hover_text("Copy each timeline's first key to the end so the last pose runs into the first")
+                        .clicked()
+                {
+                    close_loop = true;
+                }
                 ui.checkbox(&mut rui.nearest, "Pixel art").on_hover_text("Preview without smoothing");
                 del_anim = ui.button(format!("{} Delete", icons::TRASH)).on_hover_text("Delete this animation").clicked();
             }
@@ -300,6 +310,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     },
                 );
                 ui.separator();
+                if ui
+                    .button("Key all")
+                    .on_hover_text("Key every animated bone at the playhead where it is now, so it holds its pose from here")
+                    .clicked()
+                {
+                    key_all = true;
+                }
                 if ui
                     .add_enabled(key_here, egui::Button::new("Delete keys here"))
                     .on_hover_text("Delete the selected bone's keys at the playhead")
@@ -352,12 +369,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 
             ui.separator();
             ui.strong("Mesh");
-            ui.label(egui::RichText::new(&layer_name).weak());
             match mesh_dims {
                 Some((c, r)) => {
                     ui.label(format!("{c}×{r}"));
                     ui.toggle_value(&mut rui.weights, "Paint weights")
-                        .on_hover_text("Drag on the art to add the selected bone's weight; hold Alt to remove it");
+                        .on_hover_text("Drag on the art to add the selected bone's weight; hold Ctrl to remove it");
                     if rui.weights {
                         ui.add(egui::DragValue::new(&mut rui.brush).range(2.0..=200.0).prefix("size ").suffix(" px"));
                         ui.add(egui::DragValue::new(&mut rui.strength).speed(0.01).range(0.01..=1.0).prefix("strength "));
@@ -382,10 +398,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 
             ui.separator();
             ui.strong("Layer");
-            ui.label(match &attached {
-                Some(b) => format!("{layer_name} → {b}"),
-                None => format!("{layer_name}: not attached"),
-            });
+            // Buttons first and the names after, so the buttons stay put when
+            // the active layer changes.
             if rui.sel.is_some() && rui.sel == layer_bone {
                 detach = ui.button("Detach").on_hover_text("Stop the active layer following its bone").clicked();
             } else if ui
@@ -398,6 +412,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             {
                 attach = true;
             }
+            ui.label(match &attached {
+                Some(b) => format!("{layer_name} → {b}"),
+                None => format!("{layer_name}: not attached"),
+            });
         });
     });
 
@@ -445,6 +463,18 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             e.rig_ui.time_ms = 0;
             e.rig_ui.playing = false;
             e.doc.commit("Delete Rig Animation");
+        }
+    } else if key_all {
+        if let Some(a) = cur {
+            if e.doc.state_mut().rig.key_all(a, time) > 0 {
+                e.doc.commit("Key All");
+            }
+        }
+    } else if close_loop {
+        if let Some(a) = cur {
+            if e.doc.state_mut().rig.close_loop(a) > 0 {
+                e.doc.commit("Close Loop");
+            }
         }
     } else if del_keys {
         if let (Some(b), Some(a)) = (sel, cur) {

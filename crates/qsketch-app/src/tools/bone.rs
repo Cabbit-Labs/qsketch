@@ -1,7 +1,7 @@
 //! Bone tool: build a skeleton and pose it right on the canvas.
 //!
 //! * No animation selected (Setup): drag on empty canvas to add a bone (a
-//!   child of the selected bone; hold Alt for a new root). Drag a bone's tip
+//!   child of the selected bone; hold Ctrl for a new root). Drag a bone's tip
 //!   to turn and resize it, its head or body to move it.
 //! * An animation selected (Animate): the same drags write keys at the
 //!   current time (the tip rotates, the head or body moves), and the canvas
@@ -19,6 +19,13 @@ use qsketch_core::{Pt, Rig};
 use super::{CanvasEvent, ToolSession};
 use crate::dialogs::rig::Easing;
 use crate::state::{AppState, DocEntry, DocId};
+
+/// Alt, or Ctrl: the modifier for the "other" gesture (new root bone, remove
+/// weight, scale). Many Linux window managers grab Alt+drag to move windows,
+/// so Ctrl does the same everywhere.
+fn alt_like(m: &egui::Modifiers) -> bool {
+    m.alt || m.command
+}
 
 /// Screen distance (points) within which a handle is grabbed.
 const HANDLE: f32 = 9.0;
@@ -171,16 +178,16 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 match hit_test(entry, inp.screen) {
                     Some(Hit::Tip(bone) | Hit::Head(bone) | Hit::Body(bone)) => BoneGesture::PaintOrSelect {
                         bone,
-                        remove: inp.mods.alt,
+                        remove: alt_like(&inp.mods),
                         start: inp.doc,
                         start_screen: inp.screen,
                     },
                     None => {
-                        paint_at(entry, inp.doc, inp.mods.alt);
-                        BoneGesture::Paint { remove: inp.mods.alt }
+                        paint_at(entry, inp.doc, alt_like(&inp.mods));
+                        BoneGesture::Paint { remove: alt_like(&inp.mods) }
                     }
                 }
-            } else if !animating && inp.mods.shift && !inp.mods.alt && entry.rig_ui.sel.is_some() {
+            } else if !animating && inp.mods.shift && !alt_like(&inp.mods) && entry.rig_ui.sel.is_some() {
                 // Shift: a new bone grows from the selected bone's tip, wherever
                 // the drag starts (so a tip can be chained without grabbing it).
                 let parent = entry.rig_ui.sel;
@@ -190,6 +197,8 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 match hit_test(entry, inp.screen) {
                     Some(hit) => {
                         let (bone, drag) = match hit {
+                            // Alt on a tip in an animation scales instead of turning.
+                            Hit::Tip(b) if animating && alt_like(&inp.mods) => (b, BoneDrag::Scale),
                             Hit::Tip(b) => (b, if animating { BoneDrag::Aim } else { BoneDrag::AimStretch }),
                             Hit::Head(b) | Hit::Body(b) => (b, BoneDrag::Move),
                         };
@@ -209,7 +218,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                         BoneGesture::Idle
                     }
                     None => {
-                        let parent = if inp.mods.alt { None } else { entry.rig_ui.sel };
+                        let parent = if alt_like(&inp.mods) { None } else { entry.rig_ui.sel };
                         // Near the parent's tip: start right on it.
                         let snapped = parent
                             .and_then(|p| setup_tip(entry, p))
@@ -277,6 +286,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                         let animating = entry.rig_ui.anim_in(&entry.doc.state().rig).is_some();
                         let label = match (animating, drag) {
                             (true, BoneDrag::Move) => "Key Bone Position",
+                            (true, BoneDrag::Scale) => "Key Bone Scale",
                             (true, _) => "Key Bone Rotation",
                             (false, BoneDrag::Move) => "Move Bone",
                             (false, _) => "Turn Bone",

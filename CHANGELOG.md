@@ -46,6 +46,12 @@ All notable changes to qSketch are documented in this file.
 - The Rig panel is more compact: Limb, Mesh and Layer share one wrapped row
   instead of three stacked columns, and the panel opens at about 28% of the
   window instead of 42%, so the canvas keeps its room.
+- Rig panel, from animating a 20-bone dragon in the app: Close loop (copies each
+  timeline's first key to the end so a loop is seamless), Key all (holds every
+  animated bone's pose at the playhead), and Ctrl+drag on a bone's tip in an
+  animation to scale it (a flame growing out of a mouth). Ctrl also works
+  wherever the Bone tool used Alt (new root bone, removing weight), since many
+  window managers take Alt+drag.
 - Keying a bone's position or rotation for the first time at a later time also
   keys its rest value at 0, so animations start from the setup pose instead of
   already being posed at the first frame.
