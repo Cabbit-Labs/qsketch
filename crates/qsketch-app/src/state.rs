@@ -484,6 +484,10 @@ impl AppState {
             crate::tools::floating::commit(self);
             crate::tools::text::commit(self);
             self.tool = tool;
+            if tool == ToolKind::Bone {
+                // The Bone tool's controls live in the Rig panel.
+                self.show_panel_requests.push(crate::workspace::PanelKind::Rig);
+            }
             self.tool_opts.crop_rect = None;
             self.brush_popup = None;
         }

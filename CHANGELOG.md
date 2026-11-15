@@ -31,6 +31,16 @@ All notable changes to qSketch are documented in this file.
   used and destructive actions (animation settings, flip bend, remove IK,
   auto weights, remove mesh) in small menus so it fits and nothing destructive
   sits next to a common button; bone outlines no longer spike at the tip.
+- The Bone tool's controls moved out of the crowded options bar into a Rig
+  panel under the canvas (it opens with the tool and shares tabs with the
+  Timeline; Window > Rig): the animation, a play button and a key track you can
+  click or drag to scrub (right-click a key to delete it), easing for new keys,
+  and sections for IK, the active layer's mesh and weights, and what the layer
+  follows, plus Export for games and Bake. The options bar is now just a status
+  line and hint.
+- Keying a bone's position or rotation for the first time at a later time also
+  keys its rest value at 0, so animations start from the setup pose instead of
+  already being posed at the first frame.
 - A reference rig player in `examples/rig-player/`: a browser page that plays
   exported rigs, a dependency-free JavaScript runtime to port to other engines,
   and a test that checks it against the editor's own poses.

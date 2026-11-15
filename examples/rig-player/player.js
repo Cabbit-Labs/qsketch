@@ -51,7 +51,10 @@
     const first = Object.keys(rig.animations)[0] ?? null;
     select.value = first ?? "";
     setAnimation(first);
-    status(`${name}: ${rig.bones.length} bones, ${rig.parts.length} parts, ${Object.keys(rig.animations).length} animations`);
+    const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    status(
+      `${name}: ${count(rig.bones.length, "bone")}, ${count(rig.parts.length, "part")}, ${count(Object.keys(rig.animations).length, "animation")}`
+    );
     sizeCanvas();
   }
 

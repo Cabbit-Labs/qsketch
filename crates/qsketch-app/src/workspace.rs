@@ -30,11 +30,13 @@ pub enum PanelKind {
     Model,
     Tileset,
     Timeline,
+    /// Bone tool controls: animations, key track, IK, meshes.
+    Rig,
 }
 
 impl PanelKind {
     #[allow(dead_code)]
-    pub const PANELS: [PanelKind; 14] = [
+    pub const PANELS: [PanelKind; 15] = [
         PanelKind::Tools,
         PanelKind::Layers,
         PanelKind::History,
@@ -49,6 +51,7 @@ impl PanelKind {
         PanelKind::Model,
         PanelKind::Tileset,
         PanelKind::Timeline,
+        PanelKind::Rig,
     ];
 
     pub fn static_title(&self) -> &'static str {
@@ -69,6 +72,7 @@ impl PanelKind {
             PanelKind::Model => "Model",
             PanelKind::Tileset => "Tileset",
             PanelKind::Timeline => "Timeline",
+            PanelKind::Rig => "Rig",
         }
     }
 
@@ -77,7 +81,7 @@ impl PanelKind {
         match self {
             PanelKind::Home | PanelKind::Document(_) => None,
             PanelKind::Tools => Some(Section::Tools),
-            PanelKind::Layers | PanelKind::History | PanelKind::Timeline => Some(Section::Layers),
+            PanelKind::Layers | PanelKind::History | PanelKind::Timeline | PanelKind::Rig => Some(Section::Layers),
             PanelKind::Color | PanelKind::Swatches | PanelKind::Palette | PanelKind::Tileset => Some(Section::Color),
             PanelKind::Navigator | PanelKind::Info | PanelKind::Reference | PanelKind::Model => Some(Section::View),
             PanelKind::Brushes | PanelKind::BrushSettings => Some(Section::Brush),
@@ -102,6 +106,7 @@ impl PanelKind {
             PanelKind::Model => icons::CUBE,
             PanelKind::Tileset => icons::SQUARES_FOUR,
             PanelKind::Timeline => icons::FILM_STRIP,
+            PanelKind::Rig => icons::BONE,
         }
     }
 }
@@ -399,8 +404,23 @@ impl Workspace {
             let _ = self.dock.set_active_tab(path);
             return;
         }
-        // The Timeline runs under the canvas, Aseprite style.
-        if kind == PanelKind::Timeline {
+        // The Timeline and Rig panels share one tabbed area under the canvas:
+        // whichever opens second joins the first.
+        if kind == PanelKind::Rig || kind == PanelKind::Timeline {
+            let other = if kind == PanelKind::Rig { PanelKind::Timeline } else { PanelKind::Rig };
+            let sibling = self
+                .dock
+                .iter_all_tabs()
+                .find(|(_, t)| **t == other)
+                .map(|(p, _)| NodePath { surface: p.surface, node: p.node });
+            if let Some(np) = sibling {
+                self.dock.set_focused_node_and_surface(np);
+                self.dock.push_to_focused_leaf(kind);
+                return;
+            }
+        }
+        // The Timeline and Rig panels run under the canvas, Aseprite style.
+        if kind == PanelKind::Timeline || kind == PanelKind::Rig {
             let anchor = self
                 .dock
                 .iter_all_tabs()
@@ -408,7 +428,9 @@ impl Workspace {
                 .or_else(|| self.dock.iter_all_tabs().find(|(_, t)| **t == PanelKind::Home))
                 .map(|(p, _)| NodePath { surface: p.surface, node: p.node });
             if let Some(np) = anchor {
-                let [_, below] = self.dock[np.surface].split_below(np.node, 0.72, vec![kind]);
+                // The Rig panel needs more room than the Timeline.
+                let ratio = if kind == PanelKind::Rig { 0.58 } else { 0.72 };
+                let [_, below] = self.dock[np.surface].split_below(np.node, ratio, vec![kind]);
                 self.dock.set_focused_node_and_surface(NodePath { surface: np.surface, node: below });
                 return;
             }
@@ -691,6 +713,7 @@ impl TabViewer for Viewer<'_> {
             PanelKind::Model => panels::model::ui(ui, self.state),
             PanelKind::Tileset => panels::tileset::ui(ui, self.state),
             PanelKind::Timeline => panels::timeline::ui(ui, self.state),
+            PanelKind::Rig => panels::rig::ui(ui, self.state),
         }
     }
 

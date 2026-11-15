@@ -904,296 +904,38 @@ pub fn dither_combo(ui: &mut egui::Ui, b: &mut qsketch_core::BrushSettings) {
         );
 }
 
-/// Bone tool: pick the animation and time, key easing, attach layers.
+/// Bone tool: a status line and the gestures. Everything else (animations,
+/// the key track, IK, meshes, attaching layers) is in the Rig panel.
 fn bone_options(ui: &mut Ui, state: &mut AppState) {
-    use crate::dialogs::rig::Easing;
     let theme = state.settings.ui.palette();
-    let Some(doc_id) = state.active_doc else {
+    let Some(e) = state.active() else {
         hint(ui, "Open a document to rig it.");
         return;
     };
-    let Some(e) = state.doc(doc_id) else { return };
-    let mut rui = e.rig_ui.clone();
-    let rig = &e.doc.state().rig;
-    let cur = rui.anim_in(rig);
-    rui.anim = cur;
-    let names: Vec<String> = rig.animations.iter().map(|a| a.name.clone()).collect();
-    let original = cur.map(|a| rig.animations[a].clone());
-    let mut anim_edit = original.clone();
-    let layer = e.doc.state().active_layer();
-    let (layer_id, layer_name) = (layer.id(), layer.name().to_string());
-    let layer_bounds = layer.raster.full_bounds();
-    let has_mesh = rig.mesh_of(layer_id).is_some();
-    let layer_bone = rig.attached_bone(layer_id);
-    let attached = layer_bone.and_then(|b| rig.bone(b)).map(|b| b.name.clone());
-    let sel_name = rui.sel.and_then(|b| rig.bone(b)).map(|b| b.name.clone());
-    let key_here = rui.sel.zip(cur).is_some_and(|(b, a)| rig.key_times(a, b).contains(&rui.time_ms));
-
-    let (mut new_anim, mut del_anim, mut attach, mut detach, mut del_keys, mut open_dialog) =
-        (false, false, false, false, false, false);
-    // IK: the constraint the selected bone belongs to (in its chain, or as
-    // its target), or the chance to add one on a bone that has a parent.
-    let ik_info = rui.sel.and_then(|b| rig.ik_of_bone(b).or_else(|| rig.ik.iter().find(|c| c.target == b)).cloned());
-    let can_add_ik = ik_info.is_none() && rui.sel.and_then(|b| rig.bone(b)).is_some_and(|b| b.parent.is_some());
-    let mut ik_edit = ik_info.clone();
-    let (mut add_ik, mut del_ik, mut key_ik) = (false, false, false);
-    let (mut make_mesh, mut auto_near, mut auto_all, mut del_mesh) = (false, false, false, false);
-    // Animation: pick, create; the rest lives in a menu so the bar stays short.
+    let s = e.doc.state();
+    let rig = &s.rig;
+    let cur = e.rig_ui.anim_in(rig);
+    let mode = match cur {
+        Some(a) => format!("{} · {:.2} s", rig.animations[a].name, e.rig_ui.time_ms as f32 / 1000.0),
+        None => "Setup pose".to_string(),
+    };
+    let sel = e.rig_ui.sel.and_then(|b| rig.bone(b)).map(|b| b.name.clone());
+    let painting = e.rig_ui.weights && rig.mesh_of(s.active_layer().id()).is_some();
     group(ui, &theme, Section::Tools, |ui| {
-        let text = cur.and_then(|a| names.get(a).cloned()).unwrap_or_else(|| "Setup pose".into());
-        egui::ComboBox::from_id_salt("bone_anim").selected_text(text).width(110.0).show_ui(ui, |ui| {
-            if ui.selectable_label(cur.is_none(), "Setup pose").clicked() {
-                rui.anim = None;
-            }
-            for (i, n) in names.iter().enumerate() {
-                if ui.selectable_label(cur == Some(i), n).clicked() {
-                    rui.anim = Some(i);
-                    rui.time_ms = 0;
-                }
-            }
-        });
-        new_anim = ui.button("New").on_hover_text("New animation").clicked();
-        if let Some(a) = anim_edit.as_mut() {
-            ui.menu_button("⋯", |ui| {
-                ui.label("Animation");
-                ui.add(egui::TextEdit::singleline(&mut a.name).desired_width(120.0));
-                ui.add(egui::DragValue::new(&mut a.duration_ms).range(1..=600_000).suffix(" ms"))
-                    .on_hover_text("Length of the animation");
-                ui.checkbox(&mut a.looped, "Loop");
-                ui.checkbox(&mut rui.nearest, "Pixel art preview").on_hover_text("Preview without smoothing");
-                ui.separator();
-                if ui.add_enabled(key_here, egui::Button::new("Delete keys here")).clicked() {
-                    del_keys = true;
-                    ui.close();
-                }
-                if ui.button(format!("{} Delete animation", icons::TRASH)).clicked() {
-                    del_anim = true;
-                    ui.close();
-                }
-            })
-            .response
-            .on_hover_text("Name, length, loop, delete keys or the animation");
-        }
-    });
-    if let Some(a) = &anim_edit {
-        group(ui, &theme, Section::Tools, |ui| {
-            let glyph = if rui.playing { icons::PAUSE } else { icons::PLAY };
-            if ui.button(glyph).on_hover_text(if rui.playing { "Pause" } else { "Play the animation" }).clicked() {
-                rui.playing = !rui.playing;
-                if rui.playing && !a.looped && rui.time_ms >= a.duration_ms {
-                    rui.time_ms = 0;
-                }
-            }
-            ui.spacing_mut().slider_width = 150.0;
-            rui.time_ms = rui.time_ms.min(a.duration_ms);
-            if ui.add(egui::Slider::new(&mut rui.time_ms, 0..=a.duration_ms).suffix(" ms")).changed() {
-                rui.playing = false;
-            }
-            egui::ComboBox::from_id_salt("bone_easing")
-                .selected_text(rui.easing.label())
-                .width(80.0)
-                .show_ui(ui, |ui| {
-                    for e in Easing::ALL {
-                        ui.selectable_value(&mut rui.easing, e, e.label());
-                    }
-                })
-                .response
-                .on_hover_text("Easing of new keys");
-        });
-    }
-    if can_add_ik || ik_edit.is_some() {
-        group(ui, &theme, Section::Tools, |ui| match ik_edit.as_mut() {
-            Some(c) => {
-                ui.label("IK");
-                ui.add(egui::DragValue::new(&mut c.mix).speed(0.01).range(0.0..=1.0).prefix("mix "))
-                    .on_hover_text("How much IK replaces the keyed rotations");
-                if cur.is_some() && ui.button("Key").on_hover_text("Key the mix and bend at this time").clicked() {
-                    key_ik = true;
-                }
-                ui.menu_button("⋯", |ui| {
-                    ui.label(&c.name);
-                    if ui.button("Flip bend").on_hover_text("Fold the joint the other way").clicked() {
-                        c.bend = if c.bend < 0 { 1 } else { -1 };
-                        ui.close();
-                    }
-                    if ui.button(format!("{} Remove IK", icons::TRASH)).clicked() {
-                        del_ik = true;
-                        ui.close();
-                    }
-                })
-                .response
-                .on_hover_text("Flip the bend or remove this IK");
-            }
-            None => {
-                add_ik = ui
-                    .button("Add IK")
-                    .on_hover_text("Make this bone and its parent a limb that reaches for a new target bone")
-                    .clicked();
-            }
-        });
-    }
-    group(ui, &theme, Section::Tools, |ui| {
-        ui.label("Mesh");
-        if has_mesh {
-            ui.toggle_value(&mut rui.weights, "Paint weights")
-                .on_hover_text("Drag on the art to add the selected bone's weight; hold Alt to remove it");
-            if rui.weights {
-                ui.add(egui::DragValue::new(&mut rui.brush).range(2.0..=200.0).prefix("size ").suffix(" px"));
-                ui.add(egui::DragValue::new(&mut rui.strength).speed(0.01).range(0.01..=1.0).prefix("strength "));
-            }
-            ui.menu_button("⋯", |ui| {
-                if ui
-                    .button("Auto weights")
-                    .on_hover_text(
-                        "Weight each vertex to the nearest of this layer's bone, its parent and its children",
-                    )
-                    .clicked()
-                {
-                    auto_near = true;
-                    ui.close();
-                }
-                if ui.button("Auto weights (all bones)").clicked() {
-                    auto_all = true;
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button(format!("{} Remove mesh", icons::TRASH)).clicked() {
-                    del_mesh = true;
-                    ui.close();
-                }
-            })
-            .response
-            .on_hover_text("Auto weights or remove the mesh");
-        } else {
-            ui.add(egui::DragValue::new(&mut rui.cell).range(4..=64).suffix(" px")).on_hover_text("Mesh cell size");
-            make_mesh = ui
-                .add_enabled(layer_bounds.is_some(), egui::Button::new("Make mesh"))
-                .on_hover_text("Lay a grid over the active layer so it can bend with its bones")
-                .clicked();
-        }
-    });
-    group(ui, &theme, Section::Tools, |ui| {
-        let sel_attached = rui.sel.is_some() && rui.sel == layer_bone;
-        let label = match &attached {
-            Some(b) => format!("{layer_name} → {b}"),
-            None => format!("{layer_name}: not attached"),
+        ui.label(mode);
+        match &sel {
+            Some(n) => ui.label(format!("bone: {n}")),
+            None => ui.label(egui::RichText::new("no bone selected").weak()),
         };
-        ui.label(label);
-        if sel_attached {
-            detach = ui.button("Detach").on_hover_text("Stop the active layer following its bone").clicked();
-        } else if ui
-            .add_enabled(sel_name.is_some(), egui::Button::new("Attach"))
-            .on_hover_text("Make the active layer follow the selected bone")
-            .clicked()
-        {
-            attach = true;
-        }
-        if ui.button("Rig…").on_hover_text("Bones, animations, layers and baking in one dialog").clicked() {
-            open_dialog = true;
-        }
     });
     hint(
         ui,
-        if rui.weights && has_mesh {
+        if painting {
             "Painting weights: drag over the art to add the selected bone (red = all of it), Alt removes; click a bone to choose. Pick an animation and scrub to see it bend."
         } else if cur.is_some() {
-            "Drag a bone's tip to rotate it, its head or body to move it: each drag keys the pose at this time. Move an IK target to swing its limb."
+            "Drag a bone's tip to rotate it, its head or body to move it: each drag keys the pose at the playhead. Move an IK target to swing its limb. Controls are in the Rig panel below."
         } else {
-            "Drag to add a bone (Shift: grow from the selected bone's tip; Alt: new root). Drag a tip to turn or resize, a head to move."
+            "Drag to add a bone (Shift: grow from the selected bone's tip; Alt: new root). Drag a tip to turn or resize, a head to move. Controls are in the Rig panel below."
         },
     );
-
-    // Write back.
-    let Some(e) = state.doc_mut(doc_id) else { return };
-    e.rig_ui.anim = rui.anim;
-    e.rig_ui.time_ms = rui.time_ms;
-    e.rig_ui.easing = rui.easing;
-    e.rig_ui.nearest = rui.nearest;
-    e.rig_ui.weights = rui.weights;
-    e.rig_ui.playing = rui.playing;
-    e.rig_ui.brush = rui.brush;
-    e.rig_ui.strength = rui.strength;
-    e.rig_ui.cell = rui.cell;
-    if anim_edit != original {
-        if let (Some(a), Some(edit)) = (cur, anim_edit) {
-            e.doc.state_mut().rig.animations[a] = edit;
-            e.rig_ui.edited = true;
-        }
-    }
-    if ik_edit != ik_info {
-        if let Some(c) = &ik_edit {
-            if let Some(slot) = e.doc.state_mut().rig.ik.iter_mut().find(|x| x.id == c.id) {
-                slot.mix = c.mix;
-                slot.bend = c.bend;
-                e.rig_ui.edited = true;
-            }
-        }
-    }
-    let (sel, time) = (rui.sel, rui.time_ms);
-    if new_anim {
-        let rig = &mut e.doc.state_mut().rig;
-        let n = rig.animations.len() + 1;
-        e.rig_ui.anim = Some(rig.add_animation(format!("anim {n}"), 1000));
-        e.rig_ui.time_ms = 0;
-        e.doc.commit("New Rig Animation");
-    } else if del_anim {
-        if let Some(a) = cur {
-            e.doc.state_mut().rig.animations.remove(a);
-            e.rig_ui.anim = None;
-            e.rig_ui.time_ms = 0;
-            e.doc.commit("Delete Rig Animation");
-        }
-    } else if del_keys {
-        if let (Some(b), Some(a)) = (sel, cur) {
-            e.doc.state_mut().rig.remove_keys_at(a, b, time);
-            e.doc.commit("Delete Keys");
-        }
-    } else if make_mesh {
-        if let Some(b) = layer_bounds {
-            let rig = &mut e.doc.state_mut().rig;
-            // Starts rigid (all weight on the layer's bone), looking just like
-            // before; Auto weights or the brush blend it from there.
-            if rig.add_mesh(layer_id, b, rui.cell) {
-                e.doc.commit("Make Mesh");
-            }
-        }
-    } else if auto_near || auto_all {
-        e.doc.state_mut().rig.auto_weights(layer_id, auto_near);
-        e.doc.commit("Auto Weights");
-    } else if del_mesh {
-        e.doc.state_mut().rig.remove_mesh(layer_id);
-        e.rig_ui.weights = false;
-        e.doc.commit("Remove Mesh");
-    } else if add_ik {
-        if let Some((_, target)) = sel.and_then(|b| e.doc.state_mut().rig.add_ik(b)) {
-            e.rig_ui.sel = Some(target);
-            e.doc.commit("Add IK");
-        }
-    } else if del_ik {
-        if let Some(c) = &ik_info {
-            e.doc.state_mut().rig.remove_ik(c.id);
-            e.doc.commit("Remove IK");
-        }
-    } else if key_ik {
-        if let (Some(c), Some(a)) = (&ik_edit, cur) {
-            let curve = e.rig_ui.easing.curve();
-            let v = qsketch_core::IkValue { mix: c.mix, bend: c.bend };
-            e.doc.state_mut().rig.set_ik_key(a, c.id, time, v, curve);
-            e.doc.commit("Key IK");
-        }
-    } else if attach {
-        if let Some(b) = sel {
-            e.doc.state_mut().rig.attach(layer_id, b);
-            e.doc.commit("Attach Layer to Bone");
-        }
-    } else if detach {
-        e.doc.state_mut().rig.detach(layer_id);
-        e.doc.commit("Detach Layer from Bone");
-    } else if e.rig_ui.edited && !ui.input(|i| i.pointer.any_down()) && ui.memory(|m| m.focused().is_none()) {
-        e.rig_ui.edited = false;
-        e.doc.commit("Edit Rig Animation");
-    }
-    if open_dialog {
-        crate::dialogs::rig::open(state, doc_id);
-    }
 }

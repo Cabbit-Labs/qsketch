@@ -1425,6 +1425,7 @@ impl QSketchApp {
                     (Action::ShowModel, PanelKind::Model),
                     (Action::ShowTileset, PanelKind::Tileset),
                     (Action::ShowTimeline, PanelKind::Timeline),
+                    (Action::ShowRig, PanelKind::Rig),
                 ] {
                     let open = self.workspace.is_panel_open(&k);
                     let btn = menus::button(open, a.label())
@@ -2605,6 +2606,14 @@ impl QSketchApp {
                     self.state.remember_closed(crate::state::Closed::Panel(PanelKind::Timeline));
                 } else {
                     self.state.show_panel_requests.push(PanelKind::Timeline);
+                }
+            }
+            Action::ShowRig => {
+                if self.workspace.is_panel_open(&PanelKind::Rig) {
+                    self.workspace.close_panel(&PanelKind::Rig);
+                    self.state.remember_closed(crate::state::Closed::Panel(PanelKind::Rig));
+                } else {
+                    self.state.show_panel_requests.push(PanelKind::Rig);
                 }
             }
             Action::ExportAnimation => {

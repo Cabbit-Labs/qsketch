@@ -418,10 +418,13 @@ pub fn export_rig(state: &mut AppState, doc_id: DocId) -> bool {
     match qsketch_core::io::rig_io::export(entry.doc.state(), &target) {
         Ok(s) => {
             let mut msg = format!(
-                "Exported {} bones, {} parts and {} animations to {}",
+                "Exported {} {}, {} {} and {} {} to {}",
                 s.bones,
+                if s.bones == 1 { "bone" } else { "bones" },
                 s.parts,
+                if s.parts == 1 { "part" } else { "parts" },
                 s.animations,
+                if s.animations == 1 { "animation" } else { "animations" },
                 target.display()
             );
             if !s.skipped.is_empty() {

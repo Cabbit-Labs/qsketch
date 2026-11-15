@@ -374,6 +374,7 @@ actions! {
     // Window
     ShowTools => (Window, "Tools", []),
     ShowTimeline => (Window, "Timeline", ["F10"]),
+    ShowRig => (Window, "Rig", []),
     ShowLayers => (Window, "Layers", ["F7"]),
     ShowHistory => (Window, "History", []),
     ShowColor => (Window, "Color", ["F6"]),

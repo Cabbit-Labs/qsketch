@@ -521,6 +521,12 @@ impl Rig {
         Some(pose.get(i)?.apply(Pt::new(self.bones[i].length, 0.0)))
     }
 
+    /// Whether `bone` already has keys of some kind in animation `anim`
+    /// (`has` looks at its track).
+    fn animated_property(&self, anim: usize, bone: BoneId, has: impl Fn(&BoneTrack) -> bool) -> bool {
+        self.animations.get(anim).and_then(|a| a.tracks.iter().find(|t| t.bone == bone)).is_some_and(has)
+    }
+
     /// Move or turn `bone` by dragging a handle to `target` (document
     /// space). Without an animation this edits the setup pose; with one it
     /// writes a key at `t_ms` (offsets from the setup pose), leaving the
@@ -551,6 +557,11 @@ impl Rig {
                     }
                     Some(a) => {
                         let off = [local.x - b.x, local.y - b.y];
+                        // The first key of a property at t > 0 also keys its rest
+                        // value at 0, so the animation starts from the setup pose.
+                        if t_ms > 0 && !self.animated_property(a, bone, |t| !t.translate.is_empty()) {
+                            self.set_key(a, bone, 0, KeyValue::Translate([0.0, 0.0]), Curve::Linear);
+                        }
                         self.set_key(a, bone, t_ms, KeyValue::Translate(off), curve);
                     }
                 }
@@ -576,6 +587,9 @@ impl Rig {
                         let want = local - b.rotation;
                         // Take the turn the short way from where it is now.
                         let off = cur + (want - cur + 540.0).rem_euclid(360.0) - 180.0;
+                        if t_ms > 0 && !self.animated_property(a, bone, |t| !t.rotate.is_empty()) {
+                            self.set_key(a, bone, 0, KeyValue::Rotate(0.0), Curve::Linear);
+                        }
                         self.set_key(a, bone, t_ms, KeyValue::Rotate(off), curve);
                     }
                 }
@@ -746,6 +760,15 @@ impl Rig {
         for a in &mut self.animations {
             a.ik.retain(|t| t.constraint != id);
         }
+    }
+
+    /// Remove the IK keys of constraint `id` at `time_ms`.
+    pub fn remove_ik_keys_at(&mut self, anim: usize, id: u32, time_ms: u32) {
+        let Some(an) = self.animations.get_mut(anim) else { return };
+        if let Some(t) = an.ik.iter_mut().find(|t| t.constraint == id) {
+            t.keys.retain(|k| k.time_ms != time_ms);
+        }
+        an.ik.retain(|t| !t.keys.is_empty());
     }
 
     /// The constraint whose chain includes `bone`, if any.
@@ -1044,6 +1067,10 @@ mod tests {
         assert!(r > 90.0 && r < 181.0, "{r}");
         rig.drag_bone(Some(a), 500, b, BoneDrag::Move, Pt::new(25.0, 5.0), Curve::Linear);
         assert!(near(rig.offsets(a, b, 500).0[0], 20.0));
+        // The first move key at 500 ms also keyed the rest position at 0, so
+        // the bone starts where it was set up and glides over.
+        assert!(near(rig.offsets(a, b, 0).0[0], 0.0) && near(rig.offsets(a, b, 250).0[0], 10.0));
+        assert_eq!(rig.key_times(a, b), vec![0, 500]);
         assert!(rig.bone(b).unwrap().x == 5.0, "the setup pose is untouched");
     }
 

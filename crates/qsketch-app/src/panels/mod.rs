@@ -12,6 +12,7 @@ pub mod model_render;
 pub mod navigator;
 pub mod palette;
 pub mod reference;
+pub mod rig;
 pub mod swatches;
 pub mod thumbs;
 pub mod tileset;
