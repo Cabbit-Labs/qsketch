@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.71.0 — 2026-11-15
 
 - Guides: drag from the ruler corner for a 45 degree guide, Shift-drag turns any
   guide (Shift+Alt for free angles), snapping works on diagonals and their
