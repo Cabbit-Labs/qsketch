@@ -259,7 +259,15 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     let bones = screen_bones(entry);
     for (id, h, t) in &bones {
         let sel = entry.rig_ui.sel == Some(*id);
-        let col = if sel { Color32::from_rgb(255, 200, 40) } else { Color32::from_rgb(90, 200, 255) };
+        let col = if sel {
+            Color32::from_rgb(255, 200, 40)
+        } else if rig.ik.iter().any(|c| c.target == *id) {
+            Color32::from_rgb(110, 220, 110)
+        } else if rig.ik_of_bone(*id).is_some() {
+            Color32::from_rgb(255, 140, 80)
+        } else {
+            Color32::from_rgb(90, 200, 255)
+        };
         let axis = *t - *h;
         let len = axis.length();
         let dir = if len > 0.01 { axis / len } else { egui::vec2(1.0, 0.0) };
@@ -282,6 +290,19 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
                 );
                 painter.galley(at + egui::vec2(3.0, 1.0), g, Color32::WHITE);
             }
+        }
+    }
+    // IK: a dashed line from each limb's tip to the target it reaches for.
+    for c in &rig.ik {
+        let pick =
+            |id: BoneId, tip: bool| bones.iter().find(|(b, ..)| *b == id).map(|(_, h, t)| if tip { *t } else { *h });
+        if let (Some(from), Some(to)) = (pick(c.bones[1], true), pick(c.target, false)) {
+            painter.add(egui::Shape::dashed_line(
+                &[from, to],
+                Stroke::new(1.5, Color32::from_rgb(110, 220, 110)),
+                5.0,
+                4.0,
+            ));
         }
     }
     // The bone being dragged out.

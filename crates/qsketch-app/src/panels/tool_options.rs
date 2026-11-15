@@ -928,6 +928,12 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
 
     let (mut new_anim, mut del_anim, mut attach, mut detach, mut del_keys, mut open_dialog) =
         (false, false, false, false, false, false);
+    // IK: the constraint the selected bone belongs to (in its chain, or as
+    // its target), or the chance to add one on a bone that has a parent.
+    let ik_info = rui.sel.and_then(|b| rig.ik_of_bone(b).or_else(|| rig.ik.iter().find(|c| c.target == b)).cloned());
+    let can_add_ik = ik_info.is_none() && rui.sel.and_then(|b| rig.bone(b)).is_some_and(|b| b.parent.is_some());
+    let mut ik_edit = ik_info.clone();
+    let (mut add_ik, mut del_ik, mut key_ik) = (false, false, false);
     group(ui, &theme, Section::Tools, |ui| {
         let text = cur.and_then(|a| names.get(a).cloned()).unwrap_or_else(|| "Setup pose".into());
         egui::ComboBox::from_id_salt("bone_anim").selected_text(text).width(120.0).show_ui(ui, |ui| {
@@ -972,6 +978,28 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
             ui.checkbox(&mut rui.nearest, "Pixel art").on_hover_text("Preview without smoothing");
         });
     }
+    if can_add_ik || ik_edit.is_some() {
+        group(ui, &theme, Section::Tools, |ui| match ik_edit.as_mut() {
+            Some(c) => {
+                ui.label(format!("IK {}", c.name));
+                ui.add(egui::DragValue::new(&mut c.mix).speed(0.01).range(0.0..=1.0).prefix("mix "))
+                    .on_hover_text("How much IK replaces the keyed rotations");
+                if ui.button("Flip bend").on_hover_text("Fold the joint the other way").clicked() {
+                    c.bend = if c.bend < 0 { 1 } else { -1 };
+                }
+                if cur.is_some() && ui.button("Key IK").on_hover_text("Key the mix and bend at this time").clicked() {
+                    key_ik = true;
+                }
+                del_ik = ui.button("Remove IK").clicked();
+            }
+            None => {
+                add_ik = ui
+                    .button("Add IK")
+                    .on_hover_text("Make this bone and its parent a limb that reaches for a new target bone")
+                    .clicked();
+            }
+        });
+    }
     group(ui, &theme, Section::Tools, |ui| {
         let target = sel_name.as_deref();
         let label = match &attached {
@@ -996,7 +1024,7 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
     hint(
         ui,
         if cur.is_some() {
-            "Drag a bone's tip to rotate it, its head or body to move it: each drag keys the pose at this time."
+            "Drag a bone's tip to rotate it, its head or body to move it: each drag keys the pose at this time. Move an IK target to swing its limb."
         } else {
             "Drag on the canvas to add a bone (under the selected one; Alt for a new root). Drag a tip to turn or resize, a head to move."
         },
@@ -1012,6 +1040,15 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
         if let (Some(a), Some(edit)) = (cur, anim_edit) {
             e.doc.state_mut().rig.animations[a] = edit;
             e.rig_ui.edited = true;
+        }
+    }
+    if ik_edit != ik_info {
+        if let Some(c) = &ik_edit {
+            if let Some(slot) = e.doc.state_mut().rig.ik.iter_mut().find(|x| x.id == c.id) {
+                slot.mix = c.mix;
+                slot.bend = c.bend;
+                e.rig_ui.edited = true;
+            }
         }
     }
     let (sel, time) = (rui.sel, rui.time_ms);
@@ -1032,6 +1069,23 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
         if let (Some(b), Some(a)) = (sel, cur) {
             e.doc.state_mut().rig.remove_keys_at(a, b, time);
             e.doc.commit("Delete Keys");
+        }
+    } else if add_ik {
+        if let Some((_, target)) = sel.and_then(|b| e.doc.state_mut().rig.add_ik(b)) {
+            e.rig_ui.sel = Some(target);
+            e.doc.commit("Add IK");
+        }
+    } else if del_ik {
+        if let Some(c) = &ik_info {
+            e.doc.state_mut().rig.remove_ik(c.id);
+            e.doc.commit("Remove IK");
+        }
+    } else if key_ik {
+        if let (Some(c), Some(a)) = (&ik_edit, cur) {
+            let curve = e.rig_ui.easing.curve();
+            let v = qsketch_core::IkValue { mix: c.mix, bend: c.bend };
+            e.doc.state_mut().rig.set_ik_key(a, c.id, time, v, curve);
+            e.doc.commit("Key IK");
         }
     } else if attach {
         if let Some(b) = sel {

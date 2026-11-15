@@ -158,6 +158,9 @@ pub struct RigAnim {
     pub looped: bool,
     #[serde(default)]
     pub tracks: Vec<BoneTrack>,
+    /// Mix / bend keys of the IK constraints.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ik: Vec<IkTrack>,
 }
 
 fn yes() -> bool {
@@ -189,6 +192,37 @@ pub struct Attachment {
     pub bone: BoneId,
 }
 
+/// A two-bone inverse-kinematics constraint: the child bone's tip is
+/// brought to the `target` bone's head by turning both bones of the chain
+/// (a limb: upper arm and forearm, thigh and shin).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct IkConstraint {
+    pub id: u32,
+    pub name: String,
+    /// `[parent, child]`; the child must be a direct child of the parent.
+    pub bones: [BoneId; 2],
+    pub target: BoneId,
+    /// Which way the joint bends: `1` or `-1` (the side of the line to the
+    /// target the child's head falls on, turned clockwise or not).
+    pub bend: i8,
+    /// How much IK replaces the keyed rotations, 0..=1.
+    pub mix: f32,
+}
+
+/// What an IK key sets: the constraint's mix and bend.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct IkValue {
+    pub mix: f32,
+    pub bend: i8,
+}
+
+/// The keys of one constraint in one animation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct IkTrack {
+    pub constraint: u32,
+    pub keys: Vec<Key<IkValue>>,
+}
+
 /// A document's skeleton, attachments and animations.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Rig {
@@ -198,8 +232,27 @@ pub struct Rig {
     pub attachments: Vec<Attachment>,
     #[serde(default)]
     pub animations: Vec<RigAnim>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ik: Vec<IkConstraint>,
     #[serde(default)]
     next_bone_id: BoneId,
+    #[serde(default)]
+    next_ik_id: u32,
+}
+
+/// A bone's local transform values while a pose is being worked out.
+#[derive(Clone, Copy, Debug)]
+struct Local {
+    x: f32,
+    y: f32,
+    rot: f32,
+    sx: f32,
+    sy: f32,
+}
+
+/// `deg` wrapped to -180..180.
+fn wrap180(deg: f32) -> f32 {
+    (deg + 540.0).rem_euclid(360.0) - 180.0
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +264,12 @@ trait Lerp: Copy {
 impl Lerp for f32 {
     fn lerp(self, o: f32, t: f32) -> f32 {
         self + (o - self) * t
+    }
+}
+impl Lerp for IkValue {
+    /// The mix blends; the bend is stepped (it can't be halfway).
+    fn lerp(self, o: IkValue, t: f32) -> IkValue {
+        IkValue { mix: self.mix.lerp(o.mix, t), bend: self.bend }
     }
 }
 impl Lerp for [f32; 2] {
@@ -338,6 +397,15 @@ impl Rig {
         for an in &mut self.animations {
             an.tracks.retain(|t| !gone.contains(&t.bone));
         }
+        let dead: Vec<u32> = self
+            .ik
+            .iter()
+            .filter(|c| gone.contains(&c.target) || c.bones.iter().any(|b| gone.contains(b)))
+            .map(|c| c.id)
+            .collect();
+        for id in dead {
+            self.remove_ik(id);
+        }
     }
 
     /// Make `layer` follow `bone` (replacing any earlier attachment).
@@ -367,6 +435,7 @@ impl Rig {
             name: name.into(),
             duration_ms: duration_ms.max(1),
             looped: true,
+            ik: Vec::new(),
             tracks: Vec::new(),
         });
         self.animations.len() - 1
@@ -510,32 +579,190 @@ impl Rig {
     }
 
     /// World transform of every bone (in `bones` order). With an animation,
-    /// its keys at `t_ms` are applied on top of the setup pose.
+    /// its keys at `t_ms` are applied on top of the setup pose and the IK
+    /// constraints are solved; the setup pose itself is plain forward
+    /// kinematics (the pose the art was drawn in).
     pub fn pose(&self, anim: Option<(usize, u32)>) -> Vec<Xf> {
         let an = anim.and_then(|(i, t)| self.animations.get(i).map(|a| (a, a.local_time(t))));
-        let mut world: Vec<Xf> = Vec::with_capacity(self.bones.len());
-        for b in &self.bones {
-            let (mut x, mut y, mut rot, mut sx, mut sy) = (b.x, b.y, b.rotation, b.scale[0], b.scale[1]);
-            if let Some((a, t)) = an {
-                if let Some(tr) = a.tracks.iter().find(|tr| tr.bone == b.id) {
-                    if let Some(v) = sample(&tr.translate, t) {
-                        x += v[0];
-                        y += v[1];
-                    }
-                    if let Some(v) = sample(&tr.rotate, t) {
-                        rot += v;
-                    }
-                    if let Some(v) = sample(&tr.scale, t) {
-                        sx *= v[0];
-                        sy *= v[1];
+        let mut locals: Vec<Local> = self
+            .bones
+            .iter()
+            .map(|b| {
+                let mut l = Local { x: b.x, y: b.y, rot: b.rotation, sx: b.scale[0], sy: b.scale[1] };
+                if let Some((a, t)) = an {
+                    if let Some(tr) = a.tracks.iter().find(|tr| tr.bone == b.id) {
+                        if let Some(v) = sample(&tr.translate, t) {
+                            l.x += v[0];
+                            l.y += v[1];
+                        }
+                        if let Some(v) = sample(&tr.rotate, t) {
+                            l.rot += v;
+                        }
+                        if let Some(v) = sample(&tr.scale, t) {
+                            l.sx *= v[0];
+                            l.sy *= v[1];
+                        }
                     }
                 }
-            }
-            let local = Xf::trs(x, y, rot, sx, sy);
+                l
+            })
+            .collect();
+        if let Some((a, t)) = an {
+            self.solve_ik(&mut locals, Some((a, t)));
+        }
+        self.worlds(&locals)
+    }
+
+    fn worlds(&self, locals: &[Local]) -> Vec<Xf> {
+        let mut world: Vec<Xf> = Vec::with_capacity(self.bones.len());
+        for (b, l) in self.bones.iter().zip(locals) {
+            let local = Xf::trs(l.x, l.y, l.rot, l.sx, l.sy);
             let parent = b.parent.and_then(|p| self.bone_index(p)).filter(|&i| i < world.len());
             world.push(parent.map_or(local, |i| world[i] * local));
         }
         world
+    }
+
+    /// A constraint's mix and bend at `t_ms` of animation `anim`.
+    pub fn ik_at(&self, anim: usize, id: u32, t_ms: u32) -> Option<IkValue> {
+        let c = self.ik.iter().find(|c| c.id == id)?;
+        let a = self.animations.get(anim)?;
+        let v = a.ik.iter().find(|t| t.constraint == id).and_then(|t| sample(&t.keys, a.local_time(t_ms)));
+        Some(v.unwrap_or(IkValue { mix: c.mix, bend: c.bend }))
+    }
+
+    /// Turn the chains of the IK constraints toward their targets.
+    fn solve_ik(&self, locals: &mut [Local], an: Option<(&RigAnim, f32)>) {
+        for c in &self.ik {
+            let v = an
+                .and_then(|(a, t)| a.ik.iter().find(|tr| tr.constraint == c.id).and_then(|tr| sample(&tr.keys, t)))
+                .unwrap_or(IkValue { mix: c.mix, bend: c.bend });
+            let mix = v.mix.clamp(0.0, 1.0);
+            if mix <= 0.0 {
+                continue;
+            }
+            let (Some(pi), Some(ci), Some(ti)) =
+                (self.bone_index(c.bones[0]), self.bone_index(c.bones[1]), self.bone_index(c.target))
+            else {
+                continue;
+            };
+            if self.bones[ci].parent != Some(c.bones[0]) {
+                continue;
+            }
+            let world = self.worlds(locals);
+            let target = world[ti].apply(Pt::new(0.0, 0.0));
+            if let Some((rp, rc)) = self.ik_rotations(locals, pi, ci, target, v.bend) {
+                let (fp, fc) = (locals[pi].rot, locals[ci].rot);
+                locals[pi].rot = fp + mix * wrap180(rp - fp);
+                // The child aims at the target from wherever the (blended)
+                // parent put it.
+                let rc = self.aim_child(locals, pi, ci, target).unwrap_or(rc);
+                locals[ci].rot = fc + mix * wrap180(rc - fc);
+            }
+        }
+    }
+
+    /// The local rotations `[parent, child]` that put the child's tip on
+    /// `target`, bending toward `bend` (±1). `None` when the chain has no
+    /// length. Out of reach, the chain straightens toward the target.
+    fn ik_rotations(&self, locals: &[Local], pi: usize, ci: usize, target: Pt, bend: i8) -> Option<(f32, f32)> {
+        let world = self.worlds(locals);
+        let (pw, cw) = (world[pi], world[ci]);
+        let h = pw.apply(Pt::new(0.0, 0.0));
+        let head = cw.apply(Pt::new(0.0, 0.0));
+        let a = h.dist(head);
+        let b = self.bones[ci].length.max(0.0) * (cw.a * cw.a + cw.b * cw.b).sqrt();
+        if a < 1e-4 || b < 1e-4 {
+            return None;
+        }
+        let d_raw = h.dist(target);
+        if d_raw < 1e-4 {
+            return None;
+        }
+        // Out of reach the chain straightens (or folds flat when the target
+        // is too close); never a zero distance.
+        let d = d_raw.clamp(((a - b).abs()).max(1e-4), a + b);
+        let cos_a = ((a * a + d * d - b * b) / (2.0 * a * d)).clamp(-1.0, 1.0);
+        let alpha = cos_a.acos();
+        let to_target = (target.y - h.y).atan2(target.x - h.x);
+        let head_dir = to_target + if bend < 0 { -alpha } else { alpha };
+        // Where the child's head sits relative to the parent's own x axis.
+        let offset = (head.y - h.y).atan2(head.x - h.x) - pw.b.atan2(pw.a);
+        let parent_of_p = self.bones[pi].parent.and_then(|p| self.bone_index(p)).map_or(Xf::IDENTITY, |i| world[i]);
+        let rp = (head_dir - offset - parent_of_p.b.atan2(parent_of_p.a)).to_degrees();
+        let mut next = locals.to_vec();
+        next[pi].rot = rp;
+        let rc = self.aim_child(&next, pi, ci, target)?;
+        Some((rp, rc))
+    }
+
+    /// The child's local rotation that points it at `target`, given the
+    /// parent's current rotation.
+    fn aim_child(&self, locals: &[Local], pi: usize, ci: usize, target: Pt) -> Option<f32> {
+        let world = self.worlds(locals);
+        let head = world[ci].apply(Pt::new(0.0, 0.0));
+        let (dx, dy) = (target.x - head.x, target.y - head.y);
+        if dx.abs() < 1e-4 && dy.abs() < 1e-4 {
+            return None;
+        }
+        Some((dy.atan2(dx) - world[pi].b.atan2(world[pi].a)).to_degrees())
+    }
+
+    /// Add a two-bone IK constraint on `child` and its parent, aimed at a
+    /// new root bone placed on the child's tip. The bend is the one that
+    /// keeps the limb as drawn. Returns the constraint's id and the target
+    /// bone's id.
+    pub fn add_ik(&mut self, child: BoneId) -> Option<(u32, BoneId)> {
+        let ci = self.bone_index(child)?;
+        let parent = self.bones[ci].parent?;
+        let pi = self.bone_index(parent)?;
+        let setup = self.pose(None);
+        let tip = setup[ci].apply(Pt::new(self.bones[ci].length, 0.0));
+        let locals: Vec<Local> = self
+            .bones
+            .iter()
+            .map(|b| Local { x: b.x, y: b.y, rot: b.rotation, sx: b.scale[0], sy: b.scale[1] })
+            .collect();
+        let fk = locals[pi].rot;
+        let err =
+            |bend: i8| self.ik_rotations(&locals, pi, ci, tip, bend).map_or(f32::MAX, |(rp, _)| wrap180(rp - fk).abs());
+        let bend = if err(-1) < err(1) { -1 } else { 1 };
+        let n = self.ik.len() + 1;
+        let tname = format!("{} target", self.bones[ci].name);
+        let target = self.add_bone(tname, None, tip.x, tip.y, (self.bones[ci].length * 0.4).max(6.0));
+        let id = self.next_ik_id;
+        self.next_ik_id += 1;
+        self.ik.push(IkConstraint { id, name: format!("ik {n}"), bones: [parent, child], target, bend, mix: 1.0 });
+        Some((id, target))
+    }
+
+    pub fn remove_ik(&mut self, id: u32) {
+        self.ik.retain(|c| c.id != id);
+        for a in &mut self.animations {
+            a.ik.retain(|t| t.constraint != id);
+        }
+    }
+
+    /// The constraint whose chain includes `bone`, if any.
+    pub fn ik_of_bone(&self, bone: BoneId) -> Option<&IkConstraint> {
+        self.ik.iter().find(|c| c.bones.contains(&bone))
+    }
+
+    /// Set (or add) an IK key at `time_ms` in animation `anim`.
+    pub fn set_ik_key(&mut self, anim: usize, id: u32, time_ms: u32, value: IkValue, curve: Curve) {
+        if !self.ik.iter().any(|c| c.id == id) {
+            return;
+        }
+        let Some(an) = self.animations.get_mut(anim) else { return };
+        let time_ms = time_ms.min(an.duration_ms);
+        let ti = match an.ik.iter().position(|t| t.constraint == id) {
+            Some(i) => i,
+            None => {
+                an.ik.push(IkTrack { constraint: id, keys: Vec::new() });
+                an.ik.len() - 1
+            }
+        };
+        upsert(&mut an.ik[ti].keys, time_ms, value, curve);
     }
 
     /// How far a layer attached to `bone` has moved from where it was drawn:
@@ -783,6 +1010,100 @@ mod tests {
         rig.drag_bone(Some(a), 500, b, BoneDrag::Move, Pt::new(25.0, 5.0), Curve::Linear);
         assert!(near(rig.offsets(a, b, 500).0[0], 20.0));
         assert!(rig.bone(b).unwrap().x == 5.0, "the setup pose is untouched");
+    }
+
+    /// An arm: upper bone 10 long from (0,0), forearm 10 long from its tip,
+    /// both straight along +x, with an IK target.
+    fn arm() -> (Rig, BoneId, BoneId, BoneId, usize) {
+        let mut rig = Rig::default();
+        let upper = rig.add_bone("upper", None, 0.0, 0.0, 10.0);
+        let fore = rig.add_bone("fore", Some(upper), 10.0, 0.0, 10.0);
+        let (_, target) = rig.add_ik(fore).unwrap();
+        let a = rig.add_animation("a", 1000);
+        (rig, upper, fore, target, a)
+    }
+
+    fn tip_at(rig: &Rig, bone: BoneId, a: usize, t: u32) -> Pt {
+        rig.tip(bone, &rig.pose(Some((a, t)))).unwrap()
+    }
+
+    #[test]
+    fn ik_reaches_a_target_within_reach() {
+        let (mut rig, _, fore, target, a) = arm();
+        rig.set_key(a, target, 0, KeyValue::Translate([-20.0, 10.0]), Curve::Linear); // tip (20,0) → (0,10)
+        let tip = tip_at(&rig, fore, a, 0);
+        assert!(near(tip.x, 0.0) && near(tip.y, 10.0), "{tip:?}");
+    }
+
+    #[test]
+    fn ik_straightens_toward_a_target_out_of_reach() {
+        let (mut rig, upper, fore, target, a) = arm();
+        rig.set_key(a, target, 0, KeyValue::Translate([0.0, 80.0]), Curve::Linear); // target (20,80)
+        let pose = rig.pose(Some((a, 0)));
+        let (elbow, tip) = (rig.tip(upper, &pose).unwrap(), rig.tip(fore, &pose).unwrap());
+        let dir = Pt::new(20.0, 80.0);
+        let len = (dir.x * dir.x + dir.y * dir.y).sqrt();
+        let close = |a: f32, b: f32| (a - b).abs() < 0.05;
+        assert!(close(tip.x, 20.0 * 20.0 / len) && close(tip.y, 20.0 * 80.0 / len), "{tip:?}");
+        // Straight: the elbow is halfway to the tip.
+        assert!(close(elbow.x * 2.0, tip.x) && close(elbow.y * 2.0, tip.y), "{elbow:?} {tip:?}");
+    }
+
+    #[test]
+    fn opposite_bends_put_the_elbow_on_opposite_sides() {
+        let (mut rig, upper, _, target, a) = arm();
+        rig.set_key(a, target, 0, KeyValue::Translate([-16.0, 0.0]), Curve::Linear); // tip (20,0) → (4,0)
+        let side = |rig: &Rig| rig.tip(upper, &rig.pose(Some((a, 0)))).unwrap().y;
+        let y1 = side(&rig);
+        rig.ik[0].bend = -rig.ik[0].bend;
+        let y2 = side(&rig);
+        assert!(y1 * y2 < 0.0 && y1.abs() > 1.0, "{y1} {y2}");
+    }
+
+    #[test]
+    fn ik_added_on_a_bent_limb_keeps_it_as_drawn() {
+        let mut rig = Rig::default();
+        let upper = rig.add_bone("upper", None, 0.0, 0.0, 10.0);
+        let fore = rig.add_bone("fore", Some(upper), 10.0, 0.0, 10.0);
+        rig.bone_mut(upper).unwrap().rotation = 20.0;
+        rig.bone_mut(fore).unwrap().rotation = -70.0;
+        let a = rig.add_animation("a", 1000);
+        let before = rig.pose(None);
+        rig.add_ik(fore).unwrap();
+        let after = rig.pose(Some((a, 0)));
+        for (b, w) in before.iter().zip(&after).take(2) {
+            assert!(near(b.e, w.e) && near(b.f, w.f) && near(b.a, w.a) && near(b.b, w.b), "{b:?} vs {w:?}");
+        }
+    }
+
+    #[test]
+    fn mix_zero_is_forward_kinematics_and_half_is_between() {
+        let (mut rig, upper, fore, target, a) = arm();
+        rig.set_key(a, target, 0, KeyValue::Translate([-20.0, 10.0]), Curve::Linear);
+        rig.ik[0].mix = 0.0;
+        let fk = tip_at(&rig, fore, a, 0);
+        assert!(near(fk.x, 20.0) && near(fk.y, 0.0), "{fk:?}");
+        rig.ik[0].mix = 0.5;
+        let half = rig.pose(Some((a, 0)));
+        let r = half[rig.bone_index(upper).unwrap()].b.atan2(half[rig.bone_index(upper).unwrap()].a).to_degrees();
+        rig.ik[0].mix = 1.0;
+        let full = rig.pose(Some((a, 0)));
+        let rf = full[rig.bone_index(upper).unwrap()].b.atan2(full[rig.bone_index(upper).unwrap()].a).to_degrees();
+        assert!(r.abs() > 1.0 && r.abs() < rf.abs(), "{r} {rf}");
+    }
+
+    #[test]
+    fn ik_keys_blend_the_mix_and_deleting_a_bone_drops_its_constraint() {
+        let (mut rig, _, fore, target, a) = arm();
+        let id = rig.ik[0].id;
+        rig.set_ik_key(a, id, 0, IkValue { mix: 0.0, bend: 1 }, Curve::Linear);
+        rig.set_ik_key(a, id, 1000, IkValue { mix: 1.0, bend: 1 }, Curve::Linear);
+        assert!(near(rig.ik_at(a, id, 500).unwrap().mix, 0.5));
+        let back: Rig = serde_json::from_str(&serde_json::to_string(&rig).unwrap()).unwrap();
+        assert_eq!(rig, back);
+        rig.remove_bone(target);
+        assert!(rig.ik.is_empty() && rig.animations[0].ik.is_empty());
+        let _ = fore;
     }
 
     #[test]

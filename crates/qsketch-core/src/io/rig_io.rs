@@ -152,6 +152,19 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         }));
     }
 
+    // IK constraints, with unique names.
+    let mut ik_names: Vec<String> = Vec::new();
+    let mut ik_by_id: Vec<(u32, String)> = Vec::new();
+    let mut ik: Vec<Value> = Vec::new();
+    for c in &rig.ik {
+        let name = unique(&mut ik_names, &c.name, "ik");
+        ik_by_id.push((c.id, name.clone()));
+        let (Some(p), Some(ch), Some(t)) = (name_of(c.bones[0]), name_of(c.bones[1]), name_of(c.target)) else {
+            continue;
+        };
+        ik.push(json!({ "name": name, "bones": [p, ch], "target": t, "bend": c.bend, "mix": c.mix }));
+    }
+
     // Animations.
     let mut anim_names: Vec<String> = Vec::new();
     let mut animations = serde_json::Map::new();
@@ -173,10 +186,22 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
                 tracks.insert(bn, Value::Object(o));
             }
         }
+        let mut ik_tracks = serde_json::Map::new();
+        for t in &a.ik {
+            let Some((_, n)) = ik_by_id.iter().find(|(id, _)| *id == t.constraint) else { continue };
+            if !t.keys.is_empty() {
+                ik_tracks.insert(n.clone(), keys_json(&t.keys, |v| json!({ "mix": v.mix, "bend": v.bend })));
+            }
+        }
         let name = unique(&mut anim_names, &a.name, "animation");
         animations.insert(
             name,
-            json!({ "duration": a.duration_ms as f64 / 1000.0, "loop": a.looped, "bones": Value::Object(tracks) }),
+            json!({
+                "duration": a.duration_ms as f64 / 1000.0,
+                "loop": a.looped,
+                "bones": Value::Object(tracks),
+                "ik": Value::Object(ik_tracks),
+            }),
         );
     }
 
@@ -185,6 +210,7 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         "version": 1,
         "canvas": { "width": doc.width, "height": doc.height },
         "bones": bones,
+        "ik": ik,
         "parts": parts,
         "animations": Value::Object(animations),
     });
@@ -196,8 +222,8 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
 mod tests {
     use super::*;
     use crate::color::Rgba8;
-    use crate::geom::IRect;
-    use crate::rig::{Curve, KeyValue};
+    use crate::geom::{IRect, Pt};
+    use crate::rig::{Curve, IkValue, KeyValue};
 
     #[test]
     fn exports_bones_parts_and_animations() {
@@ -234,30 +260,9 @@ mod tests {
         assert_eq!(json["animations"]["walk"]["duration"], 1.5);
     }
 
-    /// The recipe in docs/RIG_FORMAT.md, implemented from the JSON alone,
-    /// must put a part's corner where the editor's own posing puts it.
-    #[test]
-    fn the_documented_recipe_matches_the_editor() {
-        use crate::geom::Pt;
-        let mut doc = DocState::new(64, 64, None);
-        doc.layers[0].raster.fill_rect(IRect::new(30, 20, 10, 10), Rgba8::new(0, 255, 0, 255));
-        let id = doc.layers[0].id();
-        let root = doc.rig.add_bone("root", None, 20.0, 40.0, 10.0);
-        let arm = doc.rig.add_bone("arm", Some(root), 12.0, -3.0, 10.0);
-        doc.rig.bone_mut(arm).unwrap().rotation = 15.0;
-        doc.rig.attach(id, arm);
-        let a = doc.rig.add_animation("a", 1000);
-        doc.rig.set_key(a, root, 0, KeyValue::Rotate(0.0), Curve::Linear);
-        doc.rig.set_key(a, root, 1000, KeyValue::Rotate(60.0), Curve::Linear);
-        doc.rig.set_key(a, arm, 0, KeyValue::Translate([0.0, 0.0]), Curve::Linear);
-        doc.rig.set_key(a, arm, 1000, KeyValue::Translate([8.0, 4.0]), Curve::Linear);
-        let t_ms = 250;
-
-        let dir = tempfile::tempdir().unwrap();
-        export(&doc, dir.path()).unwrap();
-        let j: Value = serde_json::from_slice(&std::fs::read(dir.path().join("rig.json")).unwrap()).unwrap();
-
-        // A tiny runtime: linear keys only.
+    /// A mini runtime written from docs/RIG_FORMAT.md, reading only the JSON
+    /// (linear keys only): the world matrix of every bone of `anim` at `t`.
+    fn runtime_pose(j: &Value, anim: &str, t: f32) -> Vec<(String, Xf)> {
         let f = |v: &Value| v.as_f64().unwrap() as f32;
         let sample = |keys: &Value, field: &str, t: f32, default: f32| -> f32 {
             let Some(k) = keys.as_array().filter(|k| !k.is_empty()) else { return default };
@@ -274,22 +279,113 @@ mod tests {
             }
             at(k.len() - 1).1
         };
-        let t = t_ms as f32 / 1000.0;
-        let mut world: Vec<(String, Xf)> = Vec::new();
-        for b in j["bones"].as_array().unwrap() {
-            let name = b["name"].as_str().unwrap().to_string();
-            let tr = &j["animations"]["a"]["bones"][&name];
-            let (mut x, mut y) = (f(&b["x"]), f(&b["y"]));
-            x += sample(&tr["translate"], "x", t, 0.0);
-            y += sample(&tr["translate"], "y", t, 0.0);
-            let rot = f(&b["rotation"]) + sample(&tr["rotate"], "angle", t, 0.0);
-            let local = Xf::trs(x, y, rot, f(&b["scaleX"]), f(&b["scaleY"]));
-            let w = match b["parent"].as_str() {
-                Some(p) => world.iter().find(|(n, _)| n == p).unwrap().1 * local,
-                None => local,
-            };
-            world.push((name, w));
+        struct L {
+            name: String,
+            parent: Option<usize>,
+            x: f32,
+            y: f32,
+            rot: f32,
+            sx: f32,
+            sy: f32,
+            length: f32,
         }
+        // Loop: wrap the playhead by the duration; otherwise hold the end.
+        let an = &j["animations"][anim];
+        let dur = f(&an["duration"]);
+        let t = if an["loop"] == true { t.rem_euclid(dur) } else { t.min(dur) };
+        let bones = j["bones"].as_array().unwrap();
+        let index = |n: &str| bones.iter().position(|b| b["name"] == n).unwrap();
+        let mut locals: Vec<L> = bones
+            .iter()
+            .map(|b| {
+                let name = b["name"].as_str().unwrap().to_string();
+                let tr = &j["animations"][anim]["bones"][&name];
+                L {
+                    parent: b["parent"].as_str().map(index),
+                    x: f(&b["x"]) + sample(&tr["translate"], "x", t, 0.0),
+                    y: f(&b["y"]) + sample(&tr["translate"], "y", t, 0.0),
+                    rot: f(&b["rotation"]) + sample(&tr["rotate"], "angle", t, 0.0),
+                    sx: f(&b["scaleX"]) * sample(&tr["scale"], "x", t, 1.0),
+                    sy: f(&b["scaleY"]) * sample(&tr["scale"], "y", t, 1.0),
+                    length: f(&b["length"]),
+                    name,
+                }
+            })
+            .collect();
+        let worlds = |l: &[L]| -> Vec<Xf> {
+            let mut w: Vec<Xf> = Vec::new();
+            for b in l {
+                let local = Xf::trs(b.x, b.y, b.rot, b.sx, b.sy);
+                w.push(b.parent.map_or(local, |p| w[p] * local));
+            }
+            w
+        };
+        let ang = |m: Xf| m.b.atan2(m.a);
+        let wrap = |d: f32| (d + 540.0).rem_euclid(360.0) - 180.0;
+        for c in j["ik"].as_array().unwrap() {
+            let name = c["name"].as_str().unwrap();
+            let keys = &j["animations"][anim]["ik"][name];
+            let mix = sample(keys, "mix", t, f(&c["mix"])).clamp(0.0, 1.0);
+            // The bend of the last key at or before t (stepped).
+            let bend = keys
+                .as_array()
+                .and_then(|k| k.iter().rev().find(|k| f(&k["time"]) <= t).or(k.first()))
+                .map_or(c["bend"].as_f64().unwrap(), |k| k["bend"].as_f64().unwrap());
+            let (pi, ci) = (index(c["bones"][0].as_str().unwrap()), index(c["bones"][1].as_str().unwrap()));
+            let ti = index(c["target"].as_str().unwrap());
+            let w = worlds(&locals);
+            let (h, hc, tp) =
+                (w[pi].apply(Pt::new(0.0, 0.0)), w[ci].apply(Pt::new(0.0, 0.0)), w[ti].apply(Pt::new(0.0, 0.0)));
+            let a = h.dist(hc);
+            let b = locals[ci].length * (w[ci].a * w[ci].a + w[ci].b * w[ci].b).sqrt();
+            let d0 = h.dist(tp);
+            if a < 1e-4 || b < 1e-4 || d0 < 1e-4 || mix <= 0.0 {
+                continue;
+            }
+            let d = d0.clamp((a - b).abs().max(1e-4), a + b);
+            let alpha = ((a * a + d * d - b * b) / (2.0 * a * d)).clamp(-1.0, 1.0).acos();
+            let theta = (tp.y - h.y).atan2(tp.x - h.x) + if bend < 0.0 { -alpha } else { alpha };
+            let offset = (hc.y - h.y).atan2(hc.x - h.x) - ang(w[pi]);
+            let pp = locals[pi].parent.map_or(0.0, |p| ang(w[p]));
+            let rot_p = (theta - offset - pp).to_degrees();
+            let fk = locals[pi].rot;
+            locals[pi].rot = fk + mix * wrap(rot_p - fk);
+            let w = worlds(&locals);
+            let hc = w[ci].apply(Pt::new(0.0, 0.0));
+            let rot_c = ((tp.y - hc.y).atan2(tp.x - hc.x) - ang(w[pi])).to_degrees();
+            let fk = locals[ci].rot;
+            locals[ci].rot = fk + mix * wrap(rot_c - fk);
+        }
+        locals.iter().map(|l| l.name.clone()).zip(worlds(&locals)).collect()
+    }
+
+    fn exported(doc: &DocState) -> Value {
+        let dir = tempfile::tempdir().unwrap();
+        export(doc, dir.path()).unwrap();
+        serde_json::from_slice(&std::fs::read(dir.path().join("rig.json")).unwrap()).unwrap()
+    }
+
+    /// The recipe in docs/RIG_FORMAT.md, implemented from the JSON alone,
+    /// must put a part's corner where the editor's own posing puts it.
+    #[test]
+    fn the_documented_recipe_matches_the_editor() {
+        let mut doc = DocState::new(64, 64, None);
+        doc.layers[0].raster.fill_rect(IRect::new(30, 20, 10, 10), Rgba8::new(0, 255, 0, 255));
+        let id = doc.layers[0].id();
+        let root = doc.rig.add_bone("root", None, 20.0, 40.0, 10.0);
+        let arm = doc.rig.add_bone("arm", Some(root), 12.0, -3.0, 10.0);
+        doc.rig.bone_mut(arm).unwrap().rotation = 15.0;
+        doc.rig.attach(id, arm);
+        let a = doc.rig.add_animation("a", 1000);
+        doc.rig.set_key(a, root, 0, KeyValue::Rotate(0.0), Curve::Linear);
+        doc.rig.set_key(a, root, 1000, KeyValue::Rotate(60.0), Curve::Linear);
+        doc.rig.set_key(a, arm, 0, KeyValue::Translate([0.0, 0.0]), Curve::Linear);
+        doc.rig.set_key(a, arm, 1000, KeyValue::Translate([8.0, 4.0]), Curve::Linear);
+        let t_ms = 250;
+
+        let j = exported(&doc);
+        let world = runtime_pose(&j, "a", t_ms as f32 / 1000.0);
+        let f = |v: &Value| v.as_f64().unwrap() as f32;
         let part = &j["parts"][0];
         let m = part["transform"].as_array().unwrap();
         let m = Xf { a: f(&m[0]), b: f(&m[1]), c: f(&m[2]), d: f(&m[3]), e: f(&m[4]), f: f(&m[5]) };
@@ -302,6 +398,41 @@ mod tests {
         let delta = doc.rig.layer_delta(arm, &pose, &setup).unwrap();
         let want = delta.apply(Pt::new(30.0, 20.0));
         assert!((got.x - want.x).abs() < 1e-3 && (got.y - want.y).abs() < 1e-3, "{got:?} vs {want:?}");
+    }
+
+    /// The IK algorithm in docs/RIG_FORMAT.md, run from the JSON alone,
+    /// must agree with the editor's solver (including a half mix, and a
+    /// keyed mix that changes over time).
+    #[test]
+    fn the_documented_ik_matches_the_editor() {
+        let mut doc = DocState::new(64, 64, None);
+        let upper = doc.rig.add_bone("upper", None, 10.0, 30.0, 12.0);
+        let fore = doc.rig.add_bone("fore", Some(upper), 12.0, 0.0, 14.0);
+        doc.rig.bone_mut(upper).unwrap().rotation = -25.0;
+        doc.rig.bone_mut(fore).unwrap().rotation = 50.0;
+        let (ik, target) = doc.rig.add_ik(fore).unwrap();
+        let a = doc.rig.add_animation("a", 1000);
+        doc.rig.set_key(a, target, 0, KeyValue::Translate([0.0, 0.0]), Curve::Linear);
+        doc.rig.set_key(a, target, 1000, KeyValue::Translate([-9.0, 17.0]), Curve::Linear);
+        doc.rig.set_key(a, upper, 0, KeyValue::Rotate(0.0), Curve::Linear);
+        doc.rig.set_key(a, upper, 1000, KeyValue::Rotate(40.0), Curve::Linear);
+        doc.rig.set_ik_key(a, ik, 0, IkValue { mix: 1.0, bend: doc.rig.ik[0].bend }, Curve::Linear);
+        doc.rig.set_ik_key(a, ik, 1000, IkValue { mix: 0.5, bend: doc.rig.ik[0].bend }, Curve::Linear);
+
+        let j = exported(&doc);
+        assert_eq!(j["ik"][0]["target"], "fore target");
+        for t_ms in [0u32, 300, 700, 1000] {
+            let world = runtime_pose(&j, "a", t_ms as f32 / 1000.0);
+            let pose = doc.rig.pose(Some((a, t_ms)));
+            for (i, (name, w)) in world.iter().enumerate() {
+                let want = pose[i];
+                let close = |x: f32, y: f32| (x - y).abs() < 1e-2;
+                assert!(
+                    close(w.a, want.a) && close(w.b, want.b) && close(w.e, want.e) && close(w.f, want.f),
+                    "{name} at {t_ms} ms: {w:?} vs {want:?}"
+                );
+            }
+        }
     }
 
     #[test]

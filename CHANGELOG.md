@@ -13,6 +13,10 @@ All notable changes to qSketch are documented in this file.
   key the pose at the current time and the canvas shows the layers posed.
 - File ▸ Export Rig for Games…: writes `rig.json` (bones, parts, animations with
   easing) and a PNG per layer, in the format described in `docs/RIG_FORMAT.md`.
+- Two-bone IK: select a bone with the Bone tool and press Add IK to make it and
+  its parent a limb that reaches for a new target bone. Move the target and the
+  limb follows; edit the mix, flip the bend, and key both over time. IK is part
+  of the live pose, baking and the game export (see `docs/RIG_FORMAT.md`).
 
 ## 0.70.0 — 2026-11-10
 
