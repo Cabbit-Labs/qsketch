@@ -399,6 +399,44 @@ pub fn export_slices(state: &mut AppState, doc_id: DocId) -> bool {
     }
 }
 
+/// File › Export Rig for Games: the skeleton, animations and a PNG per layer
+/// as `rig.json` + `parts/` in a folder (see `docs/RIG_FORMAT.md`).
+pub fn export_rig(state: &mut AppState, doc_id: DocId) -> bool {
+    let Some(entry) = state.doc(doc_id) else { return false };
+    if entry.doc.state().rig.bones.is_empty() {
+        state.toasts.push(Level::Info, "This document has no bones. Add some with the Bone tool (Shift+B).");
+        return false;
+    }
+    let base = entry.doc.title.trim_end_matches('*').to_string();
+    let stem = Path::new(&base).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or(base);
+    let mut dlg = rfd::FileDialog::new().set_title("Export Rig To Folder");
+    if let Some(dir) = entry.doc.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
+        dlg = dlg.set_directory(dir);
+    }
+    let Some(dir) = dlg.pick_folder() else { return false };
+    let target = dir.join(format!("{stem} rig"));
+    match qsketch_core::io::rig_io::export(entry.doc.state(), &target) {
+        Ok(s) => {
+            let mut msg = format!(
+                "Exported {} bones, {} parts and {} animations to {}",
+                s.bones,
+                s.parts,
+                s.animations,
+                target.display()
+            );
+            if !s.skipped.is_empty() {
+                msg.push_str(&format!(" (left out: {})", s.skipped.join(", ")));
+            }
+            state.toasts.push(Level::Success, msg);
+            true
+        }
+        Err(e) => {
+            state.toasts.push(Level::Error, format!("Rig export failed: {e:#}"));
+            false
+        }
+    }
+}
+
 /// File › Export as SVG: every visible vector layer (traced art) as real
 /// vector paths, in stacking order. Boxes keep their curves exact; distorted
 /// or warped ones are written as fine polylines through the distortion.

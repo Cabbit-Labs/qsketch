@@ -104,6 +104,7 @@ actions! {
     ExportTileset => (File, "Export Tileset…", []),
     ExportAnimation => (File, "Export Animation…", ["Ctrl+Alt+Shift+A"]),
     RigAnimation => (File, "Rig Animation…", []),
+    ExportRig => (File, "Export Rig for Games…", []),
     ImportFrames => (File, "Import Frames from Files…", []),
     ImportSpriteSheet => (File, "Import Sprite Sheet…", []),
     ExportSlices => (File, "Export Slices…", []),

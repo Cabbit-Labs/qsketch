@@ -927,6 +927,7 @@ impl QSketchApp {
                 self.menu_item(ui, Action::ExportTileset, has_doc);
                 self.menu_item(ui, Action::ExportAnimation, has_doc);
                 self.menu_item(ui, Action::RigAnimation, has_doc);
+                self.menu_item(ui, Action::ExportRig, has_doc);
                 menus::submenu(ui, false, "Import", |ui| {
                     self.menu_item(ui, Action::ImportFrames, true);
                     self.menu_item(ui, Action::ImportSpriteSheet, true);
@@ -2609,6 +2610,11 @@ impl QSketchApp {
             Action::ExportAnimation => {
                 if let Some(id) = active {
                     dialogs::anim::open_export(&mut self.state, id);
+                }
+            }
+            Action::ExportRig => {
+                if let Some(id) = active {
+                    crate::files::export_rig(&mut self.state, id);
                 }
             }
             Action::RigAnimation => {

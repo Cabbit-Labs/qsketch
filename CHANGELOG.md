@@ -11,6 +11,8 @@ All notable changes to qSketch are documented in this file.
 - New Bone tool (Shift+B): drag on the canvas to add bones, drag a tip to turn
   or resize one, a head to move it. With an animation selected the same drags
   key the pose at the current time and the canvas shows the layers posed.
+- File ▸ Export Rig for Games…: writes `rig.json` (bones, parts, animations with
+  easing) and a PNG per layer, in the format described in `docs/RIG_FORMAT.md`.
 
 ## 0.70.0 — 2026-11-10
 

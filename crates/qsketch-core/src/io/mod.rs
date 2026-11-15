@@ -6,6 +6,7 @@ pub mod brush_formats;
 pub mod image_io;
 pub mod psd;
 pub mod qsk;
+pub mod rig_io;
 pub mod sai2;
 
 use std::path::Path;

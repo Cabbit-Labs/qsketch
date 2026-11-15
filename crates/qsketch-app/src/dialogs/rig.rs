@@ -140,6 +140,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
     d.refresh();
     d.draw_preview(ctx);
     let mut bake = false;
+    let mut export = false;
     let (ok_cancel, closed) = modal(ctx, "rig", "Rig Animation", 820.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -158,12 +159,22 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                 keys_section(ui, d);
                 ui.add_space(6.0);
                 bake = bake_section(ui, d);
+                ui.horizontal(|ui| {
+                    export = ui
+                        .button("Export for Games…")
+                        .on_hover_text("rig.json plus a PNG per layer, for a game runtime")
+                        .clicked();
+                });
             });
         });
         ok_cancel(ui)
     });
     let (ok, cancel) = ok_cancel;
-    if bake {
+    if export {
+        let d = state.dialogs.rig.take().unwrap();
+        apply_rig(state, d.doc, &d.base);
+        crate::files::export_rig(state, d.doc);
+    } else if bake {
         let d = state.dialogs.rig.take().unwrap();
         apply_rig(state, d.doc, &d.base);
         bake_to_new_doc(state, &d);
