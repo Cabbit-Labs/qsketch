@@ -113,6 +113,48 @@
     });
   }
 
+  /** Draw a meshed part: each triangle of the image, affinely mapped. */
+  function drawMesh(rig, part, world, scale) {
+    const mesh = part.mesh;
+    const pts = QRig.meshPoints(rig, part, world);
+    const img = state.images.get(part.image);
+    const stride = mesh.cols + 1;
+    const uv = (v) => [(part.width * (v % stride)) / mesh.cols, (part.height * Math.floor(v / stride)) / mesh.rows];
+    for (const [i0, i1, i2] of QRig.meshTriangles(mesh)) {
+      const [u0, v0] = uv(i0);
+      const [u1, v1] = uv(i1);
+      const [u2, v2] = uv(i2);
+      const x0 = pts[i0 * 2], y0 = pts[i0 * 2 + 1];
+      const x1 = pts[i1 * 2], y1 = pts[i1 * 2 + 1];
+      const x2 = pts[i2 * 2], y2 = pts[i2 * 2 + 1];
+      const det = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0);
+      if (Math.abs(det) < 1e-9) continue;
+      const a = ((x1 - x0) * (v2 - v0) - (x2 - x0) * (v1 - v0)) / det;
+      const c = ((x2 - x0) * (u1 - u0) - (x1 - x0) * (u2 - u0)) / det;
+      const b = ((y1 - y0) * (v2 - v0) - (y2 - y0) * (v1 - v0)) / det;
+      const d = ((y2 - y0) * (u1 - u0) - (y1 - y0) * (u2 - u0)) / det;
+      ctx.save();
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      // Clip to the triangle, grown a little so neighbors overlap and no
+      // seam shows between them.
+      const cx = (x0 + x1 + x2) / 3, cy = (y0 + y1 + y2) / 3;
+      const grow = (x, y) => {
+        const dx = x - cx, dy = y - cy;
+        const len = Math.hypot(dx, dy) || 1;
+        return [x + (dx / len) * 0.6, y + (dy / len) * 0.6];
+      };
+      ctx.beginPath();
+      ctx.moveTo(...grow(x0, y0));
+      ctx.lineTo(...grow(x1, y1));
+      ctx.lineTo(...grow(x2, y2));
+      ctx.closePath();
+      ctx.clip();
+      ctx.transform(a, b, c, d, x0 - a * u0 - c * v0, y0 - b * u0 - d * v0);
+      ctx.drawImage(img, 0, 0);
+      ctx.restore();
+    }
+  }
+
   function draw() {
     const rig = state.rig;
     if (!rig) return;
@@ -124,11 +166,15 @@
     ctx.imageSmoothingEnabled = !state.pixel;
     const world = QRig.pose(rig, state.anim, state.time);
     for (const part of rig.parts) {
+      ctx.globalAlpha = part.opacity;
+      ctx.globalCompositeOperation = QRig.canvasBlend(part.blend);
+      if (part.mesh) {
+        drawMesh(rig, part, world, scale);
+        continue;
+      }
       const m = QRig.partMatrix(rig, part, world);
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
-      ctx.globalAlpha = part.opacity;
-      ctx.globalCompositeOperation = QRig.canvasBlend(part.blend);
       ctx.drawImage(state.images.get(part.image), 0, 0);
     }
     ctx.globalAlpha = 1;

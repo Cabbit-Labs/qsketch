@@ -35,6 +35,7 @@ pub mod ops;
 pub mod palette;
 pub mod raster;
 pub mod rig;
+pub mod rigmesh;
 pub mod shape;
 pub mod slice;
 pub mod smart;
@@ -65,6 +66,7 @@ pub use rig::{
     Attachment, Bone, BoneDrag, BoneId, BoneTrack, Curve, IkConstraint, IkTrack, IkValue, Key, KeyValue, Rig, RigAnim,
     Xf,
 };
+pub use rigmesh::{Influence, PartMesh};
 pub use slice::Slice;
 pub use style::LayerStyle;
 pub use text::TextLayer;

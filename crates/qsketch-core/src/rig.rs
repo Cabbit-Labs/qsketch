@@ -234,6 +234,9 @@ pub struct Rig {
     pub animations: Vec<RigAnim>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ik: Vec<IkConstraint>,
+    /// Layers drawn through a weighted mesh (see `crate::rigmesh`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub meshes: Vec<crate::rigmesh::PartMesh>,
     #[serde(default)]
     next_bone_id: BoneId,
     #[serde(default)]
@@ -352,7 +355,7 @@ impl RigAnim {
 
 impl Rig {
     pub fn is_empty(&self) -> bool {
-        self.bones.is_empty() && self.animations.is_empty() && self.attachments.is_empty()
+        self.bones.is_empty() && self.animations.is_empty() && self.attachments.is_empty() && self.meshes.is_empty()
     }
 
     pub fn bone_index(&self, id: BoneId) -> Option<usize> {
@@ -397,6 +400,7 @@ impl Rig {
         for an in &mut self.animations {
             an.tracks.retain(|t| !gone.contains(&t.bone));
         }
+        self.prune_mesh_bones(&gone);
         let dead: Vec<u32> = self
             .ik
             .iter()
@@ -428,6 +432,7 @@ impl Rig {
     /// Drop attachments to layers the document no longer has.
     pub fn prune(&mut self, doc_layers: &[LayerId]) {
         self.attachments.retain(|a| doc_layers.contains(&a.layer));
+        self.meshes.retain(|m| doc_layers.contains(&m.layer));
     }
 
     pub fn add_animation(&mut self, name: impl Into<String>, duration_ms: u32) -> usize {
@@ -791,24 +796,53 @@ pub fn transform_raster(raster: &Raster, xf: Xf, width: u32, height: u32, filter
     so.render(&SmartSource::Pixels(raster.crop(b)), width, height)
 }
 
+/// How a pose changes one layer's picture.
+enum PoseKind<'a> {
+    /// Moved as a whole by its bone.
+    Rigid(Xf),
+    /// Bent through its weighted mesh, vertices moved to these points.
+    Skin(&'a crate::rigmesh::PartMesh, Vec<Pt>),
+}
+
+/// What `pose` does to `layer`'s picture; `None` when it stays as drawn.
+/// A mesh takes precedence over the layer's single bone.
+fn pose_kind<'a>(rig: &'a Rig, layer: LayerId, pose: &[Xf], setup: &[Xf]) -> Option<PoseKind<'a>> {
+    if let Some(m) = rig.mesh_of(layer) {
+        let pts = rig.skin_points(m, pose, setup);
+        let rest = m.setup_points();
+        if pts.iter().zip(&rest).all(|(a, b)| a.dist(*b) < 1e-3) {
+            return None;
+        }
+        return Some(PoseKind::Skin(m, pts));
+    }
+    let delta = rig.layer_delta(rig.attached_bone(layer)?, pose, setup)?;
+    (!delta.is_identity()).then_some(PoseKind::Rigid(delta))
+}
+
+fn pose_picture(raster: &Raster, kind: &PoseKind, width: u32, height: u32, filter: ResizeFilter) -> Raster {
+    match kind {
+        PoseKind::Rigid(xf) => transform_raster(raster, *xf, width, height, filter),
+        PoseKind::Skin(mesh, pts) => crate::rigmesh::render_mesh(raster, mesh, pts, width, height, filter),
+    }
+}
+
 /// A copy of `doc` with the pose of `anim` at `t_ms` applied to every
 /// attached layer (their masks baked in, since a mask can't follow a bone).
 pub fn posed_copy(doc: &DocState, anim: Option<usize>, t_ms: u32, filter: ResizeFilter) -> DocState {
     let mut out = doc.clone();
-    if doc.rig.attachments.is_empty() {
+    if doc.rig.attachments.is_empty() && doc.rig.meshes.is_empty() {
         return out;
     }
     let setup = doc.rig.pose(None);
     let pose = doc.rig.pose(anim.map(|a| (a, t_ms)));
     let (w, h) = (doc.width, doc.height);
     for l in &mut out.layers {
-        let Some(bone) = doc.rig.attached_bone(l.id()) else { continue };
-        let Some(delta) = doc.rig.layer_delta(bone, &pose, &setup) else { continue };
-        if !l.owns_pixels() || delta.is_identity() {
+        if !l.owns_pixels() {
             continue;
         }
+        let Some(kind) = pose_kind(&doc.rig, l.id(), &pose, &setup) else { continue };
         l.apply_mask();
-        l.raster = transform_raster(&l.raster, delta, w, h, filter);
+        l.raster = pose_picture(&l.raster, &kind, w, h, filter);
     }
     out
 }
@@ -849,13 +883,14 @@ pub fn bake(doc: &DocState, anim: usize, fps: u32, filter: ResizeFilter) -> Resu
     let poses: Vec<Vec<Xf>> = (0..n).map(|i| doc.rig.pose(Some((anim, (i as f32 * step).round() as u32)))).collect();
 
     for l in &mut out.layers {
-        let rigged = doc.rig.attached_bone(l.id()).filter(|_| l.owns_pixels());
-        if rigged.is_none() && !l.animated() {
+        let id = l.id();
+        let rigged = (doc.rig.attached_bone(id).is_some() || doc.rig.mesh_of(id).is_some()) && l.owns_pixels();
+        if !rigged && !l.animated() {
             l.cels.clear();
             continue;
         }
         l.apply_mask();
-        if let Some(bone) = rigged {
+        if rigged {
             // Shape, text and smart layers become plain pixels: their
             // frames can no longer be redrawn from points.
             l.props.kind = LayerKind::Raster;
@@ -866,9 +901,9 @@ pub fn bake(doc: &DocState, anim: usize, fps: u32, filter: ResizeFilter) -> Resu
             let base = l.raster.clone();
             l.cels = poses
                 .iter()
-                .map(|pose| {
-                    let delta = doc.rig.layer_delta(bone, pose, &setup).unwrap_or(Xf::IDENTITY);
-                    Cel::own(transform_raster(&base, delta, w, h, filter))
+                .map(|pose| match pose_kind(&doc.rig, id, pose, &setup) {
+                    Some(kind) => Cel::own(pose_picture(&base, &kind, w, h, filter)),
+                    None => Cel::own(base.clone()),
                 })
                 .collect();
         } else {
@@ -1104,6 +1139,36 @@ mod tests {
         rig.remove_bone(target);
         assert!(rig.ik.is_empty() && rig.animations[0].ik.is_empty());
         let _ = fore;
+    }
+
+    #[test]
+    fn a_meshed_layer_bends_in_the_render_while_a_rigid_one_slides() {
+        use crate::geom::IRect;
+        let mut doc = DocState::new(64, 48, None);
+        let id = doc.layers[0].id();
+        doc.layers[0].raster.fill_rect(IRect::new(0, 16, 40, 10), Rgba8::new(255, 0, 0, 255));
+        let a = doc.rig.add_bone("a", None, 0.0, 21.0, 20.0);
+        let b = doc.rig.add_bone("b", Some(a), 20.0, 0.0, 20.0);
+        doc.rig.attach(id, a);
+        assert!(doc.rig.add_mesh(id, IRect::new(0, 16, 40, 10), 5));
+        doc.rig.auto_weights(id, true);
+        let an = doc.rig.add_animation("bend", 1000);
+        doc.rig.set_key(an, b, 0, KeyValue::Rotate(70.0), Curve::Linear);
+
+        let bent = render_pose(&doc, Some(an), 0, ResizeFilter::Bilinear);
+        let rest = render_pose(&doc, None, 0, ResizeFilter::Bilinear);
+        let (bb, rb) = (bent.bounds().unwrap(), rest.bounds().unwrap());
+        assert_eq!((rb.x, rb.y, rb.w, rb.h), (0, 16, 40, 10), "setup pose draws the layer as drawn");
+        // The right end swung down below the strip while the left end stayed.
+        assert!(bb.bottom() > rb.bottom() + 8, "{bb:?}");
+        assert!(bent.get_pixel(2, 21).a > 200, "left end stays put");
+        assert!(bent.get_pixel(38, 21).a < 50, "right end moved away from where it was");
+
+        // Baking goes through the same mesh: its frame 0 (this animation holds
+        // its key from t=0) has the bent render's extent.
+        let baked = bake(&doc, an, 4, ResizeFilter::Bilinear).unwrap();
+        let f0 = crate::anim::render_frame(&baked, 0);
+        assert_eq!(f0.bounds().map(|r| (r.x, r.y, r.w, r.h)), Some((bb.x, bb.y, bb.w, bb.h)));
     }
 
     #[test]

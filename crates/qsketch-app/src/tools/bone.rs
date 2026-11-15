@@ -40,6 +40,14 @@ pub struct RigUi {
     /// An animation property was edited in the tool options and waits for
     /// its undo step (committed when the field is let go).
     pub edited: bool,
+    /// Painting vertex weights on the active layer's mesh instead of
+    /// editing bones.
+    pub weights: bool,
+    /// Weight brush radius (document pixels) and strength (0..1 per dab).
+    pub brush: f32,
+    pub strength: f32,
+    /// Cell size (pixels) of a new mesh.
+    pub cell: u32,
     /// What the live preview was last drawn for.
     pose_key: Option<(u64, Rig, usize, u32, bool)>,
 }
@@ -53,6 +61,10 @@ impl Default for RigUi {
             easing: Easing::Linear,
             nearest: false,
             edited: false,
+            weights: false,
+            brush: 18.0,
+            strength: 0.25,
+            cell: 12,
             pose_key: None,
         }
     }
@@ -73,6 +85,8 @@ pub enum BoneGesture {
     Handle { bone: BoneId, drag: BoneDrag },
     /// Pressed on nothing in Animate mode: just deselects.
     Idle,
+    /// Painting the selected bone's weight on the active layer's mesh.
+    Paint { remove: bool },
 }
 
 /// What a press landed on.
@@ -136,22 +150,37 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             }
             let Some(entry) = state.doc_mut(doc_id) else { return };
             let animating = entry.rig_ui.anim_in(&entry.doc.state().rig).is_some();
-            let gesture = match hit_test(entry, inp.screen) {
-                Some(hit) => {
-                    let (bone, drag) = match hit {
-                        Hit::Tip(b) => (b, if animating { BoneDrag::Aim } else { BoneDrag::AimStretch }),
-                        Hit::Head(b) | Hit::Body(b) => (b, BoneDrag::Move),
-                    };
-                    entry.rig_ui.sel = Some(bone);
-                    BoneGesture::Handle { bone, drag }
+            let weights_on = painting_weights(entry);
+            let gesture = if weights_on {
+                // Clicking a bone picks which weight to paint; anywhere else paints.
+                match hit_test(entry, inp.screen) {
+                    Some(Hit::Tip(b) | Hit::Head(b) | Hit::Body(b)) => {
+                        entry.rig_ui.sel = Some(b);
+                        BoneGesture::Idle
+                    }
+                    None => {
+                        paint_at(entry, inp.doc, inp.mods.alt);
+                        BoneGesture::Paint { remove: inp.mods.alt }
+                    }
                 }
-                None if animating => {
-                    entry.rig_ui.sel = None;
-                    BoneGesture::Idle
-                }
-                None => {
-                    let parent = if inp.mods.alt { None } else { entry.rig_ui.sel };
-                    BoneGesture::Create { parent, head: inp.doc }
+            } else {
+                match hit_test(entry, inp.screen) {
+                    Some(hit) => {
+                        let (bone, drag) = match hit {
+                            Hit::Tip(b) => (b, if animating { BoneDrag::Aim } else { BoneDrag::AimStretch }),
+                            Hit::Head(b) | Hit::Body(b) => (b, BoneDrag::Move),
+                        };
+                        entry.rig_ui.sel = Some(bone);
+                        BoneGesture::Handle { bone, drag }
+                    }
+                    None if animating => {
+                        entry.rig_ui.sel = None;
+                        BoneGesture::Idle
+                    }
+                    None => {
+                        let parent = if inp.mods.alt { None } else { entry.rig_ui.sel };
+                        BoneGesture::Create { parent, head: inp.doc }
+                    }
                 }
             };
             state.session = Some(ToolSession::Bone { gesture, cur: inp.doc, moved: false });
@@ -162,6 +191,12 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
             *cur = inp.doc;
             *moved = true;
             let gesture = *gesture;
+            if let BoneGesture::Paint { remove } = gesture {
+                if let Some(entry) = state.doc_mut(doc_id) {
+                    paint_at(entry, inp.doc, remove);
+                }
+                return;
+            }
             if let BoneGesture::Handle { bone, drag } = gesture {
                 let Some(entry) = state.doc_mut(doc_id) else { return };
                 let (anim, t, curve) =
@@ -201,11 +236,50 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                         entry.doc.commit(label);
                     }
                 }
+                BoneGesture::Paint { .. } => entry.doc.commit("Paint Weights"),
                 BoneGesture::Idle => {}
             }
         }
         _ => {}
     }
+}
+
+/// Whether a press paints weights: the mode is on and the active layer has a mesh.
+fn painting_weights(entry: &DocEntry) -> bool {
+    let s = entry.doc.state();
+    entry.rig_ui.weights && s.rig.mesh_of(s.active_layer().id()).is_some()
+}
+
+/// The mesh's vertices as they are shown now (posed when an animation is up).
+fn shown_points(entry: &DocEntry, mesh: &qsketch_core::PartMesh) -> Vec<Pt> {
+    let rig = &entry.doc.state().rig;
+    let setup = rig.pose(None);
+    let pose = rig.pose(entry.rig_ui.anim_in(rig).map(|a| (a, entry.rig_ui.time_ms)));
+    rig.skin_points(mesh, &pose, &setup)
+}
+
+/// One dab of the weight brush at `at` (document pixels): the selected
+/// bone's weight rises (or, with `remove`, falls) on the vertices within the
+/// brush, most at its center.
+fn paint_at(entry: &mut DocEntry, at: Pt, remove: bool) {
+    let Some(bone) = entry.rig_ui.sel else { return };
+    let layer = entry.doc.state().active_layer().id();
+    let (radius, strength) = (entry.rig_ui.brush.max(1.0), entry.rig_ui.strength.clamp(0.0, 1.0));
+    let hits: Vec<(usize, f32)> = {
+        let Some(mesh) = entry.doc.state().rig.mesh_of(layer) else { return };
+        shown_points(entry, mesh)
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| {
+                let d = p.dist(at);
+                (d <= radius).then(|| {
+                    let f = 1.0 - d / radius;
+                    (i, strength * f * f * (3.0 - 2.0 * f))
+                })
+            })
+            .collect()
+    };
+    entry.doc.state_mut().rig.paint_weights(layer, bone, &hits, remove);
 }
 
 fn unique_bone_name(rig: &Rig) -> String {
@@ -236,11 +310,18 @@ pub fn sync_preview(entry: &mut DocEntry, tool_active: bool) {
         entry.doc.set_pose_preview(None);
         return;
     };
-    let key =
-        (entry.doc.history.current_id(), entry.doc.state().rig.clone(), a, entry.rig_ui.time_ms, entry.rig_ui.nearest);
-    if entry.rig_ui.pose_key.as_ref() == Some(&key) && entry.doc.has_pose_preview() {
+    let hid = entry.doc.history.current_id();
+    let (t, nearest) = (entry.rig_ui.time_ms, entry.rig_ui.nearest);
+    let fresh = entry.doc.has_pose_preview()
+        && entry
+            .rig_ui
+            .pose_key
+            .as_ref()
+            .is_some_and(|k| k.0 == hid && k.2 == a && k.3 == t && k.4 == nearest && k.1 == entry.doc.state().rig);
+    if fresh {
         return;
     }
+    let key = (hid, entry.doc.state().rig.clone(), a, t, nearest);
     let filter = if key.4 { ResizeFilter::Nearest } else { ResizeFilter::Bilinear };
     let posed = rig::posed_copy(entry.doc.state(), Some(a), key.3, filter);
     entry.doc.set_pose_preview(Some(posed));
@@ -289,6 +370,41 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
                     Color32::from_black_alpha(170),
                 );
                 painter.galley(at + egui::vec2(3.0, 1.0), g, Color32::WHITE);
+            }
+        }
+    }
+    // The active layer's mesh: its cells, and while painting weights the
+    // selected bone's weight on every vertex plus the brush.
+    if let Some(mesh) = rig.mesh_of(entry.doc.state().active_layer().id()) {
+        let pts: Vec<egui::Pos2> = shown_points(entry, mesh).iter().map(|p| entry.view.doc_to_screen(*p)).collect();
+        let line = Stroke::new(1.0, Color32::from_white_alpha(80));
+        for j in 0..=mesh.rows {
+            for i in 0..=mesh.cols {
+                let a = pts[mesh.index(i, j)];
+                if i < mesh.cols {
+                    painter.line_segment([a, pts[mesh.index(i + 1, j)]], line);
+                }
+                if j < mesh.rows {
+                    painter.line_segment([a, pts[mesh.index(i, j + 1)]], line);
+                }
+            }
+        }
+        if entry.rig_ui.weights {
+            let sel = entry.rig_ui.sel;
+            for (v, p) in pts.iter().enumerate() {
+                let w = sel.map_or(0.0, |b| mesh.weights[v].iter().find(|i| i.bone == b).map_or(0.0, |i| i.weight));
+                // Cold blue (none) to hot red (all).
+                let lerp = |a: f32, b: f32| (a + (b - a) * w) as u8;
+                let col = Color32::from_rgb(lerp(40.0, 255.0), lerp(80.0, 70.0), lerp(220.0, 40.0));
+                painter.circle_filled(*p, 3.5, col);
+                painter.circle_stroke(*p, 3.5, Stroke::new(1.0, Color32::from_black_alpha(160)));
+            }
+            if let Some(h) = painter.ctx().pointer_hover_pos() {
+                painter.circle_stroke(
+                    h,
+                    entry.rig_ui.brush * entry.view.zoom,
+                    Stroke::new(1.5, Color32::from_white_alpha(210)),
+                );
             }
         }
     }

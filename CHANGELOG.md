@@ -17,6 +17,12 @@ All notable changes to qSketch are documented in this file.
   its parent a limb that reaches for a new target bone. Move the target and the
   limb follows; edit the mix, flip the bend, and key both over time. IK is part
   of the live pose, baking and the game export (see `docs/RIG_FORMAT.md`).
+- Mesh weights: with the Bone tool, Make mesh lays a grid over the active layer
+  and weights every vertex to up to four bones, so the art bends at joints
+  instead of folding. Auto weights from nearby bones (or all bones), then paint
+  the weights on the art with a brush (Alt removes). Meshes show in the live
+  pose, in Bake, and in the game export and reference player (see
+  `docs/RIG_FORMAT.md`).
 - A reference rig player in `examples/rig-player/`: a browser page that plays
   exported rigs, a dependency-free JavaScript runtime to port to other engines,
   and a test that checks it against the editor's own poses.

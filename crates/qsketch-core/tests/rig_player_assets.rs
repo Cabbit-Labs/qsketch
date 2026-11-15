@@ -39,11 +39,24 @@ fn mov(doc: &mut DocState, a: usize, b: BoneId, keys: &[(u32, f32, f32, Curve)])
 }
 
 fn add_part(doc: &mut DocState, name: &str, rect: IRect, color: Rgba8, bone: BoneId) {
+    add_parts(doc, name, &[(rect, color)], bone, None);
+}
+
+/// A layer drawn from several rectangles, attached to `bone`; with
+/// `Some(cell)` it also gets a mesh weighted to the nearby bones.
+fn add_parts(doc: &mut DocState, name: &str, rects: &[(IRect, Rgba8)], bone: BoneId, mesh: Option<u32>) {
     let id = doc.new_id();
     let mut l = Layer::new(id, name, doc.width, doc.height);
-    l.raster.fill_rect(rect, color);
+    for &(rect, color) in rects {
+        l.raster.fill_rect(rect, color);
+    }
+    let bounds = l.raster.full_bounds().unwrap();
     doc.layers.push(l);
     doc.rig.attach(id, bone);
+    if let Some(cell) = mesh {
+        assert!(doc.rig.add_mesh(id, bounds, cell));
+        doc.rig.auto_weights(id, true);
+    }
 }
 
 // --- the fixture -----------------------------------------------------------------
@@ -66,6 +79,10 @@ fn fixture_doc() -> (DocState, BoneId) {
     let (ik_leg, foot) = doc.rig.add_ik(shin).unwrap();
     let (ik_arm, hand) = doc.rig.add_ik(lower).unwrap();
     add_part(&mut doc, "body", IRect::new(40, 30, 16, 10), Rgba8::new(200, 60, 60, 255), spine);
+    // A mesh weighted to all nine bones (only four per vertex survive).
+    add_parts(&mut doc, "cloth", &[(IRect::new(30, 60, 30, 24), Rgba8::new(60, 160, 90, 255))], thigh, Some(8));
+    let cloth = doc.layers.last().unwrap().id();
+    doc.rig.auto_weights(cloth, false);
 
     let a = doc.rig.add_animation("loopy", 1200);
     mov(&mut doc, a, root, &[(0, 0.0, 0.0, EASE), (600, 6.0, -4.0, EASE_OUT), (1200, 0.0, 0.0, Curve::Linear)]);
@@ -126,6 +143,7 @@ fn fixture_expected(doc: &DocState, spine: BoneId) -> String {
             "t": t_ms as f64 / 1000.0,
             "bones": bones,
             "part": matrix(delta * place),
+            "mesh": rig.skin_points(&rig.meshes[0], &pose, &setup).iter().flat_map(|p| [num(p.x), num(p.y)]).collect::<Vec<_>>(),
         }));
     };
     push(None, 0);
@@ -142,7 +160,6 @@ fn fixture_expected(doc: &DocState, spine: BoneId) -> String {
 /// One arm and one leg of the sample character, with where their parts go.
 struct Limbs {
     upper: BoneId,
-    lower: BoneId,
     thigh: BoneId,
     shin: BoneId,
     /// Left edges of the arm and leg parts.
@@ -171,7 +188,7 @@ fn sample_doc() -> DocState {
         let n = if side < 0.0 { "left" } else { "right" };
         let upper = doc.rig.add_bone(format!("{n} arm"), Some(torso), 46.0, 22.0 * side, 26.0);
         doc.rig.bone_mut(upper).unwrap().rotation = 180.0;
-        let lower = doc.rig.add_bone(format!("{n} forearm"), Some(upper), 26.0, 0.0, 24.0);
+        doc.rig.add_bone(format!("{n} forearm"), Some(upper), 26.0, 0.0, 24.0);
         let thigh = doc.rig.add_bone(format!("{n} thigh"), Some(root), 14.0 * side, 0.0, 38.0);
         doc.rig.bone_mut(thigh).unwrap().rotation = 80.0;
         let shin = doc.rig.add_bone(format!("{n} shin"), Some(thigh), 38.0, 0.0, 36.0);
@@ -179,30 +196,28 @@ fn sample_doc() -> DocState {
         let (sh, sk, ss) = if near { (shirt, dark, shoe) } else { (far(shirt), far(dark), far(shoe)) };
         let ax = 128 + (22.0 * side) as i32 - 5;
         let lx = 128 + (14.0 * side) as i32 - 6;
-        Limbs { upper, lower, thigh, shin, ax, lx, sleeve: sh, trousers: sk, shoe: ss }
+        Limbs { upper, thigh, shin, ax, lx, sleeve: sh, trousers: sk, shoe: ss }
     };
     let left = limb(&mut doc, -1.0, false);
     let right = limb(&mut doc, 1.0, true);
 
     // Draw order, bottom to top: far limbs, torso, head, near limbs.
     {
-        let Limbs { upper, lower, thigh, shin, ax, lx, sleeve: sh, trousers: sk, shoe: ss } = left;
-        add_part(&mut doc, "far thigh", IRect::new(lx, 150, 12, 38), sk, thigh);
-        add_part(&mut doc, "far shin", IRect::new(lx, 188, 12, 36), sk, shin);
+        let Limbs { upper, thigh, shin, ax, lx, sleeve: sh, trousers: sk, shoe: ss, .. } = left;
+        add_parts(&mut doc, "far leg", &[(IRect::new(lx, 150, 12, 74), sk)], thigh, Some(8));
         add_part(&mut doc, "far foot", IRect::new(lx - 4, 218, 26, 8), ss, shin);
-        add_part(&mut doc, "far arm", IRect::new(ax, 102, 10, 28), sh, upper);
-        add_part(&mut doc, "far forearm", IRect::new(ax, 130, 10, 26), skin, lower);
+        let arm = [(IRect::new(ax, 102, 10, 28), sh), (IRect::new(ax, 130, 10, 26), skin)];
+        add_parts(&mut doc, "far arm", &arm, upper, Some(8));
     }
     add_part(&mut doc, "torso", IRect::new(108, 96, 40, 60), shirt, torso);
     add_part(&mut doc, "head", IRect::new(112, 56, 32, 40), skin, head);
     add_part(&mut doc, "eye", IRect::new(133, 70, 5, 5), Rgba8::new(30, 30, 40, 255), head);
     {
-        let Limbs { upper, lower, thigh, shin, ax, lx, sleeve: sh, trousers: sk, shoe: ss } = right;
-        add_part(&mut doc, "thigh", IRect::new(lx, 150, 12, 38), sk, thigh);
-        add_part(&mut doc, "shin", IRect::new(lx, 188, 12, 36), sk, shin);
+        let Limbs { upper, thigh, shin, ax, lx, sleeve: sh, trousers: sk, shoe: ss, .. } = right;
+        add_parts(&mut doc, "leg", &[(IRect::new(lx, 150, 12, 74), sk)], thigh, Some(8));
         add_part(&mut doc, "foot", IRect::new(lx - 4, 218, 26, 8), ss, shin);
-        add_part(&mut doc, "arm", IRect::new(ax, 102, 10, 28), sh, upper);
-        add_part(&mut doc, "forearm", IRect::new(ax, 130, 10, 26), skin, lower);
+        let arm = [(IRect::new(ax, 102, 10, 28), sh), (IRect::new(ax, 130, 10, 26), skin)];
+        add_parts(&mut doc, "arm", &arm, upper, Some(8));
     }
 
     let bone = |doc: &DocState, name: &str| doc.rig.bones.iter().find(|b| b.name == name).unwrap().id;

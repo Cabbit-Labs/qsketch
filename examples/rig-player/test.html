@@ -39,8 +39,17 @@
     for (const [name, want] of Object.entries(s.bones)) {
       compare(`${label} bone ${name}`, world[rig.index.get(name)], want);
     }
-    const part = rig.parts[0];
+    const part = rig.parts.find((p) => p.name === "body");
     compare(`${label} part ${part.name}`, QRig.partMatrix(rig, part, world), s.part);
+    // The meshed part: every skinned vertex.
+    const cloth = rig.parts.find((p) => p.name === "cloth");
+    const pts = QRig.meshPoints(rig, cloth, world);
+    checked++;
+    const bad = s.mesh.findIndex((want, i) => Math.abs(pts[i] - want) > 0.03);
+    if (bad >= 0 || pts.length !== s.mesh.length) {
+      failed++;
+      log.push(`FAIL ${label} mesh vertex ${bad >> 1}: got ${pts[bad]?.toFixed(3)}, want ${s.mesh[bad]?.toFixed(3)}`);
+    }
   }
   document.getElementById("summary").textContent =
     failed === 0 ? `PASS: ${checked} matrices match the editor` : `FAIL: ${failed} of ${checked} differ`;

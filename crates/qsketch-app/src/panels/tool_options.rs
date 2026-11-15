@@ -922,6 +922,8 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
     let mut anim_edit = original.clone();
     let layer = e.doc.state().active_layer();
     let (layer_id, layer_name) = (layer.id(), layer.name().to_string());
+    let layer_bounds = layer.raster.full_bounds();
+    let has_mesh = rig.mesh_of(layer_id).is_some();
     let attached = rig.attached_bone(layer_id).and_then(|b| rig.bone(b)).map(|b| b.name.clone());
     let sel_name = rui.sel.and_then(|b| rig.bone(b)).map(|b| b.name.clone());
     let key_here = rui.sel.zip(cur).is_some_and(|(b, a)| rig.key_times(a, b).contains(&rui.time_ms));
@@ -934,6 +936,7 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
     let can_add_ik = ik_info.is_none() && rui.sel.and_then(|b| rig.bone(b)).is_some_and(|b| b.parent.is_some());
     let mut ik_edit = ik_info.clone();
     let (mut add_ik, mut del_ik, mut key_ik) = (false, false, false);
+    let (mut make_mesh, mut auto_near, mut auto_all, mut del_mesh) = (false, false, false, false);
     group(ui, &theme, Section::Tools, |ui| {
         let text = cur.and_then(|a| names.get(a).cloned()).unwrap_or_else(|| "Setup pose".into());
         egui::ComboBox::from_id_salt("bone_anim").selected_text(text).width(120.0).show_ui(ui, |ui| {
@@ -1001,6 +1004,29 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
         });
     }
     group(ui, &theme, Section::Tools, |ui| {
+        ui.label("Mesh");
+        if has_mesh {
+            auto_near = ui
+                .button("Auto weights")
+                .on_hover_text("Weight each vertex to the nearest of this layer's bone, its parent and its children")
+                .clicked();
+            auto_all = ui.button("All bones").on_hover_text("Auto weights from every bone").clicked();
+            ui.toggle_value(&mut rui.weights, "Paint weights")
+                .on_hover_text("Drag on the art to add the selected bone's weight; hold Alt to remove it");
+            if rui.weights {
+                ui.add(egui::DragValue::new(&mut rui.brush).range(2.0..=200.0).prefix("size ").suffix(" px"));
+                ui.add(egui::DragValue::new(&mut rui.strength).speed(0.01).range(0.01..=1.0).prefix("strength "));
+            }
+            del_mesh = ui.button("Remove mesh").clicked();
+        } else {
+            ui.add(egui::DragValue::new(&mut rui.cell).range(4..=64).suffix(" px")).on_hover_text("Mesh cell size");
+            make_mesh = ui
+                .add_enabled(layer_bounds.is_some(), egui::Button::new("Make mesh"))
+                .on_hover_text("Lay a weighted grid over the active layer so it bends with its bones")
+                .clicked();
+        }
+    });
+    group(ui, &theme, Section::Tools, |ui| {
         let target = sel_name.as_deref();
         let label = match &attached {
             Some(b) => format!("{layer_name} → {b}"),
@@ -1023,7 +1049,9 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
     });
     hint(
         ui,
-        if cur.is_some() {
+        if rui.weights && has_mesh {
+            "Drag over the art to paint the selected bone's weight (red = fully this bone); hold Alt to remove. Click a bone to choose which. Pick an animation and scrub the time to see the mesh bend."
+        } else if cur.is_some() {
             "Drag a bone's tip to rotate it, its head or body to move it: each drag keys the pose at this time. Move an IK target to swing its limb."
         } else {
             "Drag on the canvas to add a bone (under the selected one; Alt for a new root). Drag a tip to turn or resize, a head to move."
@@ -1036,6 +1064,10 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
     e.rig_ui.time_ms = rui.time_ms;
     e.rig_ui.easing = rui.easing;
     e.rig_ui.nearest = rui.nearest;
+    e.rig_ui.weights = rui.weights;
+    e.rig_ui.brush = rui.brush;
+    e.rig_ui.strength = rui.strength;
+    e.rig_ui.cell = rui.cell;
     if anim_edit != original {
         if let (Some(a), Some(edit)) = (cur, anim_edit) {
             e.doc.state_mut().rig.animations[a] = edit;
@@ -1070,6 +1102,23 @@ fn bone_options(ui: &mut Ui, state: &mut AppState) {
             e.doc.state_mut().rig.remove_keys_at(a, b, time);
             e.doc.commit("Delete Keys");
         }
+    } else if make_mesh {
+        if let Some(b) = layer_bounds {
+            let rig = &mut e.doc.state_mut().rig;
+            if rig.add_mesh(layer_id, b, rui.cell) {
+                if rig.attached_bone(layer_id).is_some() {
+                    rig.auto_weights(layer_id, true);
+                }
+                e.doc.commit("Make Mesh");
+            }
+        }
+    } else if auto_near || auto_all {
+        e.doc.state_mut().rig.auto_weights(layer_id, auto_near);
+        e.doc.commit("Auto Weights");
+    } else if del_mesh {
+        e.doc.state_mut().rig.remove_mesh(layer_id);
+        e.rig_ui.weights = false;
+        e.doc.commit("Remove Mesh");
     } else if add_ik {
         if let Some((_, target)) = sel.and_then(|b| e.doc.state_mut().rig.add_ik(b)) {
             e.rig_ui.sel = Some(target);

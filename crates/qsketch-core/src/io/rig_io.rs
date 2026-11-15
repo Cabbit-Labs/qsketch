@@ -120,10 +120,13 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         }
         let mut l = l.clone();
         l.apply_mask();
-        let Some(b) = l.raster.full_bounds() else {
+        let Some(content) = l.raster.full_bounds() else {
             skipped.push(l.name().to_string());
             continue;
         };
+        // A meshed part's picture is exactly its mesh's rectangle.
+        let mesh = rig.mesh_of(l.id());
+        let b = mesh.map_or(content, |m| m.rect);
         let name = unique(&mut part_names, l.name(), "part");
         let mut file = format!("parts/{}.png", file_stem(&name));
         let mut n = 2;
@@ -140,7 +143,7 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
             Some(inv) => inv * place,
             None => place,
         };
-        parts.push(json!({
+        let mut part = json!({
             "name": name,
             "bone": bone.and_then(name_of),
             "image": file,
@@ -149,7 +152,34 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
             "transform": [transform.a, transform.b, transform.c, transform.d, transform.e, transform.f],
             "opacity": l.props.opacity,
             "blend": format!("{:?}", l.props.blend).to_lowercase(),
-        }));
+        });
+        if let Some(m) = mesh {
+            // Bones are listed once, vertices refer to them by position:
+            // each vertex is [bone, weight, bone, weight, ...].
+            let mut palette: Vec<BoneId> = Vec::new();
+            let vertices: Vec<Value> = m
+                .weights
+                .iter()
+                .map(|w| {
+                    let mut flat = Vec::new();
+                    for inf in w {
+                        if name_of(inf.bone).is_none() {
+                            continue;
+                        }
+                        let at = palette.iter().position(|b| *b == inf.bone).unwrap_or_else(|| {
+                            palette.push(inf.bone);
+                            palette.len() - 1
+                        });
+                        flat.push(json!(at));
+                        flat.push(json!(inf.weight));
+                    }
+                    Value::Array(flat)
+                })
+                .collect();
+            let bones: Vec<String> = palette.iter().filter_map(|b| name_of(*b)).collect();
+            part["mesh"] = json!({ "cols": m.cols, "rows": m.rows, "bones": bones, "vertices": vertices });
+        }
+        parts.push(part);
     }
 
     // IK constraints, with unique names.

@@ -32,7 +32,10 @@ Shape, text and smart-object layers are exported as their drawn pixels.
       "image": "parts/body.png", "width": 40, "height": 60,
       "x": 108, "y": 140,               // top-left in the setup pose (world)
       "transform": [a, b, c, d, e, f],  // see below
-      "opacity": 1.0, "blend": "normal" }
+      "opacity": 1.0, "blend": "normal",
+      "mesh": { "cols": 4, "rows": 3,   // optional: see "Meshes"
+                "bones": ["thigh", "shin"],
+                "vertices": [ [0, 1.0], [0, 0.7, 1, 0.3], ... ] } }
   ],
   "animations": {
     "walk": {
@@ -120,9 +123,42 @@ been animated, working on the local rotations:
 
 Then compute the final world matrices as usual and draw the parts.
 
+## Meshes
+
+A part with a `mesh` bends instead of moving as one piece. Its image is
+covered by a grid of `cols × rows` cells, so `(cols + 1) × (rows + 1)`
+vertices, numbered row by row: vertex `v` is column `i = v mod (cols + 1)`,
+row `j = floor(v / (cols + 1))`.
+
+* The vertex's picture position (texture coordinate) is
+  `(width · i / cols, height · j / rows)` in image pixels.
+* Its **setup position** is `P = (x + width · i / cols, y + height · j / rows)`
+  in canvas space (`x`, `y`, `width`, `height` are the part's).
+* `mesh.bones` lists bone names; `vertices[v]` is a flat list
+  `[bone, weight, bone, weight, …]` where `bone` indexes `mesh.bones`. A
+  vertex has at most four influences. An empty list means the vertex is not
+  attached to anything and stays at `P`.
+
+A vertex's posed position blends how far each of its bones has moved from the
+setup pose. Compute every bone's setup-pose world matrix `setup(b)` once (pose
+the skeleton with no animation), then
+
+```
+delta(b)  = world(b) · setup(b)⁻¹
+position  = Σ weight · delta(b)(P)  /  Σ weight
+```
+
+(divide by the weight sum so weights need not add to exactly 1). Draw each
+cell as two triangles, `(v00, v10, v01)` and `(v10, v11, v01)` where `v10` is
+the vertex to the right of `v00` and `v01` the one below it, mapping the image
+triangle with the texture coordinates onto the triangle at the posed
+positions. **A meshed part ignores `bone` and `transform`**; the weights are
+the whole story. Its image is exactly the mesh rectangle, so the grid always
+covers it.
+
 ## Drawing a part
 
-For a part attached to a bone, draw its image (pixel (0,0) at the top-left)
+For a part without a `mesh` that is attached to a bone, draw its image (pixel (0,0) at the top-left)
 with the matrix
 
 ```

@@ -9,7 +9,7 @@ JavaScript, no build step, no dependencies.
 | `rig-runtime.js` | The posing math: curves, animation sampling, two-bone IK, part matrices. Knows nothing about the DOM, so it is the piece to port to another engine. |
 | `player.js`, `index.html` | A canvas player: pick an animation, play, scrub, change speed, show the bones. |
 | `test.html` | Checks the runtime against the editor (see below). |
-| `sample/` | A small character exported from qSketch (idle, walk with IK legs, wave). |
+| `sample/` | A small character exported from qSketch (idle, walk with IK legs, wave); its arms and legs are meshes that bend at the elbow and knee. |
 | `fixture/` | A rig using every feature, and the matrices the editor computes for it. |
 
 ## Run it
@@ -46,9 +46,10 @@ pose. Blend names map to Canvas modes with `QRig.canvasBlend(part.blend)`.
 ## Does it match the editor?
 
 Open `test.html` (through the server). It poses `fixture/rig.json` in the
-setup pose and at 18 times in each animation, and checks all 370 matrices against what qSketch's
+setup pose and at 18 times in each animation, and checks all 407 results: every
+bone matrix, one part's matrix, and every skinned vertex of a mesh against what qSketch's
 own rig code computed (`fixture/expected.json`). The fixture covers Bézier and
-stepped easing, scale keys, IK with a keyed mix and a stepped bend flip, a
+stepped easing, scale keys, a mesh weighted to all nine bones, IK with a keyed mix and a stepped bend flip, a
 leg reaching out of range, a looping and a non-looping animation, times past
 the end and a part attached to a bone.
 
@@ -64,6 +65,9 @@ and run `test.html` again.
 
 ## Not covered
 
+* Meshes are drawn as textured triangles with a slightly grown clip, which
+  hides seams but is not a substitute for a real GPU mesh renderer. The test
+  checks mesh vertex positions, not pixels.
 * The sample only shows the Canvas 2D blend modes; Linear Burn, Subtract and
   Divide fall back to normal.
 * Layer effects, masks and adjustment layers are not exported, so they are not

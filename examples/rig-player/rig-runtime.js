@@ -10,6 +10,7 @@
  *   const rig = QRig.load(json);                     // parse once
  *   const world = QRig.pose(rig, "walk", seconds);   // one matrix per bone
  *   const m = QRig.partMatrix(rig, part, world);     // image pixels -> canvas
+ *   QRig.meshPoints(rig, part, world)                // parts with a `mesh`: vertices
  *   QRig.pose(rig, null, 0)                          // the setup pose
  */
 (function (root) {
@@ -219,6 +220,66 @@
     return worlds(rig.bones, locals);
   }
 
+  function inverse(m) {
+    const det = m.a * m.d - m.b * m.c;
+    const a = m.d / det;
+    const b = -m.b / det;
+    const c = -m.c / det;
+    const d = m.a / det;
+    return { a, b, c, d, e: -(a * m.e + c * m.f), f: -(b * m.e + d * m.f) };
+  }
+
+  /**
+   * Where a meshed part's vertices are under `world` (see "Meshes" in the
+   * doc): a Float64Array of x, y pairs in canvas space, row-major with
+   * (cols + 1) vertices per row. Each vertex blends how far its bones have
+   * moved from the setup pose.
+   */
+  function meshPoints(rig, part, world) {
+    const mesh = part.mesh;
+    if (!rig.setupInverse) {
+      rig.setupInverse = pose(rig, null, 0).map(inverse);
+    }
+    const deltas = mesh.bones.map((name) => {
+      const i = rig.index.get(name);
+      return mul(world[i], rig.setupInverse[i]);
+    });
+    const stride = mesh.cols + 1;
+    const out = new Float64Array(mesh.vertices.length * 2);
+    mesh.vertices.forEach((influences, v) => {
+      const px = part.x + (part.width * (v % stride)) / mesh.cols;
+      const py = part.y + (part.height * Math.floor(v / stride)) / mesh.rows;
+      let x = 0;
+      let y = 0;
+      let sum = 0;
+      for (let k = 0; k < influences.length; k += 2) {
+        const q = apply(deltas[influences[k]], px, py);
+        x += q.x * influences[k + 1];
+        y += q.y * influences[k + 1];
+        sum += influences[k + 1];
+      }
+      out[v * 2] = sum > 0 ? x / sum : px;
+      out[v * 2 + 1] = sum > 0 ? y / sum : py;
+    });
+    return out;
+  }
+
+  /** The mesh's triangles as [i0, i1, i2] vertex indices, two per cell. */
+  function meshTriangles(mesh) {
+    const tris = [];
+    const stride = mesh.cols + 1;
+    for (let j = 0; j < mesh.rows; j++) {
+      for (let i = 0; i < mesh.cols; i++) {
+        const v00 = j * stride + i;
+        const v10 = v00 + 1;
+        const v01 = v00 + stride;
+        const v11 = v01 + 1;
+        tris.push([v00, v10, v01], [v10, v11, v01]);
+      }
+    }
+    return tris;
+  }
+
   /** The matrix that draws `part`'s image (pixel 0,0 at its top-left). */
   function partMatrix(rig, part, world) {
     const [a, b, c, d, e, f] = part.transform;
@@ -250,7 +311,9 @@
   };
   const canvasBlend = (name) => BLEND[name] || "source-over";
 
-  const QRig = { IDENTITY, mul, apply, trs, wrap180, ease, sample, load, pose, partMatrix, canvasBlend };
+  const QRig = {
+    IDENTITY, mul, apply, inverse, trs, wrap180, ease, sample, load, pose, partMatrix, meshPoints, meshTriangles, canvasBlend,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = QRig;
   else root.QRig = QRig;
 })(typeof self !== "undefined" ? self : this);
