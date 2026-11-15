@@ -8,6 +8,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# A newer push supersedes an older run of the same branch or PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   fmt:
     name: rustfmt
@@ -19,15 +24,17 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
-  clippy:
-    name: clippy
+  # clippy and the tests share one checkout, one apt install and one build
+  # cache, so they run in a single job (clippy first: it fails fastest).
+  test:
+    name: test (ubuntu-latest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install native dependencies (eframe/wgpu windowing)
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev \
             libxi-dev libxcursor-dev libxrandr-dev libgl1-mesa-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
@@ -39,21 +46,17 @@ jobs:
         run: cargo clippy -p qsketch-core --all-targets -- -D warnings
       - name: clippy (qsketch, deny warnings)
         run: cargo clippy -p qsketch --all-targets -- -D warnings
+      - run: cargo test --workspace --all-targets
 
-  test:
-    name: test (ubuntu-latest)
+  # The branch ruleset still requires a check named "clippy". The real
+  # clippy run is the test job above; this reports its result under the
+  # old name so the ruleset stays satisfiable until it is edited.
+  clippy:
+    name: clippy
+    needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install native dependencies (eframe/wgpu windowing)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev \
-            libxi-dev libxcursor-dev libxrandr-dev libgl1-mesa-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --all-targets
+      - run: echo "clippy ran (deny warnings) inside the test job"
 
   build-windows:
     name: build (windows-latest, MSVC)
@@ -62,9 +65,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release -p qsketch
+      # Fast profile (see Cargo.toml); releases are built by release.yml.
+      - run: cargo build --profile ci -p qsketch
       - uses: actions/upload-artifact@v4
         with:
           name: qsketch-windows-x86_64
-          path: target/release/qsketch.exe
+          path: target/ci/qsketch.exe
           if-no-files-found: error

@@ -62,6 +62,14 @@ panic = "unwind"
 inherits = "release"
 panic = "abort"
 
+# CI's per-push Windows build: proves the app compiles and links on MSVC
+# without paying for LTO (release.yml builds the real optimized binary).
+[profile.ci]
+inherits = "release"
+opt-level = 1
+lto = "off"
+codegen-units = 16
+
 [profile.dev]
 opt-level = 1
 
