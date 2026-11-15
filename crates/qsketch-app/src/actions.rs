@@ -103,6 +103,7 @@ actions! {
     ExportScaled8 => (File, "Export at 8×…", []),
     ExportTileset => (File, "Export Tileset…", []),
     ExportAnimation => (File, "Export Animation…", ["Ctrl+Alt+Shift+A"]),
+    RigAnimation => (File, "Rig Animation…", []),
     ImportFrames => (File, "Import Frames from Files…", []),
     ImportSpriteSheet => (File, "Import Sprite Sheet…", []),
     ExportSlices => (File, "Export Slices…", []),

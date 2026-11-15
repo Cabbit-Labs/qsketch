@@ -6,6 +6,7 @@ pub mod anim;
 pub mod filter;
 pub mod layer_style;
 pub mod liquify;
+pub mod rig;
 pub mod settings;
 pub mod share;
 pub mod trace;
@@ -232,6 +233,7 @@ pub struct Dialogs {
     pub cel_props: Option<anim::CelPropsDialog>,
     pub import_sheet: Option<anim::ImportSheetDialog>,
     pub export_anim: Option<anim::ExportAnimDialog>,
+    pub rig: Option<rig::RigDialog>,
     pub about: bool,
     /// Autosave snapshots found at startup, offered for recovery.
     pub recover: Option<Vec<crate::autosave::Recoverable>>,
@@ -259,6 +261,7 @@ impl Dialogs {
             || self.cel_props.is_some()
             || self.import_sheet.is_some()
             || self.export_anim.is_some()
+            || self.rig.is_some()
             || self.layer_props.is_some()
             || self.close_confirm.is_some()
             || self.save_confirm.is_some()
@@ -316,6 +319,7 @@ pub fn show_all(ctx: &Context, state: &mut AppState) {
     layer_style::show(ctx, state);
     adjustment::show(ctx, state);
     anim::show(ctx, state);
+    rig::show(ctx, state);
     show_about(ctx, state);
     show_update(ctx, state);
     show_recover(ctx, state);

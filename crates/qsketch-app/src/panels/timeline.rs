@@ -251,6 +251,7 @@ pub fn animation_menu(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     item(ui, state, Action::ImportFrames, true);
     item(ui, state, Action::ImportSpriteSheet, true);
     item(ui, state, Action::ExportAnimation, true);
+    item(ui, state, Action::RigAnimation, true);
 }
 
 /// Layer rows top to bottom, hiding members of collapsed groups.

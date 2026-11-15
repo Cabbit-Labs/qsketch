@@ -393,6 +393,38 @@ impl Rig {
         }
     }
 
+    /// A bone's animated offsets at `t_ms` in animation `anim`: translate,
+    /// rotate (degrees) and scale (factor); no keys means no change.
+    pub fn offsets(&self, anim: usize, bone: BoneId, t_ms: u32) -> ([f32; 2], f32, [f32; 2]) {
+        let Some(a) = self.animations.get(anim) else { return ([0.0; 2], 0.0, [1.0; 2]) };
+        let t = a.local_time(t_ms);
+        match a.tracks.iter().find(|tr| tr.bone == bone) {
+            Some(tr) => (
+                sample(&tr.translate, t).unwrap_or([0.0; 2]),
+                sample(&tr.rotate, t).unwrap_or(0.0),
+                sample(&tr.scale, t).unwrap_or([1.0; 2]),
+            ),
+            None => ([0.0; 2], 0.0, [1.0; 2]),
+        }
+    }
+
+    /// The times (ms) at which `bone` has any key in animation `anim`.
+    pub fn key_times(&self, anim: usize, bone: BoneId) -> Vec<u32> {
+        let Some(tr) = self.animations.get(anim).and_then(|a| a.tracks.iter().find(|t| t.bone == bone)) else {
+            return Vec::new();
+        };
+        let mut v: Vec<u32> = tr
+            .translate
+            .iter()
+            .map(|k| k.time_ms)
+            .chain(tr.rotate.iter().map(|k| k.time_ms))
+            .chain(tr.scale.iter().map(|k| k.time_ms))
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
     /// World transform of every bone (in `bones` order). With an animation,
     /// its keys at `t_ms` are applied on top of the setup pose.
     pub fn pose(&self, anim: Option<(usize, u32)>) -> Vec<Xf> {
