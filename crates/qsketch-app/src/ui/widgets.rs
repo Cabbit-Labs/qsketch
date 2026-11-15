@@ -154,7 +154,11 @@ pub fn labeled_slider(
 /// true when either changed the value.
 pub fn quick_values(resp: &Response, value: &mut f32, default: f32, presets: &[f32], suffix: &str, dbl: bool) -> bool {
     let mut changed = false;
-    if dbl && resp.double_clicked() {
+    // A slider takes the press itself, so its own response never reports the
+    // double click; read it from the pointer while the pointer is over it.
+    let double = resp.double_clicked()
+        || (resp.hovered() && resp.ctx.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)));
+    if dbl && double {
         *value = default;
         changed = true;
     }
