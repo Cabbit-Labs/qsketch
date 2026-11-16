@@ -77,6 +77,17 @@ impl CanvasView {
         Pt::new(r.x / (self.zoom * self.aspect), r.y / self.zoom)
     }
 
+    /// Whether the whole document would show in a viewport of `size` (with
+    /// the view's center in the middle of it).
+    pub fn shows_all(&self, size: Vec2, doc_w: u32, doc_h: u32) -> bool {
+        let (w, h) = (doc_w as f32, doc_h as f32);
+        let c = self.viewport.center();
+        [Pt::new(0.0, 0.0), Pt::new(w, 0.0), Pt::new(0.0, h), Pt::new(w, h)].into_iter().all(|p| {
+            let d = self.doc_to_screen(p) - c;
+            d.x.abs() <= size.x / 2.0 + 0.5 && d.y.abs() <= size.y / 2.0 + 0.5
+        })
+    }
+
     /// Fit the whole document in the viewport with a small margin.
     pub fn fit(&mut self, doc_w: u32, doc_h: u32) {
         let vp = self.viewport;

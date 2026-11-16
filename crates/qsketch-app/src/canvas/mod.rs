@@ -56,10 +56,20 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
     // --- view setup -------------------------------------------------------
     {
         let Some(entry) = state.doc_mut(doc_id) else { return };
+        let old = entry.view.viewport.size();
         entry.view.viewport = rect;
         entry.view.aspect = entry.doc.state().aspect();
+        let (w, h) = (entry.doc.width(), entry.doc.height());
         if !entry.view.initialized {
-            let (w, h) = (entry.doc.width(), entry.doc.height());
+            entry.view.fit(w, h);
+        } else if old.x > 1.0
+            && (old - rect.size()).abs().max_elem() > 8.0
+            && entry.view.shows_all(old, w, h)
+            && !entry.view.shows_all(rect.size(), w, h)
+        {
+            // The canvas shrank (a panel opened under it, the window got
+            // smaller) and now cuts off a document that showed whole: fit it
+            // again, so opening the Rig panel doesn't hide the top and bottom.
             entry.view.fit(w, h);
         }
     }
@@ -241,7 +251,11 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                             && !tools::floating::selection_hit(state, doc_id, *pos)
                             && !matches!(
                                 state.tool,
-                                ToolKind::Move | ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView
+                                ToolKind::Move
+                                    | ToolKind::Hand
+                                    | ToolKind::Zoom
+                                    | ToolKind::RotateView
+                                    | ToolKind::Bone
                             )
                             && state.floating.is_none()
                         {

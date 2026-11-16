@@ -121,12 +121,18 @@
       bend: c.bend,
       mix: c.mix,
     }));
+    // Drives (gears): drive[i] is the bone that turns bone i, or null.
+    const drive = bones.map(() => null);
+    for (const d of json.drives || []) {
+      drive[index.get(d.bone)] = { source: index.get(d.source), ratio: d.ratio };
+    }
     return {
       json,
       canvas: json.canvas,
       bones,
       index,
       ik,
+      drive,
       parts: json.parts,
       animations: json.animations || {},
     };
@@ -210,6 +216,22 @@
       }
       return l;
     });
+    if (anim && rig.drive.some((d) => d)) {
+      // A driven bone also turns by `ratio` times what its source is turned
+      // by: the source's own rotate keys plus the source's drive.
+      const keyed = rig.bones.map((b) => {
+        const tr = anim.bones[b.name];
+        const ro = tr && sample(tr.rotate, t, ["angle"]);
+        return ro ? ro.angle : 0;
+      });
+      rig.bones.forEach((_, i) => {
+        let factor = 1;
+        for (let d = rig.drive[i], n = 0; d && n < rig.bones.length; d = rig.drive[d.source], n++) {
+          factor *= d.ratio;
+          locals[i].rot += factor * keyed[d.source];
+        }
+      });
+    }
     if (anim) {
       for (const c of rig.ik) {
         const keys = anim.ik && anim.ik[c.name];

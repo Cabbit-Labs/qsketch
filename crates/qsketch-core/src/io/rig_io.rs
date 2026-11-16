@@ -261,6 +261,13 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         ik.push(json!({ "name": name, "bones": [p, ch], "target": t, "bend": c.bend, "mix": c.mix }));
     }
 
+    // Drives (gears): a bone turned by another.
+    let drives: Vec<Value> = rig
+        .drives
+        .iter()
+        .filter_map(|d| Some(json!({ "bone": name_of(d.bone)?, "source": name_of(d.source)?, "ratio": d.ratio })))
+        .collect();
+
     // Animations.
     let mut anim_names: Vec<String> = Vec::new();
     let mut animations = serde_json::Map::new();
@@ -318,6 +325,9 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         "parts": parts,
         "animations": Value::Object(animations),
     });
+    if !drives.is_empty() {
+        out["drives"] = json!(drives);
+    }
     if frame_images > 0 {
         let secs: Vec<f64> = (0..nframes).map(|f| doc.frame_duration(f) as f64 / 1000.0).collect();
         out["frames"] = json!(secs);
@@ -434,6 +444,20 @@ mod tests {
             }
             w
         };
+        // Drives: a bone also turns by `ratio` times what its source is
+        // turned by (the source's own keys plus the source's drive).
+        if let Some(drives) = j["drives"].as_array() {
+            let keyed = |name: &str| sample(&j["animations"][anim]["bones"][name]["rotate"], "angle", t, 0.0);
+            for b in locals.iter_mut() {
+                let (mut cur, mut factor) = (b.name.clone(), 1.0);
+                for _ in 0..drives.len() {
+                    let Some(d) = drives.iter().find(|d| d["bone"] == cur.as_str()) else { break };
+                    factor *= f(&d["ratio"]);
+                    cur = d["source"].as_str().unwrap().to_string();
+                    b.rot += factor * keyed(&cur);
+                }
+            }
+        }
         let ang = |m: Xf| m.b.atan2(m.a);
         let wrap = |d: f32| (d + 540.0).rem_euclid(360.0) - 180.0;
         for c in j["ik"].as_array().unwrap() {
@@ -518,6 +542,43 @@ mod tests {
     /// must agree with the editor's solver (including a half mix, and a
     /// keyed mix that changes over time).
     #[test]
+    fn the_documented_drives_match_the_editor() {
+        // Three meshed gears: the big one is keyed, the others are driven
+        // (the small one through the middle one) and one adds its own turn.
+        let mut doc = DocState::new(64, 64, None);
+        let big = doc.rig.add_bone("big", None, 20.0, 30.0, 20.0);
+        let mid = doc.rig.add_bone("mid", None, 50.0, 30.0, 10.0);
+        let small = doc.rig.add_bone("small", None, 50.0, 15.0, 5.0);
+        assert!(doc.rig.set_drive(mid, big, -2.0));
+        assert!(doc.rig.set_drive(small, mid, -2.0));
+        assert!(!doc.rig.set_drive(big, small, 1.0), "no loops");
+        let a = doc.rig.add_animation("a", 1000);
+        doc.rig.set_key(a, big, 0, KeyValue::Rotate(0.0), Curve::Linear);
+        doc.rig.set_key(a, big, 1000, KeyValue::Rotate(360.0), Curve::Linear);
+        doc.rig.set_key(a, mid, 0, KeyValue::Rotate(10.0), Curve::Linear);
+        // A quarter of the way: big 90, mid 10 - 180, small -2 * (10 - 180).
+        let pose = doc.rig.pose(Some((a, 250)));
+        let deg = |m: Xf| m.b.atan2(m.a).to_degrees();
+        let same = |x: f32, y: f32| ((x - y + 540.0).rem_euclid(360.0) - 180.0).abs() < 1e-2;
+        assert!(same(deg(pose[0]), 90.0) && same(deg(pose[1]), -170.0) && same(deg(pose[2]), 340.0));
+        assert!(doc.rig.pose(None).iter().all(|m| same(deg(*m), 0.0)), "the setup pose is not driven");
+
+        let j = exported(&doc);
+        assert_eq!(j["drives"][1]["source"], "mid");
+        for t_ms in [0u32, 250, 610, 990] {
+            let world = runtime_pose(&j, "a", t_ms as f32 / 1000.0);
+            let pose = doc.rig.pose(Some((a, t_ms)));
+            for (i, (name, w)) in world.iter().enumerate() {
+                let close = |x: f32, y: f32| (x - y).abs() < 1e-2;
+                assert!(close(w.a, pose[i].a) && close(w.b, pose[i].b), "{name} at {t_ms} ms: {w:?} vs {:?}", pose[i]);
+            }
+        }
+        // Deleting a bone drops the drives it is part of.
+        doc.rig.remove_bone(mid);
+        assert!(doc.rig.drives.is_empty());
+    }
+
+    #[test]
     fn the_documented_ik_matches_the_editor() {
         let mut doc = DocState::new(64, 64, None);
         let upper = doc.rig.add_bone("upper", None, 10.0, 30.0, 12.0);
@@ -535,7 +596,9 @@ mod tests {
 
         let j = exported(&doc);
         assert_eq!(j["ik"][0]["target"], "fore target");
-        for t_ms in [0u32, 300, 700, 1000] {
+        // Not the very end: a looping runtime wraps it to the start, while
+        // the editor's playhead parked there shows the last key.
+        for t_ms in [0u32, 300, 700, 990] {
             let world = runtime_pose(&j, "a", t_ms as f32 / 1000.0);
             let pose = doc.rig.pose(Some((a, t_ms)));
             for (i, (name, w)) in world.iter().enumerate() {

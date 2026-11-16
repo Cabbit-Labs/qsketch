@@ -24,6 +24,9 @@ Shape, text and smart-object layers are exported as their drawn pixels.
     { "name": "root", "parent": null, "x": 128, "y": 200,
       "rotation": 0, "scaleX": 1, "scaleY": 1, "length": 30 }
   ],
+  "drives": [                      // optional; absent = none. See "Drives"
+    { "bone": "small gear", "source": "big gear", "ratio": -2 }
+  ],
   "ik": [                          // optional; absent = none
     { "name": "ik 1", "bones": ["thigh", "shin"], "target": "foot target",
       "bend": 1, "mix": 1 }
@@ -91,6 +94,27 @@ Between keys, interpolate linearly after easing the progress with the
 * `[x1, y1, x2, y2]`: a cubic Bézier from (0,0) to (1,1) with those control
   points; x is the time fraction, y the progress. Solve x(s) = t for s, then
   use y(s).
+
+## Drives (gears)
+
+A drive makes one bone turn with another, like meshed gears or a belt. Each
+entry of `drives` names the driven `bone`, its `source` and a `ratio`; a bone
+has at most one drive and drives never form a loop.
+
+In an animation, after sampling the timelines and before IK:
+
+```
+turned(bone) = rotate key of bone at the playhead (0 without keys)
+             + ratio · turned(source)        // when the bone has a drive
+rotation     = setup rotation + turned(bone)
+```
+
+So the driven bone adds `ratio` times everything its source is turned by,
+including what the source's own drive adds (a train of gears), on top of its
+own keys. A ratio of `-2` is a gear half the size of the one it meshes with.
+Drives do nothing in the setup pose. For a loop to stay seamless the keyed
+bone should end a whole number of turns from where it starts, with ratios
+that keep the driven bones on whole turns too.
 
 ## Two-bone IK
 

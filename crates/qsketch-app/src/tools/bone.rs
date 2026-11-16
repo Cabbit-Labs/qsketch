@@ -64,6 +64,12 @@ pub struct RigUi {
     pub sync_frames: bool,
     /// The document frame as of the last sync (to notice Timeline changes).
     synced_frame: Option<usize>,
+    /// A new bone takes the active layer when that layer follows no bone
+    /// yet: the layer is attached to it and the bone gets the layer's name.
+    pub adopt: bool,
+    /// A bone pose copied in the Rig panel: its move, turn and scale (each
+    /// only when the bone keys it), to paste at another time or bone.
+    pub pose_clip: Option<[Option<qsketch_core::KeyValue>; 3]>,
     /// The opacity the Key button in the Rig panel keys for the active layer.
     pub alpha_key: f32,
     /// The animation preview is playing; `play_frac` carries the part of a
@@ -88,6 +94,8 @@ impl Default for RigUi {
             strength: 0.25,
             cell: 12,
             sync_frames: true,
+            adopt: true,
+            pose_clip: None,
             synced_frame: None,
             alpha_key: 1.0,
             playing: false,
@@ -205,7 +213,10 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                 let head = parent.and_then(|p| setup_tip(entry, p)).unwrap_or(inp.doc);
                 BoneGesture::Create { parent, head }
             } else {
-                match hit_test(entry, inp.screen) {
+                // In the setup pose Ctrl always starts a new root bone, even
+                // on top of another bone (two clock hands on one axle).
+                let hit = if !animating && alt_like(&inp.mods) { None } else { hit_test(entry, inp.screen) };
+                match hit {
                     Some(hit) => {
                         let (bone, drag) = match hit {
                             // Alt on a tip in an animation scales instead of turning.
@@ -289,6 +300,9 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                         let id = rig.add_bone(name, parent, local.x, local.y, 1.0);
                         rig.drag_bone(None, 0, id, BoneDrag::AimStretch, inp.doc, Curve::Linear);
                         entry.rig_ui.sel = Some(id);
+                        if entry.rig_ui.adopt {
+                            adopt_active_layer(entry, id);
+                        }
                         entry.doc.commit("Add Bone");
                     }
                 }
@@ -422,6 +436,28 @@ fn paint_at(entry: &mut DocEntry, at: Pt, remove: bool) {
             .collect()
     };
     entry.doc.state_mut().rig.paint_weights(layer, bone, &hits, remove);
+}
+
+/// Attach the active layer to the new bone `id` and name the bone after it,
+/// when the layer has a picture and follows no bone yet.
+fn adopt_active_layer(entry: &mut DocEntry, id: BoneId) {
+    let s = entry.doc.state();
+    let layer = s.active_layer();
+    let (lid, name) = (layer.id(), layer.name().to_string());
+    let has_art = layer.raster.full_bounds().is_some() || layer.cels.iter().any(|c| c.image.full_bounds().is_some());
+    if !has_art || s.rig.attached_bone(lid).is_some() {
+        return;
+    }
+    let rig = &mut entry.doc.state_mut().rig;
+    let name = if rig.bones.iter().any(|b| b.name == name) {
+        (2..).map(|n| format!("{name} {n}")).find(|n| rig.bones.iter().all(|b| &b.name != n)).unwrap_or(name)
+    } else {
+        name
+    };
+    if let Some(b) = rig.bone_mut(id) {
+        b.name = name;
+    }
+    rig.attach(lid, id);
 }
 
 fn unique_bone_name(rig: &Rig) -> String {

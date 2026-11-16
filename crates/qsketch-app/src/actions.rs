@@ -107,6 +107,7 @@ actions! {
     ExportRig => (File, "Export Rig for Games…", []),
     ImportFrames => (File, "Import Frames from Files…", []),
     ImportSpriteSheet => (File, "Import Sprite Sheet…", []),
+    ImportLayers => (File, "Import Images as Layers…", []),
     ExportSlices => (File, "Export Slices…", []),
     QuickExport => (File, "Quick Export", ["Ctrl+Alt+E"]),
     ToggleTimelapse => (File, "Record Timelapse", []),

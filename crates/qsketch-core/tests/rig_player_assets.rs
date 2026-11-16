@@ -175,8 +175,13 @@ fn fixture_expected(doc: &DocState, spine: BoneId) -> String {
         }));
     };
     push(None, 0);
-    for a in 0..rig.animations.len() {
+    for (a, an) in rig.animations.iter().enumerate() {
         for t in [0, 50, 200, 399, 400, 450, 599, 600, 601, 700, 800, 900, 1000, 1100, 1199, 1200, 1500, 2500] {
+            // Not the very end of a loop: a runtime wraps it to the start,
+            // while the editor's playhead parked there shows the last key.
+            if an.looped && t == an.duration_ms {
+                continue;
+            }
             push(Some(a), t);
         }
     }

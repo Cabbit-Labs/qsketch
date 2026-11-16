@@ -105,7 +105,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         ui.add_space(gap);
         ui.vertical(|ui| {
             // --- sliders -------------------------------------------------
-            let hex_focused = ui.memory(|m| m.has_focus(ui.id().with("hex_edit")));
+            // One id for the field and this check: the field is added inside a
+            // nested layout, whose own `ui.id()` differs.
+            let hex_id = ui.id().with("hex_edit");
+            let hex_focused = ui.memory(|m| m.has_focus(hex_id));
             if !hex_focused {
                 hex = current.to_hex();
             }
@@ -158,11 +161,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     }
                 }
                 ui.label("Hex");
-                let te = ui.add(
-                    egui::TextEdit::singleline(&mut hex)
-                        .id(ui.id().with("hex_edit"))
-                        .desired_width(slider_w.min(110.0)),
-                );
+                let te = ui.add(egui::TextEdit::singleline(&mut hex).id(hex_id).desired_width(slider_w.min(110.0)));
                 if te.changed() {
                     if let Some(c) = Rgba8::from_hex(&hex) {
                         hsv = c.to_hsv();

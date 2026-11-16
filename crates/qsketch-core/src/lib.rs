@@ -63,8 +63,8 @@ pub use mask::Mask;
 pub use palette::Palette;
 pub use raster::{Raster, Tile, TILE, TILE_BYTES, TILE_PX};
 pub use rig::{
-    Attachment, Bone, BoneDrag, BoneId, BoneTrack, Curve, IkConstraint, IkTrack, IkValue, Key, KeyValue, Rig, RigAnim,
-    Xf,
+    Attachment, Bone, BoneDrag, BoneId, BoneTrack, Curve, Drive, IkConstraint, IkTrack, IkValue, Key, KeyValue, Rig,
+    RigAnim, Xf,
 };
 pub use rigmesh::{Influence, PartMesh};
 pub use slice::Slice;

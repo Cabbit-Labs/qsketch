@@ -351,7 +351,11 @@ impl QSketchApp {
         let quick_move_held = {
             let mods = ctx.input(|i| i.modifiers);
             self.state.settings.mouse.quick_move_modifiers_held(mods)
-                && !matches!(self.state.tool, ToolKind::Move | ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView)
+                // The Bone tool uses Ctrl itself (new root bone, scale, remove weight).
+                && !matches!(
+                    self.state.tool,
+                    ToolKind::Move | ToolKind::Hand | ToolKind::Zoom | ToolKind::RotateView | ToolKind::Bone
+                )
         };
         let in_stroke = self.state.session.is_some();
         let middle_down = ctx.input(|i| i.pointer.middle_down());
@@ -937,6 +941,7 @@ impl QSketchApp {
                 menus::submenu(ui, false, "Import", |ui| {
                     self.menu_item(ui, Action::ImportFrames, true);
                     self.menu_item(ui, Action::ImportSpriteSheet, true);
+                    self.menu_item(ui, Action::ImportLayers, true);
                 });
                 let has_slices = self.state.active().is_some_and(|d| !d.doc.state().slices.is_empty());
                 self.menu_item(ui, Action::ExportSlices, has_slices);
@@ -2638,6 +2643,7 @@ impl QSketchApp {
                 }
             }
             Action::ImportFrames => crate::anim::import_frames(&mut self.state),
+            Action::ImportLayers => crate::anim::import_layers(&mut self.state),
             Action::ImportSpriteSheet => crate::anim::import_sheet(&mut self.state),
             Action::ToggleOnionSkin => {
                 let o = &mut self.state.settings.anim.onion;

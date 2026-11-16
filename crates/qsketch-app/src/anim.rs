@@ -580,6 +580,73 @@ pub fn import_frames(state: &mut AppState) {
     }
 }
 
+/// Pick image files and add each as a layer named after its file, above the
+/// active layer in file-name order (the first file lowest). With no document
+/// open they become a new one, sized to hold the largest picture. This is how
+/// parts drawn elsewhere come in for rigging.
+pub fn import_layers(state: &mut AppState) {
+    let files = rfd::FileDialog::new()
+        .set_title("Import Images as Layers (one file per layer)")
+        .add_filter("Images", &["png", "gif", "jpg", "jpeg", "bmp", "tga", "webp", "tif", "tiff"])
+        .pick_files();
+    let Some(mut files) = files else { return };
+    files.sort();
+    import_layer_files(state, &files);
+}
+
+/// See [`import_layers`].
+pub fn import_layer_files(state: &mut AppState, files: &[std::path::PathBuf]) {
+    let mut pictures: Vec<(String, Raster)> = Vec::new();
+    for p in files {
+        match qsketch_core::io::image_io::import(p) {
+            Ok(r) => {
+                let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("Layer").to_string();
+                pictures.push((name, r));
+            }
+            Err(e) => state.toasts.push(Level::Error, format!("Couldn't read {}: {e:#}", p.display())),
+        }
+    }
+    if pictures.is_empty() {
+        return;
+    }
+    let count = pictures.len();
+    let add = |s: &mut DocState, pictures: Vec<(String, Raster)>, mut above: Option<usize>| {
+        let (w, h) = (s.width, s.height);
+        for (name, pic) in pictures {
+            let taken = s.layers.iter().any(|l| l.props.name == name);
+            let name = if taken { s.unique_layer_name(&name) } else { name };
+            let id = s.add_layer(name, above);
+            let pic = if pic.width() != w || pic.height() != h { pic.with_canvas_size(w, h, 0, 0) } else { pic };
+            if let Some(i) = s.layers.iter().position(|l| l.id() == id) {
+                s.layers[i].raster = pic;
+                above = Some(i);
+            }
+        }
+    };
+    match state.active_doc {
+        Some(doc) => {
+            edit(state, doc, "Import Layers", |s| {
+                let above = Some(s.active);
+                add(s, pictures, above);
+            });
+        }
+        None => {
+            let w = pictures.iter().map(|(_, r)| r.width()).max().unwrap_or(1);
+            let h = pictures.iter().map(|(_, r)| r.height()).max().unwrap_or(1);
+            let mut s = DocState::new(w, h, None);
+            add(&mut s, pictures, None);
+            // The empty starting layer isn't wanted next to the imported ones.
+            if s.layers.len() > 1 {
+                s.remove_layer(0);
+            }
+            let title = state.untitled_title();
+            let d = qsketch_core::Document::from_state(s, title, None, "Import Layers");
+            state.add_document(d);
+        }
+    }
+    state.toasts.push(Level::Success, format!("Imported {count} layers."));
+}
+
 /// Pick a sprite sheet and open the dialog that cuts it into frames.
 pub fn import_sheet(state: &mut AppState) {
     let file = rfd::FileDialog::new()

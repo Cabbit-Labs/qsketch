@@ -2,6 +2,45 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Rig, from animating a 15-bone clockwork machine in the app:
+  - Gears: a bone can be **turned by** another bone (Rig panel > Bone > Turned
+    by) with a ratio, so you key one gear and everything meshed with it
+    follows, through whole gear trains. The ratio starts as the ratio of the
+    two bones' lengths (draw each bone from hub to rim), negative for meshed
+    gears. Drives are part of the live pose, Bake and the game export
+    (`drives` in `docs/RIG_FORMAT.md`, and the reference runtime).
+  - Full turns: the Bone row shows the selected bone's turn, move and scale at
+    the playhead as numbers you can type or drag. The turn is not limited to
+    half a turn (720 is two spins), and −360° / +360° buttons add a full turn,
+    so a wheel that spins needs two keys instead of four per turn.
+  - The key track is now a dopesheet: one row for every bone, IK constraint
+    and layer opacity the animation keys, names on the left. Click a row to
+    select its bone or layer; drag and right-click keys in any row. It sits at
+    the bottom of the panel, so the controls above no longer move as rows
+    appear.
+  - Bone row: rename the selected bone, change what it hangs from (the bone
+    stays where it is), pick any bone by name from a tree (for bones that lie
+    under other bones), and Key holds the bone's pose at the playhead.
+  - Copy pose / Paste pose repeat a bone's pose at another time or on another
+    bone (a pendulum's swing, four times over).
+  - New bones take the active layer: a bone you draw is attached to the active
+    layer and named after it when that layer follows no bone yet. With the
+    layer finder (Ctrl+Shift+right-click) rigging a part is two gestures.
+  - Ctrl+drag with the Bone tool starts a root bone again (the quick-move
+    shortcut had taken it over), also on top of another bone, so two clock
+    hands can share an axle.
+  - A playhead parked on the very end of a looping animation edits the end
+    keys instead of showing the start.
+  - Export Animation starts on the animation picked in the Rig panel.
+- File ▸ Import ▸ Import Images as Layers…: each picked image becomes a layer
+  named after its file, in file-name order (a new document when none is open).
+- The canvas fits the document again when a panel opening under it (or a
+  smaller window) would cut off a document that showed whole.
+- Fixed: typing a code into the Color panel's Hex field did nothing (each
+  keystroke was thrown away).
+
 ## 0.71.0 — 2026-11-15
 
 - Guides: drag from the ruler corner for a 45 degree guide, Shift-drag turns any

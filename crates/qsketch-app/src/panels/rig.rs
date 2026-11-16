@@ -4,38 +4,39 @@
 //! (IK), the active layer's mesh and weights, and what the layer follows.
 
 use egui::{Align2, Color32, FontId, Pos2, Sense, Stroke, Ui};
-use qsketch_core::rig::{BoneId, Curve};
-use qsketch_core::IkConstraint;
+use qsketch_core::rig::{BoneId, Curve, KeyValue};
+use qsketch_core::{IkConstraint, LayerId};
 
 use crate::dialogs::rig::Easing;
 use crate::state::AppState;
 use crate::ui::icons;
 
-/// Height of the key track (ruler plus three rows).
-const TRACK_H: f32 = 104.0;
+/// Height of one row of the dopesheet, and the width of its name column.
+const ROW_H: f32 = 20.0;
+const GUTTER: f32 = 136.0;
 
-/// What a row of the key track holds.
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+/// What a row of the dopesheet holds.
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Row {
-    /// The selected bone's keys.
-    #[default]
-    Bone,
-    /// The selected bone's IK constraint (mix and bend).
-    Ik,
-    /// The active layer's opacity (show, hide, fade).
-    Alpha,
+    /// A bone's keys.
+    Bone(BoneId),
+    /// An IK constraint's keys (mix and bend).
+    Ik(u32),
+    /// A layer's opacity keys (show, hide, fade).
+    Alpha(LayerId),
 }
 
-const ROWS: [Row; 3] = [Row::Bone, Row::Ik, Row::Alpha];
-
-/// One row of the track: its label (`None` leaves the row empty) and keys.
-struct TrackRow<'a> {
-    label: Option<String>,
-    keys: &'a [u32],
+/// One row of the dopesheet.
+struct TrackRow {
+    row: Row,
+    label: String,
+    keys: Vec<u32>,
     color: Option<Color32>,
+    /// The selected bone, its IK, or the active layer.
+    selected: bool,
 }
 
-/// What the key track was used for this frame.
+/// What the dopesheet was used for this frame.
 #[derive(Default)]
 struct TrackOut {
     /// The playhead was scrubbed (or a key was clicked) to this time.
@@ -44,10 +45,12 @@ struct TrackOut {
     delete_key: Option<(Row, u32)>,
     /// A key was dragged to a new time: its row, from and to.
     move_key: Option<(Row, u32, u32)>,
+    /// A row was clicked: select what it shows.
+    select: Option<Row>,
 }
 
 /// A key being dragged along the track: its row and the time it started at.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct KeyDrag {
     row: Row,
     from: u32,
@@ -67,23 +70,27 @@ fn diamond(painter: &egui::Painter, c: Pos2, r: f32, fill: Color32, stroke: Stro
     painter.add(egui::Shape::convex_polygon(pts, fill, stroke));
 }
 
-/// The key track: a ruler with the playhead and three rows of keys (the
-/// selected bone, its IK, the active layer's opacity). Click or drag to
-/// scrub (keys attract the playhead unless Shift is held); drag a key to
-/// retime it; right-click a key to delete it.
+/// The dopesheet: a ruler with the playhead and one row of keys for every
+/// bone, IK constraint and layer opacity the animation keys (plus the
+/// selected bone and the active layer, keyed or not), names on the left.
+/// Click or drag to scrub (keys attract the playhead unless Shift is held);
+/// click a row to select its bone; drag a key to retime it; right-click a key
+/// to delete it.
 fn key_track(
     ui: &mut Ui,
     duration_ms: u32,
     time_ms: u32,
-    rows: &[TrackRow; 3],
+    rows: &[TrackRow],
     frames: &[u32],
     current_frame: usize,
 ) -> TrackOut {
     // With frames to show, a band under the ruler marks where each one plays.
     let band = if frames.is_empty() { 0.0 } else { 16.0 };
+    let head = 20.0 + band;
     let mut out = TrackOut::default();
-    let width = ui.available_width().max(240.0);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, TRACK_H + band), Sense::click_and_drag());
+    let width = ui.available_width().max(GUTTER + 160.0);
+    let height = head + ROW_H * rows.len().max(1) as f32 + 6.0;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), Sense::click_and_drag());
     let painter = ui.painter_at(rect);
     let visuals = ui.visuals().clone();
     let (accent, text) = (visuals.selection.bg_fill, visuals.text_color());
@@ -96,8 +103,7 @@ fn key_track(
         egui::StrokeKind::Inside,
     );
 
-    let pad = 14.0;
-    let (x0, x1) = (rect.left() + pad, rect.right() - pad);
+    let (x0, x1) = (rect.left() + GUTTER, rect.right() - 14.0);
     let dur = duration_ms.max(1) as f32;
     let to_x = |t: u32| x0 + (x1 - x0) * t as f32 / dur;
     let to_t = |x: f32| (((x - x0) / (x1 - x0)).clamp(0.0, 1.0) * dur).round() as u32;
@@ -136,27 +142,43 @@ fn key_track(
             i = (i + 1) % frames.len();
         }
     }
-    // Row lines at 36, 60 and 84 px; a press belongs to the nearest row below
-    // the one above's midpoint.
-    let row_y = |i: usize| rect.top() + band + 36.0 + 24.0 * i as f32;
+    // Rows: a name on the left, a line with its keys on the right.
+    let rows_top = rect.top() + head;
+    let row_y = |i: usize| rows_top + ROW_H * (i as f32 + 0.5);
     let row_at = |y: f32| {
-        let i = (((y - (rect.top() + band + 24.0)) / 24.0).floor().max(0.0) as usize).min(2);
-        ROWS[i]
+        let i = ((y - rows_top) / ROW_H).floor();
+        (y >= rows_top && (i as usize) < rows.len()).then_some(i as usize)
     };
-    let row_index = |row: Row| ROWS.iter().position(|r| *r == row).unwrap_or(0);
+    let name_font = FontId::proportional(11.0);
+    let names = painter.with_clip_rect(egui::Rect::from_min_max(rect.min, Pos2::new(x0 - 12.0, rect.bottom())));
     for (i, row) in rows.iter().enumerate() {
         let y = row_y(i);
-        painter.line_segment([Pos2::new(x0, y), Pos2::new(x1, y)], Stroke::new(1.0, weak.gamma_multiply(0.35)));
-        if let Some(l) = &row.label {
-            painter.text(Pos2::new(x0 + 8.0, y - 16.0), Align2::LEFT_TOP, l, font.clone(), weak);
+        if row.selected {
+            let r = egui::Rect::from_min_max(
+                Pos2::new(rect.left() + 1.0, y - ROW_H / 2.0),
+                Pos2::new(rect.right() - 1.0, y + ROW_H / 2.0),
+            );
+            painter.rect_filled(r, 0.0, accent.gamma_multiply(0.22));
         }
+        painter.line_segment([Pos2::new(x0, y), Pos2::new(x1, y)], Stroke::new(1.0, weak.gamma_multiply(0.35)));
+        let col = if row.selected { text } else { row.color.map_or(weak, |c| c.gamma_multiply(0.8)) };
+        names.text(Pos2::new(rect.left() + 8.0, y), Align2::LEFT_CENTER, &row.label, name_font.clone(), col);
+    }
+    if rows.is_empty() {
+        painter.text(
+            Pos2::new(rect.left() + 8.0, row_y(0)),
+            Align2::LEFT_CENTER,
+            "Nothing is keyed yet: drag a bone on the canvas to key it here.",
+            name_font.clone(),
+            weak,
+        );
     }
 
     // Keys.
-    let r = 5.5;
+    let r = 5.0;
     for (i, row) in rows.iter().enumerate() {
         let base = row.color.unwrap_or(text);
-        for &k in row.keys {
+        for &k in &row.keys {
             let fill = if k == time_ms { accent } else { base };
             diamond(&painter, Pos2::new(to_x(k), row_y(i)), r, fill, Stroke::new(1.0, Color32::BLACK));
         }
@@ -177,14 +199,16 @@ fn key_track(
     ));
 
     // Interaction.
-    let near = |row: Row, x: f32| rows[row_index(row)].keys.iter().copied().find(|&k| (to_x(k) - x).abs() <= 7.0);
-    let near_any = |x: f32| ROWS.iter().find_map(|&row| near(row, x));
+    let near = |i: usize, x: f32| rows[i].keys.iter().copied().find(|&k| (to_x(k) - x).abs() <= 7.0);
+    let near_any = |x: f32| (0..rows.len()).find_map(|i| near(i, x));
+    let in_names = |x: f32| x < x0 - 9.0;
     let drag_id = ui.id().with("key_drag");
     if resp.drag_started() {
         if let Some(p) = ui.input(|i| i.pointer.press_origin()) {
-            let row = row_at(p.y);
-            if let Some(from) = near(row, p.x) {
-                ui.data_mut(|d| d.insert_temp(drag_id, KeyDrag { row, from }));
+            if let Some(i) = row_at(p.y).filter(|_| !in_names(p.x)) {
+                if let Some(from) = near(i, p.x) {
+                    ui.data_mut(|d| d.insert_temp(drag_id, KeyDrag { row: rows[i].row, from }));
+                }
             }
         }
     }
@@ -193,7 +217,7 @@ fn key_track(
         // Dragging a key retimes it (in 5 ms steps); the playhead stays put.
         if let Some(p) = resp.interact_pointer_pos().or_else(|| ui.input(|i| i.pointer.latest_pos())) {
             let to = (to_t(p.x) + 2) / 5 * 5;
-            let y = row_y(row_index(kd.row));
+            let y = rows.iter().position(|r| r.row == kd.row).map_or(p.y, row_y);
             let c = Color32::from_rgb(255, 200, 40);
             diamond(&painter, Pos2::new(to_x(to), y), r, c.gamma_multiply(0.85), Stroke::new(1.5, Color32::WHITE));
             painter.text(Pos2::new(to_x(to) + 9.0, y - 5.0), Align2::LEFT_TOP, format!("{to} ms"), font.clone(), text);
@@ -202,15 +226,21 @@ fn key_track(
             }
         }
         if resp.drag_stopped() {
-            ui.data_mut(|d| d.remove_temp::<KeyDrag>(drag_id));
+            ui.data_mut(|d| d.remove::<KeyDrag>(drag_id));
         }
     } else if let Some(p) = resp.interact_pointer_pos() {
-        if resp.dragged() || resp.clicked() {
+        let row = row_at(p.y);
+        if resp.clicked() {
+            out.select = row.map(|i| rows[i].row);
+        }
+        let from_names = ui.input(|i| i.pointer.press_origin()).is_some_and(|o| in_names(o.x));
+        if (resp.dragged() || resp.clicked()) && !from_names {
             let snap = !ui.input(|i| i.modifiers.shift);
             // Whole 5 ms steps (like retiming), unless Shift is held.
             let mut t = if snap { ((to_t(p.x) + 2) / 5 * 5).min(duration_ms) } else { to_t(p.x) };
             if snap {
-                if let Some(k) = near_any(p.x) {
+                // The row under the pointer first, then any row.
+                if let Some(k) = row.and_then(|i| near(i, p.x)).or_else(|| near_any(p.x)) {
                     t = k;
                 }
             }
@@ -219,12 +249,13 @@ fn key_track(
     }
     if resp.secondary_clicked() {
         if let Some(p) = resp.interact_pointer_pos() {
-            let row = row_at(p.y);
-            out.delete_key = near(row, p.x).map(|k| (row, k));
+            if let Some(i) = row_at(p.y) {
+                out.delete_key = near(i, p.x).map(|k| (rows[i].row, k));
+            }
         }
     }
     resp.on_hover_text(
-        "Click or drag to scrub (Shift: no snapping to keys). Drag a key to retime it; right-click a key to delete it. Rows: the selected bone, its IK, and the active layer's opacity.",
+        "Click or drag to scrub (Shift: no snapping to keys). Click a row to select its bone or layer. Drag a key to retime it; right-click a key to delete it.",
     );
     out
 }
@@ -264,7 +295,6 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     } else {
         Vec::new()
     };
-    let alpha_keys: Vec<u32> = cur.map(|a| rig.alpha_key_times(a, layer_id)).unwrap_or_default();
     let rest_alpha_now = rig.rest_alpha_of(layer_id);
     let alpha_now = rig.alpha_at(cur.map(|a| (a, rui.time_ms)), layer_id);
     if !ui.memory(|m| m.focused().is_some()) {
@@ -274,12 +304,49 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         rui.sel.and_then(|b| rig.ik_of_bone(b).or_else(|| rig.ik.iter().find(|c| c.target == b)).cloned());
     let can_add_ik = ik_info.is_none() && rui.sel.and_then(|b| rig.bone(b)).is_some_and(|b| b.parent.is_some());
     let mut ik_edit = ik_info.clone();
-    let ik_keys: Vec<u32> = ik_info
-        .as_ref()
-        .zip(cur)
-        .and_then(|(c, a)| rig.animations[a].ik.iter().find(|t| t.constraint == c.id))
-        .map(|t| t.keys.iter().map(|k| k.time_ms).collect())
-        .unwrap_or_default();
+    // The dopesheet's rows: everything this animation keys, plus the selected
+    // bone, its IK and the active layer's opacity so they can be found there.
+    let mut rows: Vec<TrackRow> = Vec::new();
+    if let Some(a) = cur {
+        for b in &rig.bones {
+            let keys = rig.key_times(a, b.id);
+            let selected = rui.sel == Some(b.id);
+            if !keys.is_empty() || selected {
+                rows.push(TrackRow { row: Row::Bone(b.id), label: b.name.clone(), keys, color: None, selected });
+            }
+        }
+        for c in &rig.ik {
+            let keys: Vec<u32> = rig.animations[a]
+                .ik
+                .iter()
+                .find(|t| t.constraint == c.id)
+                .map(|t| t.keys.iter().map(|k| k.time_ms).collect())
+                .unwrap_or_default();
+            let selected = ik_info.as_ref().is_some_and(|i| i.id == c.id);
+            if !keys.is_empty() || selected {
+                let color = Some(Color32::from_rgb(110, 220, 110));
+                rows.push(TrackRow { row: Row::Ik(c.id), label: format!("IK {}", c.name), keys, color, selected });
+            }
+        }
+        for l in &st.layers {
+            let keys = rig.alpha_key_times(a, l.id());
+            let selected = l.id() == layer_id;
+            if !keys.is_empty() || selected {
+                let color = Some(Color32::from_rgb(255, 160, 80));
+                let label = format!("{} opacity", l.name());
+                rows.push(TrackRow { row: Row::Alpha(l.id()), label, keys, color, selected });
+            }
+        }
+    }
+
+    // The selected bone, as edited in the Bone row.
+    let sel_bone = rui.sel.and_then(|b| rig.bone(b)).cloned();
+    let mut bone_edit = sel_bone.clone();
+    let offs = rui.sel.zip(cur).map(|(b, a)| rig.offsets(a, b, rui.time_ms));
+    let mut offs_edit = offs;
+    let mut new_parent: Option<Option<BoneId>> = None;
+    let drive = rui.sel.and_then(|b| rig.drive_of(b)).copied();
+    let mut drive_edit = drive;
 
     let (mut new_anim, mut del_anim, mut attach, mut detach, mut del_keys, mut open_dialog) =
         (false, false, false, false, false, false);
@@ -288,6 +355,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let mut export_rig = false;
     let mut close_loop = false;
     let mut key_all = false;
+    let (mut copy_pose, mut paste_pose) = (false, false);
+    let mut key_bone = false;
+    let mut pick_bone: Option<BoneId> = None;
     let mut alpha_key: Option<f32> = None;
     let mut rest_alpha: Option<f32> = None;
     let mut track = TrackOut::default();
@@ -375,6 +445,20 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     key_all = true;
                 }
                 if ui
+                    .add_enabled(sel_name.is_some(), egui::Button::new("Copy pose"))
+                    .on_hover_text("Copy the selected bone's pose at the playhead (what it keys: turn, move, scale)")
+                    .clicked()
+                {
+                    copy_pose = true;
+                }
+                if ui
+                    .add_enabled(sel_name.is_some() && rui.pose_clip.is_some(), egui::Button::new("Paste pose"))
+                    .on_hover_text("Key the copied pose on the selected bone at the playhead: repeat a swing later, or give another bone the same move")
+                    .clicked()
+                {
+                    paste_pose = true;
+                }
+                if ui
                     .add_enabled(key_here, egui::Button::new("Delete keys here"))
                     .on_hover_text("Delete the selected bone's keys at the playhead")
                     .clicked()
@@ -382,32 +466,146 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     del_keys = true;
                 }
             });
-            let rows = [
-                TrackRow {
-                    label: Some(sel_name.clone().unwrap_or_else(|| "select a bone to see its keys".to_string())),
-                    keys: &bone_keys,
-                    color: None,
-                },
-                TrackRow {
-                    label: ik_info.as_ref().map(|c| format!("IK {}", c.name)),
-                    keys: &ik_keys,
-                    color: Some(Color32::from_rgb(110, 220, 110)),
-                },
-                TrackRow {
-                    label: Some(format!("{layer_name} opacity")),
-                    keys: &alpha_keys,
-                    color: Some(Color32::from_rgb(255, 160, 80)),
-                },
-            ];
-            track = key_track(ui, a.duration_ms, rui.time_ms, &rows, &frame_durs, current_frame);
         } else {
-            ui.label(
-                egui::RichText::new(
-                    "Setup pose: bones you draw or drag edit the skeleton itself. Pick or create an animation to pose and key bones over time.",
-                )
-                .weak(),
-            );
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "Setup pose: bones you draw or drag edit the skeleton itself. Pick or create an animation to pose and key bones over time.",
+                    )
+                    .weak(),
+                );
+                ui.checkbox(&mut rui.adopt, "New bones take the active layer").on_hover_text(
+                    "A bone you draw is attached to the active layer and named after it, when that layer follows no bone yet. Pick a layer, draw its bone, pick the next.",
+                );
+            });
         }
+        ui.separator();
+
+        // --- the selected bone: name, parent, numbers, what turns it ------------
+        ui.horizontal_wrapped(|ui| {
+            // Every bone by name, children indented under their parents: the
+            // way to a bone that lies under another one on the canvas.
+            ui.menu_button(egui::RichText::new("Bone ⏷").strong(), |ui| {
+                egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                    if rig.bones.is_empty() {
+                        ui.label(egui::RichText::new("No bones yet: drag on the canvas to draw one.").weak());
+                    }
+                    // As a tree: each bone followed by its children.
+                    let mut stack: Vec<(BoneId, usize)> =
+                        rig.bones.iter().rev().filter(|o| o.parent.is_none()).map(|o| (o.id, 0)).collect();
+                    while let Some((id, depth)) = stack.pop() {
+                        let Some(o) = rig.bone(id) else { continue };
+                        let label = format!("{}{}", "    ".repeat(depth), o.name);
+                        if ui.selectable_label(rui.sel == Some(id), label).clicked() {
+                            pick_bone = Some(id);
+                            ui.close();
+                        }
+                        stack.extend(rig.bones.iter().rev().filter(|c| c.parent == Some(id)).map(|c| (c.id, depth + 1)));
+                    }
+                });
+            })
+            .response
+            .on_hover_text("Pick any bone by name");
+            let Some(b) = bone_edit.as_mut() else {
+                ui.label(egui::RichText::new("click a bone on the canvas, or pick one here").weak());
+                return;
+            };
+            ui.add(egui::TextEdit::singleline(&mut b.name).desired_width(110.0)).on_hover_text("The bone's name");
+            let parent_text = b.parent.map_or_else(|| "no parent".to_string(), |p| format!("in {}", target_name(rig, p)));
+            egui::ComboBox::from_id_salt("rig_panel_parent")
+                .selected_text(parent_text)
+                .width(110.0)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_label(b.parent.is_none(), "no parent").clicked() && b.parent.is_some() {
+                        new_parent = Some(None);
+                    }
+                    for o in rig.bones.iter().filter(|o| rig.can_parent(b.id, Some(o.id))) {
+                        if ui.selectable_label(b.parent == Some(o.id), &o.name).clicked() && b.parent != Some(o.id) {
+                            new_parent = Some(Some(o.id));
+                        }
+                    }
+                })
+                .response
+                .on_hover_text("The bone this one hangs from and moves with. Changing it keeps the bone where it is.");
+            match offs_edit.as_mut() {
+                None => {
+                    ui.add(egui::DragValue::new(&mut b.x).speed(0.5).max_decimals(1).prefix("x "));
+                    ui.add(egui::DragValue::new(&mut b.y).speed(0.5).max_decimals(1).prefix("y "));
+                    ui.add(egui::DragValue::new(&mut b.rotation).speed(0.5).max_decimals(1).prefix("angle ").suffix("°"));
+                    ui.add(
+                        egui::DragValue::new(&mut b.length).speed(0.5).range(1.0..=10_000.0).max_decimals(1).prefix("length "),
+                    );
+                }
+                Some((tr, rot, sc)) => {
+                    // Fixed widths, so the buttons after a number don't move
+                    // when it gains a digit.
+                    let num = |ui: &mut Ui, w: f32, d: egui::DragValue| ui.add_sized([w, ui.spacing().interact_size.y], d);
+                    if ui
+                        .button("Key")
+                        .on_hover_text("Key this bone where it is now at the playhead, so it holds this pose until here")
+                        .clicked()
+                    {
+                        key_bone = true;
+                    }
+                    num(ui, 84.0, egui::DragValue::new(rot).speed(1.0).max_decimals(1).prefix("turn ").suffix("°")).on_hover_text(
+                        "Degrees turned from the setup pose at the playhead; changing it keys it. It isn't limited to a half turn: 360 is one full spin, 720 two, -360 one the other way.",
+                    );
+                    if ui.small_button("−360°").on_hover_text("Key one more full turn counter-clockwise here").clicked() {
+                        *rot -= 360.0;
+                    }
+                    if ui.small_button("+360°").on_hover_text("Key one more full turn clockwise here").clicked() {
+                        *rot += 360.0;
+                    }
+                    num(ui, 92.0, egui::DragValue::new(&mut tr[0]).speed(0.5).max_decimals(1).prefix("move x "))
+                        .on_hover_text("Moved from the setup pose at the playhead; changing it keys it");
+                    num(ui, 58.0, egui::DragValue::new(&mut tr[1]).speed(0.5).max_decimals(1).prefix("y "));
+                    let mut k = sc[0];
+                    if num(ui, 76.0, egui::DragValue::new(&mut k).speed(0.01).range(0.02..=8.0).max_decimals(2).prefix("scale "))
+                        .on_hover_text("Scale at the playhead; changing it keys it")
+                        .changed()
+                    {
+                        *sc = [k, k];
+                    }
+                }
+            }
+            ui.separator();
+            ui.label("Turned by");
+            let text = drive_edit.map_or_else(|| "nothing".to_string(), |d| target_name(rig, d.source));
+            egui::ComboBox::from_id_salt("rig_panel_drive")
+                .selected_text(text)
+                .width(110.0)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_label(drive_edit.is_none(), "nothing").clicked() {
+                        drive_edit = None;
+                    }
+                    for o in rig.bones.iter().filter(|o| rig.can_drive(b.id, o.id)) {
+                        let on = drive_edit.is_some_and(|d| d.source == o.id);
+                        if ui.selectable_label(on, &o.name).clicked() && !on {
+                            // Meshed gears whose bones reach their rims: the
+                            // smaller one turns faster, the other way.
+                            let ratio = -(o.length / b.length.max(1.0));
+                            // Hand-drawn bones are never exact: take the
+                            // nearest half or third when it is close, so the
+                            // gears still line up when the animation loops.
+                            let snapped = [2.0f32, 3.0]
+                                .into_iter()
+                                .map(|d| (ratio * d).round() / d)
+                                .find(|s| (s - ratio).abs() <= 0.04 * ratio.abs().max(0.25) && *s != 0.0);
+                            let ratio = snapped.unwrap_or((ratio * 100.0).round() / 100.0);
+                            drive_edit = Some(qsketch_core::Drive { bone: b.id, source: o.id, ratio });
+                        }
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "Gears: this bone turns whenever the chosen bone does in an animation, by the ratio next to it. Key the one bone and everything meshed with it follows.",
+                );
+            if let Some(d) = drive_edit.as_mut() {
+                ui.add(egui::DragValue::new(&mut d.ratio).speed(0.01).max_decimals(3).prefix("× ")).on_hover_text(
+                    "Turns per turn of the driving bone. Negative turns the other way (meshed gears); -2 is a gear half the size. It starts as the ratio of the two bones' lengths.",
+                );
+            }
+        });
         ui.separator();
 
         // --- limb, mesh, layer: one wrapped row of compact groups ----------------
@@ -484,11 +682,6 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             {
                 attach = true;
             }
-            ui.label(match &attached {
-                Some(b) => format!("{layer_name} → {b}"),
-                None => format!("{layer_name}: not attached"),
-            });
-
             ui.separator();
             ui.strong("Visibility");
             let mut visible_at_rest = rest_alpha_now >= 0.5;
@@ -512,7 +705,21 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     alpha_key = Some(rui.alpha_key);
                 }
             }
+            // The names last: they change with the active layer, and nothing
+            // after them can be pushed around.
+            ui.separator();
+            ui.label(match &attached {
+                Some(b) => format!("{layer_name} → {b}"),
+                None => format!("{layer_name}: not attached"),
+            });
         });
+
+        // --- the dopesheet, last: it grows with the animation, and the
+        // controls above it stay where they are.
+        if let Some(a) = &anim_edit {
+            ui.separator();
+            track = key_track(ui, a.duration_ms, rui.time_ms, &rows, &frame_durs, current_frame);
+        }
     });
 
     // --- write back --------------------------------------------------------------
@@ -527,10 +734,25 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     e.rig_ui.playing = rui.playing;
     e.rig_ui.alpha_key = rui.alpha_key;
     e.rig_ui.sync_frames = rui.sync_frames;
+    e.rig_ui.adopt = rui.adopt;
     e.rig_ui.time_ms = rui.time_ms;
     if let Some(t) = track.scrub {
         e.rig_ui.time_ms = t;
         e.rig_ui.playing = false;
+    }
+    match track.select {
+        Some(Row::Bone(b)) => e.rig_ui.sel = Some(b),
+        Some(Row::Ik(id)) => {
+            if let Some(c) = e.doc.state().rig.ik.iter().find(|c| c.id == id) {
+                e.rig_ui.sel = Some(c.target);
+            }
+        }
+        Some(Row::Alpha(l)) => {
+            if let Some(i) = e.doc.state().layers.iter().position(|x| x.id() == l) {
+                e.doc.state_mut().active = i;
+            }
+        }
+        None => {}
     }
     if anim_edit != original {
         if let (Some(a), Some(edit)) = (cur, anim_edit) {
@@ -548,7 +770,82 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         }
     }
     let (sel, time) = (rui.sel, e.rig_ui.time_ms);
-    if new_anim {
+    // The Bone row. Its edits are committed like the animation fields: once
+    // the field is let go.
+    if let (Some(b), true) = (&bone_edit, bone_edit != sel_bone) {
+        if let Some(slot) = e.doc.state_mut().rig.bone_mut(b.id) {
+            *slot = b.clone();
+            e.rig_ui.edited = true;
+        }
+    }
+    if let (Some(b), Some(a), Some(new), Some(old)) = (sel, cur, offs_edit, offs) {
+        let curve = e.rig_ui.easing.curve();
+        let rig = &mut e.doc.state_mut().rig;
+        if new.0 != old.0 {
+            rig.key_from_rest(a, b, time, KeyValue::Translate(new.0), curve);
+        }
+        if new.1 != old.1 {
+            rig.key_from_rest(a, b, time, KeyValue::Rotate(new.1), curve);
+        }
+        if new.2 != old.2 {
+            rig.key_from_rest(a, b, time, KeyValue::Scale(new.2), curve);
+        }
+        if new != old {
+            e.rig_ui.edited = true;
+        }
+    }
+    if drive_edit != drive {
+        if let Some(b) = sel {
+            let rig = &mut e.doc.state_mut().rig;
+            match drive_edit {
+                Some(d) => {
+                    rig.set_drive(b, d.source, d.ratio);
+                }
+                None => rig.remove_drive(b),
+            }
+            e.rig_ui.edited = true;
+        }
+    }
+    if let (Some(b), Some(p)) = (sel, new_parent) {
+        if e.doc.state_mut().rig.set_parent(b, p) {
+            e.doc.commit("Change Bone Parent");
+        }
+    }
+    if let Some(b) = pick_bone {
+        e.rig_ui.sel = Some(b);
+    }
+    if key_bone {
+        if let (Some(b), Some(a)) = (sel, cur) {
+            let curve = e.rig_ui.easing.curve();
+            let rig = &mut e.doc.state_mut().rig;
+            // The turn always; move and scale when the bone animates them.
+            let (tr, rot, sc) = rig.offsets(a, b, time);
+            let pose = rig.keyed_pose(a, b, time);
+            rig.key_from_rest(a, b, time, KeyValue::Rotate(rot), curve);
+            if pose[0].is_some() {
+                rig.key_from_rest(a, b, time, KeyValue::Translate(tr), curve);
+            }
+            if pose[2].is_some() {
+                rig.key_from_rest(a, b, time, KeyValue::Scale(sc), curve);
+            }
+            e.doc.commit("Key Bone");
+        }
+    }
+    if copy_pose {
+        if let (Some(b), Some(a)) = (sel, cur) {
+            e.rig_ui.pose_clip = Some(e.doc.state().rig.keyed_pose(a, b, time));
+        }
+    }
+    if paste_pose {
+        if let (Some(b), Some(a), Some(clip)) = (sel, cur, e.rig_ui.pose_clip) {
+            let curve = e.rig_ui.easing.curve();
+            let rig = &mut e.doc.state_mut().rig;
+            for v in clip.into_iter().flatten() {
+                rig.key_from_rest(a, b, time, v, curve);
+            }
+            e.doc.commit("Paste Pose");
+        }
+    } else if new_anim {
         let rig = &mut e.doc.state_mut().rig;
         let n = rig.animations.len() + 1;
         e.rig_ui.anim = Some(rig.add_animation(format!("anim {n}"), 1000));
@@ -579,45 +876,23 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             e.doc.state_mut().rig.remove_keys_at(a, b, time);
             e.doc.commit("Delete Keys");
         }
-    } else if let Some((row, from, to)) = track.move_key {
-        let moved = match (row, sel, &ik_info, cur) {
-            (Row::Bone, Some(b), _, Some(a)) => {
-                e.doc.state_mut().rig.move_keys(a, b, from, to);
-                true
-            }
-            (Row::Ik, _, Some(c), Some(a)) => {
-                e.doc.state_mut().rig.move_ik_keys(a, c.id, from, to);
-                true
-            }
-            (Row::Alpha, _, _, Some(a)) => {
-                e.doc.state_mut().rig.move_alpha_keys(a, layer_id, from, to);
-                true
-            }
-            _ => false,
-        };
-        if moved {
-            e.rig_ui.time_ms = to;
-            e.doc.commit("Move Keys");
+    } else if let (Some((row, from, to)), Some(a)) = (track.move_key, cur) {
+        let rig = &mut e.doc.state_mut().rig;
+        match row {
+            Row::Bone(b) => rig.move_keys(a, b, from, to),
+            Row::Ik(id) => rig.move_ik_keys(a, id, from, to),
+            Row::Alpha(l) => rig.move_alpha_keys(a, l, from, to),
         }
-    } else if let Some((row, t)) = track.delete_key {
-        let done = match (row, sel, &ik_info, cur) {
-            (Row::Bone, Some(b), _, Some(a)) => {
-                e.doc.state_mut().rig.remove_keys_at(a, b, t);
-                true
-            }
-            (Row::Ik, _, Some(c), Some(a)) => {
-                e.doc.state_mut().rig.remove_ik_keys_at(a, c.id, t);
-                true
-            }
-            (Row::Alpha, _, _, Some(a)) => {
-                e.doc.state_mut().rig.remove_alpha_keys_at(a, layer_id, t);
-                true
-            }
-            _ => false,
-        };
-        if done {
-            e.doc.commit("Delete Keys");
+        e.rig_ui.time_ms = to;
+        e.doc.commit("Move Keys");
+    } else if let (Some((row, t)), Some(a)) = (track.delete_key, cur) {
+        let rig = &mut e.doc.state_mut().rig;
+        match row {
+            Row::Bone(b) => rig.remove_keys_at(a, b, t),
+            Row::Ik(id) => rig.remove_ik_keys_at(a, id, t),
+            Row::Alpha(l) => rig.remove_alpha_keys_at(a, l, t),
         }
+        e.doc.commit("Delete Keys");
     } else if let Some(alpha) = alpha_key {
         if let Some(a) = cur {
             let curve = e.rig_ui.easing.curve();
@@ -669,7 +944,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         e.doc.commit("Detach Layer from Bone");
     } else if e.rig_ui.edited && !ui.input(|i| i.pointer.any_down()) && ui.memory(|m| m.focused().is_none()) {
         e.rig_ui.edited = false;
-        e.doc.commit("Edit Rig Animation");
+        e.doc.commit("Edit Rig");
     }
     if open_dialog {
         crate::dialogs::rig::open(state, doc_id);

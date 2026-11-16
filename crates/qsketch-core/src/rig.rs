@@ -215,6 +215,17 @@ pub struct IkConstraint {
     pub mix: f32,
 }
 
+/// A bone turned by another, like meshed gears or a belt: whatever an
+/// animation turns `source` by (its keys plus its own drive), `bone` turns by
+/// `ratio` times that, on top of its own keys. A ratio of -2 is a gear half
+/// the size meshed with its source; 1 copies the turn.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Drive {
+    pub bone: BoneId,
+    pub source: BoneId,
+    pub ratio: f32,
+}
+
 /// The opacity keys of one layer in one animation (0 = hidden, 1 = shown).
 /// Use a stepped curve for an instant show or hide, linear to fade.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -255,6 +266,9 @@ pub struct Rig {
     /// Layers drawn through a weighted mesh (see `crate::rigmesh`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub meshes: Vec<crate::rigmesh::PartMesh>,
+    /// Bones turned by other bones (gears); at most one per bone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drives: Vec<Drive>,
     #[serde(default)]
     next_bone_id: BoneId,
     #[serde(default)]
@@ -360,8 +374,12 @@ impl RigAnim {
         if self.duration_ms == 0 {
             return 0.0;
         }
-        if self.looped {
+        if self.looped && t_ms > self.duration_ms {
             (t_ms % self.duration_ms) as f32
+        } else if self.looped {
+            // The very end is its own moment (the last key), not the start
+            // again: a playhead parked there edits the end pose.
+            t_ms as f32
         } else {
             t_ms.min(self.duration_ms) as f32
         }
@@ -414,6 +432,109 @@ impl Rig {
         out
     }
 
+    /// Whether `bone` could hang under `parent` (`None`: become a root): it
+    /// can't hang under itself or anything below it.
+    pub fn can_parent(&self, bone: BoneId, parent: Option<BoneId>) -> bool {
+        self.bone(bone).is_some() && parent.is_none_or(|p| self.bone(p).is_some() && !self.subtree(bone).contains(&p))
+    }
+
+    /// Hang `bone` under `parent` (`None`: make it a root) without moving it
+    /// in the setup pose: its position, rotation and scale are rewritten
+    /// relative to the new parent. False when that would make a loop.
+    pub fn set_parent(&mut self, bone: BoneId, parent: Option<BoneId>) -> bool {
+        if !self.can_parent(bone, parent) {
+            return false;
+        }
+        let Some(bi) = self.bone_index(bone) else { return false };
+        if self.bones[bi].parent == parent {
+            return true;
+        }
+        let pose = self.pose(None);
+        let world = pose[bi];
+        let parent_world = parent.and_then(|p| self.bone_index(p)).map_or(Xf::IDENTITY, |i| pose[i]);
+        let local = parent_world.inverse().map_or(world, |inv| inv * world);
+        let b = &mut self.bones[bi];
+        b.parent = parent;
+        (b.x, b.y) = (local.e, local.f);
+        b.rotation = local.b.atan2(local.a).to_degrees();
+        let sx = (local.a * local.a + local.b * local.b).sqrt();
+        let det = local.a * local.d - local.b * local.c;
+        b.scale = [sx, if sx > 1e-6 { det / sx } else { 1.0 }];
+        // Parents come before their children in `bones` (posing relies on it).
+        let mut ordered: Vec<Bone> = Vec::with_capacity(self.bones.len());
+        let mut rest: Vec<Bone> = std::mem::take(&mut self.bones);
+        while !rest.is_empty() {
+            let before = rest.len();
+            let (ready, wait): (Vec<Bone>, Vec<Bone>) =
+                rest.into_iter().partition(|b| b.parent.is_none_or(|p| ordered.iter().any(|o| o.id == p)));
+            ordered.extend(ready);
+            rest = wait;
+            if rest.len() == before {
+                // Can't happen (no loops), but never drop bones.
+                ordered.append(&mut rest);
+            }
+        }
+        self.bones = ordered;
+        true
+    }
+
+    /// The drive turning `bone`, if any.
+    pub fn drive_of(&self, bone: BoneId) -> Option<&Drive> {
+        self.drives.iter().find(|d| d.bone == bone)
+    }
+
+    /// Whether `bone` could be driven by `source`: both exist, differ, and
+    /// `source` isn't (directly or through other drives) driven by `bone`.
+    pub fn can_drive(&self, bone: BoneId, source: BoneId) -> bool {
+        if bone == source || self.bone(bone).is_none() || self.bone(source).is_none() {
+            return false;
+        }
+        let mut cur = source;
+        for _ in 0..=self.drives.len() {
+            if cur == bone {
+                return false;
+            }
+            match self.drive_of(cur) {
+                Some(d) => cur = d.source,
+                None => break,
+            }
+        }
+        true
+    }
+
+    /// Make `source` turn `bone` by `ratio` (replacing the bone's drive).
+    pub fn set_drive(&mut self, bone: BoneId, source: BoneId, ratio: f32) -> bool {
+        if !self.can_drive(bone, source) {
+            return false;
+        }
+        self.drives.retain(|d| d.bone != bone);
+        self.drives.push(Drive { bone, source, ratio });
+        true
+    }
+
+    pub fn remove_drive(&mut self, bone: BoneId) {
+        self.drives.retain(|d| d.bone != bone);
+    }
+
+    /// Degrees `bone` is turned at local time `t` of `an` by its drive (and
+    /// the drives behind it), not counting its own keys.
+    fn driven_turn(&self, an: &RigAnim, bone: BoneId, t: f32) -> f32 {
+        let (mut total, mut factor, mut cur) = (0.0f32, 1.0f32, bone);
+        for _ in 0..self.drives.len() {
+            let Some(d) = self.drives.iter().find(|d| d.bone == cur) else { break };
+            factor *= d.ratio;
+            let keyed = an.tracks.iter().find(|tr| tr.bone == d.source).and_then(|tr| sample(&tr.rotate, t));
+            total += factor * keyed.unwrap_or(0.0);
+            cur = d.source;
+        }
+        total
+    }
+
+    /// Degrees the drive turns `bone` at `t_ms` of animation `anim`.
+    pub fn drive_turn(&self, anim: usize, bone: BoneId, t_ms: u32) -> f32 {
+        self.animations.get(anim).map_or(0.0, |a| self.driven_turn(a, bone, a.local_time(t_ms)))
+    }
+
     /// Remove a bone and its children, with their keys and attachments.
     pub fn remove_bone(&mut self, id: BoneId) {
         let gone = self.subtree(id);
@@ -423,6 +544,7 @@ impl Rig {
             an.tracks.retain(|t| !gone.contains(&t.bone));
         }
         self.prune_mesh_bones(&gone);
+        self.drives.retain(|d| !gone.contains(&d.bone) && !gone.contains(&d.source));
         let dead: Vec<u32> = self
             .ik
             .iter()
@@ -573,6 +695,29 @@ impl Rig {
         }
     }
 
+    /// Like [`Rig::set_key`], for a value typed or dragged by hand: the first
+    /// key of a property at a later time also keys its rest value at 0, so
+    /// the animation starts from the setup pose.
+    pub fn key_from_rest(&mut self, anim: usize, bone: BoneId, time_ms: u32, value: KeyValue, curve: Curve) {
+        if time_ms > 0 {
+            let (has, rest) = match value {
+                KeyValue::Translate(_) => {
+                    (self.animated_property(anim, bone, |t| !t.translate.is_empty()), KeyValue::Translate([0.0, 0.0]))
+                }
+                KeyValue::Rotate(_) => {
+                    (self.animated_property(anim, bone, |t| !t.rotate.is_empty()), KeyValue::Rotate(0.0))
+                }
+                KeyValue::Scale(_) => {
+                    (self.animated_property(anim, bone, |t| !t.scale.is_empty()), KeyValue::Scale([1.0, 1.0]))
+                }
+            };
+            if !has {
+                self.set_key(anim, bone, 0, rest, Curve::Linear);
+            }
+        }
+        self.set_key(anim, bone, time_ms, value, curve);
+    }
+
     /// Remove every key of `bone` at `time_ms`.
     pub fn remove_keys_at(&mut self, anim: usize, bone: BoneId, time_ms: u32) {
         let Some(an) = self.animations.get_mut(anim) else { return };
@@ -596,6 +741,19 @@ impl Rig {
             ),
             None => ([0.0; 2], 0.0, [1.0; 2]),
         }
+    }
+
+    /// What `bone` is keyed to at `t_ms` of animation `anim`: its move, turn
+    /// and scale there, each only when the bone has keys of that kind.
+    pub fn keyed_pose(&self, anim: usize, bone: BoneId, t_ms: u32) -> [Option<KeyValue>; 3] {
+        let Some(a) = self.animations.get(anim) else { return [None; 3] };
+        let Some(tr) = a.tracks.iter().find(|t| t.bone == bone) else { return [None; 3] };
+        let t = a.local_time(t_ms);
+        [
+            sample(&tr.translate, t).map(KeyValue::Translate),
+            sample(&tr.rotate, t).map(KeyValue::Rotate),
+            sample(&tr.scale, t).map(KeyValue::Scale),
+        ]
     }
 
     /// The times (ms) at which `bone` has any key in animation `anim`.
@@ -699,7 +857,8 @@ impl Rig {
                     }
                     Some(a) => {
                         let cur = self.offsets(a, bone, t_ms).1;
-                        let want = local - b.rotation;
+                        // The key holds only this bone's own turn, not what its drive adds.
+                        let want = local - b.rotation - self.drive_turn(a, bone, t_ms);
                         // Take the turn the short way from where it is now.
                         let off = cur + (want - cur + 540.0).rem_euclid(360.0) - 180.0;
                         if t_ms > 0 && !self.animated_property(a, bone, |t| !t.rotate.is_empty()) {
@@ -736,6 +895,9 @@ impl Rig {
                             l.sx *= v[0];
                             l.sy *= v[1];
                         }
+                    }
+                    if !self.drives.is_empty() {
+                        l.rot += self.driven_turn(a, b.id, t);
                     }
                 }
                 l
@@ -1695,5 +1857,51 @@ mod tests {
 
     fn render_frame_raster(doc: &DocState, frame: usize) -> Raster {
         crate::anim::render_frame(doc, frame)
+    }
+    #[test]
+    fn reparenting_keeps_a_bone_where_it_is() {
+        let mut rig = Rig::default();
+        let a = rig.add_bone("a", None, 10.0, 20.0, 30.0);
+        rig.bone_mut(a).unwrap().rotation = 40.0;
+        let b = rig.add_bone("b", None, 60.0, 5.0, 12.0);
+        rig.bone_mut(b).unwrap().rotation = -70.0;
+        let c = rig.add_bone("c", Some(b), 12.0, 0.0, 8.0);
+        let before = rig.pose(None);
+        let world = |rig: &Rig, id: BoneId, pose: &[Xf]| pose[rig.bone_index(id).unwrap()];
+        let (wa0, wb, wc) = (world(&rig, a, &before), world(&rig, b, &before), world(&rig, c, &before));
+        // `a` was added first, so hanging it under `c` must also reorder the list.
+        assert!(rig.set_parent(a, Some(c)));
+        let after = rig.pose(None);
+        let wa = world(&rig, a, &after);
+        let close = |m: Xf, n: Xf| {
+            [(m.a, n.a), (m.b, n.b), (m.c, n.c), (m.d, n.d), (m.e, n.e), (m.f, n.f)]
+                .iter()
+                .all(|(x, y)| (x - y).abs() < 1e-3)
+        };
+        assert!(close(wa, wa0), "{wa:?}");
+        assert!(close(world(&rig, b, &after), wb) && close(world(&rig, c, &after), wc));
+        let order: Vec<BoneId> = rig.bones.iter().map(|x| x.id).collect();
+        assert_eq!(order, vec![b, c, a], "parents come first");
+        // No loops, and a root again on request.
+        assert!(!rig.set_parent(b, Some(a)));
+        assert!(rig.set_parent(a, None));
+        assert!(close(world(&rig, a, &rig.pose(None)), wa0));
+    }
+
+    #[test]
+    fn full_turns_and_the_end_of_a_loop() {
+        let mut rig = Rig::default();
+        let g = rig.add_bone("gear", None, 0.0, 0.0, 10.0);
+        let an = rig.add_animation("spin", 1000);
+        // Typed at the end of the loop: two full turns, with the rest key added at 0.
+        rig.key_from_rest(an, g, 1000, KeyValue::Rotate(720.0), Curve::Linear);
+        assert_eq!(rig.key_times(an, g), vec![0, 1000]);
+        assert!((rig.offsets(an, g, 250).1 - 180.0).abs() < 1e-3);
+        // The playhead parked on the end reads the end key, not the start.
+        assert!((rig.offsets(an, g, 1000).1 - 720.0).abs() < 1e-3);
+        assert!((rig.offsets(an, g, 1250).1 - 180.0).abs() < 1e-3, "past the end it wraps");
+        // A copied pose holds only what the bone keys.
+        let pose = rig.keyed_pose(an, g, 500);
+        assert_eq!(pose, [None, Some(KeyValue::Rotate(360.0)), None]);
     }
 }

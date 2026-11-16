@@ -79,6 +79,12 @@ impl Default for ExportPrefs {
 
 pub fn open_export(state: &mut AppState, doc: DocId) {
     let p = state.settings.anim.export.clone();
+    // Start on the animation picked in the Rig panel; a document that has rig
+    // animations but no drawn frames has nothing else worth exporting.
+    let rig_anim = state.doc(doc).and_then(|e| {
+        let s = e.doc.state();
+        e.rig_ui.anim_in(&s.rig).or((s.frame_count() <= 1 && !s.rig.animations.is_empty()).then_some(0))
+    });
     state.dialogs.export_anim = Some(ExportAnimDialog {
         doc,
         format: p.format,
@@ -88,7 +94,7 @@ pub fn open_export(state: &mut AppState, doc: DocId) {
         sheet: p.sheet,
         video_bg: p.video_bg,
         ffmpeg: anim_io::ffmpeg_path().is_some(),
-        rig_anim: None,
+        rig_anim,
         rig_fps: 12,
     });
 }
