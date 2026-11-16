@@ -78,8 +78,25 @@ pub struct RigUi {
     /// millisecond not yet added to `time_ms`.
     pub playing: bool,
     play_frac: f32,
+    /// A crossfade from the animation that was playing before this one.
+    mix: Option<Mix>,
     /// What the live preview was last drawn for.
-    pose_key: Option<(u64, Rig, usize, u32, bool, usize)>,
+    pose_key: Option<PoseKey>,
+}
+
+/// What a live preview was drawn for: history step, rig, animation, time,
+/// pixel-art flag, document frame, and the crossfade (from, its time, weight
+/// in thousandths).
+type PoseKey = (u64, Rig, usize, u32, bool, usize, Option<(usize, u32, u32)>);
+
+/// A crossfade in the preview: the animation being left keeps playing while
+/// the new one fades in over the rig's mix time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Mix {
+    from: usize,
+    /// The left animation's playhead and the time since the switch (ms).
+    from_ms: f32,
+    elapsed_ms: f32,
 }
 
 impl Default for RigUi {
@@ -103,12 +120,37 @@ impl Default for RigUi {
             alpha_key: 1.0,
             playing: false,
             play_frac: 0.0,
+            mix: None,
             pose_key: None,
         }
     }
 }
 
 impl RigUi {
+    /// Crossfade from animation `from` (playing at `from_ms`) into the
+    /// selected one, as a game would when it switches animations.
+    pub fn start_mix(&mut self, from: usize, from_ms: u32) {
+        self.mix = Some(Mix { from, from_ms: from_ms as f32, elapsed_ms: 0.0 });
+    }
+
+    /// The crossfade in progress: the animation being left, where its
+    /// playhead is (ms) and how far in the new one is (0..1).
+    pub fn mixing(&self, rig: &Rig) -> Option<(usize, u32, f32)> {
+        let m = self.mix.filter(|m| m.from < rig.animations.len() && Some(m.from) != self.anim)?;
+        let total = rig.mix_ms().max(1) as f32;
+        (m.elapsed_ms < total).then(|| (m.from, m.from_ms as u32, m.elapsed_ms / total))
+    }
+
+    /// The pose on screen: the selected animation at the playhead, blended
+    /// with the one being left during a crossfade.
+    pub fn pose_in(&self, rig: &Rig) -> Vec<qsketch_core::Xf> {
+        let to = self.anim_in(rig).map(|a| (a, self.time_ms));
+        match self.mixing(rig).filter(|_| to.is_some()) {
+            Some((from, from_ms, w)) => rig.pose_mix(Some((from, from_ms)), to, w),
+            None => rig.pose(to),
+        }
+    }
+
     /// The selected animation, if it still exists.
     pub fn anim_in(&self, rig: &Rig) -> Option<usize> {
         self.anim.filter(|&a| a < rig.animations.len())
@@ -152,8 +194,9 @@ fn seg_dist(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
 
 /// Bone head/tip positions on screen for the pose being shown.
 fn screen_bones(entry: &DocEntry) -> Vec<(BoneId, egui::Pos2, egui::Pos2)> {
+    // (During a crossfade the bones are drawn where the blend puts them.)
     let rig = &entry.doc.state().rig;
-    let pose = rig.pose(entry.rig_ui.anim_in(rig).map(|a| (a, entry.rig_ui.time_ms)));
+    let pose = entry.rig_ui.pose_in(rig);
     rig.bones
         .iter()
         .filter_map(|b| {
@@ -337,13 +380,21 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
 /// that doesn't stops on its last pose.
 pub fn tick(entry: &mut DocEntry, tool_active: bool, dt_ms: f32) -> bool {
     if !entry.rig_ui.playing {
+        entry.rig_ui.mix = None;
         return false;
     }
     let rig = &entry.doc.state().rig;
     let Some(a) = entry.rig_ui.anim_in(rig).filter(|_| tool_active) else {
         entry.rig_ui.playing = false;
+        entry.rig_ui.mix = None;
         return false;
     };
+    if entry.rig_ui.mixing(rig).is_none() {
+        entry.rig_ui.mix = None;
+    } else if let Some(m) = entry.rig_ui.mix.as_mut() {
+        m.from_ms += dt_ms;
+        m.elapsed_ms += dt_ms;
+    }
     let (dur, looped) = (rig.animations[a].duration_ms.max(1), rig.animations[a].looped);
     let t = entry.rig_ui.time_ms as f32 + entry.rig_ui.play_frac + dt_ms;
     let whole = t.floor();
@@ -499,18 +550,31 @@ pub fn sync_preview(entry: &mut DocEntry, tool_active: bool) {
     let a = anim.unwrap_or(usize::MAX);
     let hid = entry.doc.history.current_id();
     let (t, nearest) = (entry.rig_ui.time_ms, entry.rig_ui.nearest);
+    // A crossfade in progress (only while an animation plays).
+    let mix = anim.and_then(|_| entry.rig_ui.mixing(&entry.doc.state().rig));
+    let mix_key = mix.map(|(from, ms, w)| (from, ms, (w * 1000.0) as u32));
     // The document's current frame is part of what the pose is drawn from.
     let frame = entry.doc.state().frame;
     let fresh = entry.doc.has_pose_preview()
         && entry.rig_ui.pose_key.as_ref().is_some_and(|k| {
-            k.0 == hid && k.2 == a && k.3 == t && k.4 == nearest && k.5 == frame && k.1 == entry.doc.state().rig
+            k.0 == hid
+                && k.2 == a
+                && k.3 == t
+                && k.4 == nearest
+                && k.5 == frame
+                && k.6 == mix_key
+                && k.1 == entry.doc.state().rig
         });
     if fresh {
         return;
     }
-    let key = (hid, entry.doc.state().rig.clone(), a, t, nearest, frame);
+    let key = (hid, entry.doc.state().rig.clone(), a, t, nearest, frame, mix_key);
     let filter = if key.4 { ResizeFilter::Nearest } else { ResizeFilter::Bilinear };
-    let posed = rig::posed_copy(entry.doc.state(), anim, key.3, filter);
+    let to = anim.map(|a| (a, key.3));
+    let posed = match mix {
+        Some((from, from_ms, w)) => rig::posed_copy_mix(entry.doc.state(), Some((from, from_ms)), to, w, filter),
+        None => rig::posed_copy(entry.doc.state(), anim, key.3, filter),
+    };
     entry.doc.set_pose_preview(Some(posed));
     entry.rig_ui.pose_key = Some(key);
 }

@@ -195,6 +195,40 @@
    * pose, which is plain forward kinematics; IK applies only to animations.
    */
   function pose(rig, animName, seconds) {
+    return worlds(rig.bones, locals(rig, animName, seconds));
+  }
+
+  /**
+   * World matrices while crossfading from one animation to another (see
+   * "Mixing" in the doc): `weight` 0 is all `from`, 1 all `to`. Either name
+   * may be null for the setup pose. `rig.json.mix` is the crossfade length
+   * (seconds) set in the editor.
+   */
+  function poseMix(rig, fromAnim, fromSeconds, toAnim, toSeconds, weight) {
+    const w = Math.min(1, Math.max(0, weight));
+    if (w >= 1) return pose(rig, toAnim, toSeconds);
+    const a = locals(rig, fromAnim, fromSeconds);
+    const b = locals(rig, toAnim, toSeconds);
+    a.forEach((l, i) => {
+      const o = b[i];
+      l.x += (o.x - l.x) * w;
+      l.y += (o.y - l.y) * w;
+      l.rot += wrap180(o.rot - l.rot) * w;
+      l.sx += (o.sx - l.sx) * w;
+      l.sy += (o.sy - l.sy) * w;
+    });
+    return worlds(rig.bones, a);
+  }
+
+  /** How shown `part` is during the same crossfade. */
+  function partAlphaMix(rig, part, fromAnim, fromSeconds, toAnim, toSeconds, weight) {
+    const w = Math.min(1, Math.max(0, weight));
+    const a = partAlpha(rig, part, fromAnim, fromSeconds);
+    return a + (partAlpha(rig, part, toAnim, toSeconds) - a) * w;
+  }
+
+  /** Every bone's local transform in an animation, after drives and IK. */
+  function locals(rig, animName, seconds) {
     const anim = animName != null ? rig.animations[animName] : null;
     const t = anim ? loopTime(anim, seconds) : seconds;
     const locals = rig.bones.map((b) => {
@@ -240,7 +274,7 @@
         solveIk(rig, locals, c, mix, sampleBend(keys, t, c.bend));
       }
     }
-    return worlds(rig.bones, locals);
+    return locals;
   }
 
   function inverse(m) {
@@ -381,7 +415,7 @@
   const canvasBlend = (name) => BLEND[name] || "source-over";
 
   const QRig = {
-    IDENTITY, mul, apply, inverse, trs, wrap180, ease, sample, load, pose, partMatrix, partAlpha, partInSkin, frameAt, partImage, meshPoints, meshTriangles, canvasBlend,
+    IDENTITY, mul, apply, inverse, trs, wrap180, ease, sample, load, pose, poseMix, partMatrix, partAlpha, partAlphaMix, partInSkin, frameAt, partImage, meshPoints, meshTriangles, canvasBlend,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = QRig;
   else root.QRig = QRig;

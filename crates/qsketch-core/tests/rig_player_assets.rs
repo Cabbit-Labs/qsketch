@@ -185,7 +185,31 @@ fn fixture_expected(doc: &DocState, spine: BoneId) -> String {
             push(Some(a), t);
         }
     }
-    serde_json::to_string_pretty(&json!({ "samples": samples })).unwrap() + "\n"
+    // Crossfades between the two animations (and out of the setup pose).
+    let mut mixes = Vec::new();
+    let name = |a: Option<usize>| a.map(|a| rig.animations[a].name.clone());
+    for (from, from_ms, to, to_ms, weight) in [
+        (Some(0), 300, Some(1), 0, 0.25f32),
+        (Some(0), 400, Some(1), 100, 0.75),
+        (Some(1), 650, Some(0), 50, 0.5),
+        (Some(0), 1100, Some(1), 700, 0.1),
+        (None, 0, Some(0), 500, 0.6),
+    ] {
+        let (f, t) = (from.map(|a| (a, from_ms)), to.map(|a| (a, to_ms)));
+        let pose = rig.pose_mix(f, t, weight);
+        let mut bones = serde_json::Map::new();
+        for (b, m) in rig.bones.iter().zip(&pose) {
+            bones.insert(b.name.clone(), matrix(*m));
+        }
+        mixes.push(json!({
+            "from": name(from), "fromT": from_ms as f64 / 1000.0,
+            "to": name(to), "toT": to_ms as f64 / 1000.0,
+            "weight": weight,
+            "bones": bones,
+            "alpha": num(rig.alpha_mix(f, t, weight, cloth)),
+        }));
+    }
+    serde_json::to_string_pretty(&json!({ "samples": samples, "mixes": mixes })).unwrap() + "\n"
 }
 
 // --- the sample character --------------------------------------------------------

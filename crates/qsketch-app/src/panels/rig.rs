@@ -274,6 +274,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let cur = rui.anim_in(rig);
     rui.anim = cur;
     let names: Vec<String> = rig.animations.iter().map(|a| a.name.clone()).collect();
+    let mix_ms = rig.mix_ms();
+    let mut mix_edit = mix_ms;
+    let mixing = rui.mixing(rig).map(|(from, _, w)| (rig.animations[from].name.clone(), w));
+    let was = (cur, rui.time_ms, rui.playing);
     let original = cur.map(|a| rig.animations[a].clone());
     let mut anim_edit = original.clone();
     let layer = e.doc.state().active_layer();
@@ -423,6 +427,12 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     close_loop = true;
                 }
                 ui.checkbox(&mut rui.nearest, "Pixel art").on_hover_text("Preview without smoothing");
+                if names.len() > 1 {
+                    ui.add(egui::DragValue::new(&mut mix_edit).range(0..=5000).speed(5).prefix("mix ").suffix(" ms"))
+                        .on_hover_text(
+                            "Crossfade: pick another animation while this one plays and the pose blends into it over this long, the way a game switches animations (0 switches at once). Exported as the default mix.",
+                        );
+                }
                 del_anim = ui.button(format!("{} Delete", icons::TRASH)).on_hover_text("Delete this animation").clicked();
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -495,6 +505,10 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     .clicked()
                 {
                     del_keys = true;
+                }
+                // Last in the row, so nothing moves when it comes and goes.
+                if let Some((from, w)) = &mixing {
+                    ui.colored_label(ui.visuals().warn_fg_color, format!("mixing from “{from}” {:.0}%", w * 100.0));
                 }
             });
         } else {
@@ -813,6 +827,16 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 
     // --- write back --------------------------------------------------------------
     let Some(e) = state.doc_mut(doc_id) else { return };
+    // Another animation picked while one plays: crossfade into it.
+    if let ((Some(from), from_ms, true), Some(to)) = (was, rui.anim) {
+        if from != to && rui.playing && mix_ms > 0 {
+            e.rig_ui.start_mix(from, from_ms);
+        }
+    }
+    if mix_edit != mix_ms {
+        e.doc.state_mut().rig.set_mix_ms(mix_edit);
+        e.rig_ui.edited = true;
+    }
     e.rig_ui.anim = rui.anim;
     e.rig_ui.easing = rui.easing;
     e.rig_ui.graph = rui.graph;

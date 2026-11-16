@@ -793,6 +793,7 @@
       "target": "right foot"
     }
   ],
+  "mix": 0.2,
   "parts": [
     {
       "blend": "normal",

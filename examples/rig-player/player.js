@@ -17,6 +17,7 @@
     images: new Map(), // part image path -> HTMLImageElement
     anim: null, // animation name, or null for the setup pose
     skin: null, // skin name, or null to draw every part
+    mix: null, // a crossfade: { from, fromTime, elapsed } (seconds)
     time: 0, // seconds, as played (not wrapped)
     playing: true,
     speed: 1,
@@ -67,6 +68,11 @@
   }
 
   function setAnimation(name) {
+    // Switching while one plays crossfades into the new one, over the
+    // file's `mix` seconds; the animation being left keeps playing meanwhile.
+    const mixLength = state.rig.json.mix ?? 0;
+    const leaving = state.playing && state.anim != null && name != null && name !== state.anim && mixLength > 0;
+    state.mix = leaving ? { from: state.anim, fromTime: state.time, elapsed: 0 } : null;
     state.anim = name;
     state.time = 0;
     state.playing = name != null;
@@ -175,10 +181,16 @@
     ctx.globalCompositeOperation = "source-over";
     drawBackdrop(view.width, view.height);
     ctx.imageSmoothingEnabled = !state.pixel;
-    const world = QRig.pose(rig, state.anim, state.time);
+    const mix = state.mix;
+    const weight = mix ? mix.elapsed / rig.json.mix : 1;
+    const world = mix
+      ? QRig.poseMix(rig, mix.from, mix.fromTime, state.anim, state.time, weight)
+      : QRig.pose(rig, state.anim, state.time);
     for (const part of rig.parts) {
       if (!QRig.partInSkin(part, state.skin)) continue;
-      const alpha = QRig.partAlpha(rig, part, state.anim, state.time);
+      const alpha = mix
+        ? QRig.partAlphaMix(rig, part, mix.from, mix.fromTime, state.anim, state.time, weight)
+        : QRig.partAlpha(rig, part, state.anim, state.time);
       if (alpha <= 0) continue;
       ctx.globalAlpha = part.opacity * alpha;
       ctx.globalCompositeOperation = QRig.canvasBlend(part.blend);
@@ -216,6 +228,11 @@
     const an = state.rig && state.anim != null ? state.rig.animations[state.anim] : null;
     if (an && state.playing) {
       state.time += dt * state.speed;
+      if (state.mix) {
+        state.mix.fromTime += dt * state.speed;
+        state.mix.elapsed += dt * state.speed;
+        if (state.mix.elapsed >= state.rig.json.mix) state.mix = null;
+      }
       if (!an.loop && state.time >= an.duration) {
         state.time = an.duration;
         state.playing = false;

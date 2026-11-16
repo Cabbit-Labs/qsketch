@@ -284,6 +284,9 @@ pub struct Rig {
     /// The active skin (an index into `skins`); `None` shows every layer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skin: Option<usize>,
+    /// Crossfade length between animations (see `mix_ms()`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mix_ms: Option<u32>,
     #[serde(default)]
     next_bone_id: BoneId,
     #[serde(default)]
@@ -956,6 +959,48 @@ impl Rig {
     /// constraints are solved; the setup pose itself is plain forward
     /// kinematics (the pose the art was drawn in).
     pub fn pose(&self, anim: Option<(usize, u32)>) -> Vec<Xf> {
+        self.worlds(&self.locals(anim))
+    }
+
+    /// The pose while crossfading from one animation to another: `weight` 0
+    /// is all `from`, 1 all `to` (each an animation and a time, or `None`
+    /// for the setup pose). Every bone's local position and scale blend in a
+    /// straight line and its rotation the short way round, after each side's
+    /// own IK, which is how a game runtime mixes two animations.
+    pub fn pose_mix(&self, from: Option<(usize, u32)>, to: Option<(usize, u32)>, weight: f32) -> Vec<Xf> {
+        let w = weight.clamp(0.0, 1.0);
+        if w >= 1.0 {
+            return self.pose(to);
+        }
+        let mut locals = self.locals(from);
+        for (l, o) in locals.iter_mut().zip(self.locals(to)) {
+            l.x += (o.x - l.x) * w;
+            l.y += (o.y - l.y) * w;
+            l.rot += wrap180(o.rot - l.rot) * w;
+            l.sx += (o.sx - l.sx) * w;
+            l.sy += (o.sy - l.sy) * w;
+        }
+        self.worlds(&locals)
+    }
+
+    /// How shown `layer` is during the same crossfade.
+    pub fn alpha_mix(&self, from: Option<(usize, u32)>, to: Option<(usize, u32)>, weight: f32, layer: LayerId) -> f32 {
+        let (a, b) = (self.alpha_at(from, layer), self.alpha_at(to, layer));
+        a + (b - a) * weight.clamp(0.0, 1.0)
+    }
+
+    /// How long a crossfade between two animations takes (ms; 0 switches at
+    /// once). A default for the preview and for game runtimes.
+    pub fn mix_ms(&self) -> u32 {
+        self.mix_ms.unwrap_or(200)
+    }
+
+    pub fn set_mix_ms(&mut self, ms: u32) {
+        self.mix_ms = Some(ms);
+    }
+
+    /// Every bone's local transform in `anim` (after drives and IK).
+    fn locals(&self, anim: Option<(usize, u32)>) -> Vec<Local> {
         let an = anim.and_then(|(i, t)| self.animations.get(i).map(|a| (a, a.local_time(t))));
         let mut locals: Vec<Local> = self
             .bones
@@ -986,7 +1031,7 @@ impl Rig {
         if let Some((a, t)) = an {
             self.solve_ik(&mut locals, Some((a, t)));
         }
-        self.worlds(&locals)
+        locals
     }
 
     fn worlds(&self, locals: &[Local]) -> Vec<Xf> {
@@ -1309,6 +1354,19 @@ fn pose_picture(raster: &Raster, kind: &PoseKind, width: u32, height: u32, filte
 /// A copy of `doc` with the pose of `anim` at `t_ms` applied to every
 /// attached layer (their masks baked in, since a mask can't follow a bone).
 pub fn posed_copy(doc: &DocState, anim: Option<usize>, t_ms: u32, filter: ResizeFilter) -> DocState {
+    let at = anim.map(|a| (a, t_ms));
+    posed_copy_mix(doc, at, at, 1.0, filter)
+}
+
+/// Like `posed_copy`, for a crossfade between two animations (see
+/// `Rig::pose_mix`).
+pub fn posed_copy_mix(
+    doc: &DocState,
+    from: Option<(usize, u32)>,
+    to: Option<(usize, u32)>,
+    weight: f32,
+    filter: ResizeFilter,
+) -> DocState {
     let mut out = doc.clone();
     let rig = &doc.rig;
     if rig.attachments.is_empty()
@@ -1320,10 +1378,11 @@ pub fn posed_copy(doc: &DocState, anim: Option<usize>, t_ms: u32, filter: Resize
         return out;
     }
     let setup = doc.rig.pose(None);
-    let pose = doc.rig.pose(anim.map(|a| (a, t_ms)));
+    let mixing = from != to && weight < 1.0;
+    let pose = if mixing { rig.pose_mix(from, to, weight) } else { rig.pose(to) };
     let (w, h) = (doc.width, doc.height);
     for l in &mut out.layers {
-        let alpha = rig.alpha_at(anim.map(|a| (a, t_ms)), l.id());
+        let alpha = if mixing { rig.alpha_mix(from, to, weight, l.id()) } else { rig.alpha_at(to, l.id()) };
         if alpha < 0.999 {
             l.props.opacity *= alpha;
         }
@@ -1939,6 +1998,32 @@ mod tests {
     fn render_frame_raster(doc: &DocState, frame: usize) -> Raster {
         crate::anim::render_frame(doc, frame)
     }
+    #[test]
+    fn a_crossfade_blends_two_animations() {
+        let mut rig = Rig::default();
+        let b = rig.add_bone("arm", None, 10.0, 0.0, 20.0);
+        let (up, down) = (rig.add_animation("up", 1000), rig.add_animation("down", 1000));
+        rig.set_key(up, b, 0, KeyValue::Rotate(170.0), Curve::Linear);
+        rig.set_key(up, b, 0, KeyValue::Translate([10.0, 0.0]), Curve::Linear);
+        rig.set_key(down, b, 0, KeyValue::Rotate(-170.0), Curve::Linear);
+        let angle = |m: Xf| m.b.atan2(m.a).to_degrees();
+        // The ends are the animations themselves.
+        assert_eq!(rig.pose_mix(Some((up, 0)), Some((down, 0)), 0.0), rig.pose(Some((up, 0))));
+        assert_eq!(rig.pose_mix(Some((up, 0)), Some((down, 0)), 1.0), rig.pose(Some((down, 0))));
+        // Halfway: the short way round (through 180, not through 0), and
+        // half of the move.
+        let mid = rig.pose_mix(Some((up, 0)), Some((down, 0)), 0.5)[0];
+        assert!(near(angle(mid).abs(), 180.0), "{}", angle(mid));
+        assert!(near(mid.e, 15.0));
+        // From the setup pose too.
+        let m = rig.pose_mix(None, Some((up, 0)), 0.5)[0];
+        assert!(near(angle(m), 85.0) && near(m.e, 15.0));
+        // Opacity fades across.
+        rig.set_alpha_key(down, 7, 0, 0.0, Curve::Linear);
+        assert!(near(rig.alpha_mix(Some((up, 0)), Some((down, 0)), 0.25, 7), 0.75));
+        assert_eq!(rig.mix_ms(), 200);
+    }
+
     #[test]
     fn skins_show_their_own_layers() {
         let mut rig = Rig::default();

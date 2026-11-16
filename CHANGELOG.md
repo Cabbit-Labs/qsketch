@@ -4,6 +4,13 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Rig: **mixing** (crossfades). With more than one animation, the Rig panel
+  has a "mix" time: pick another animation while one plays and the pose blends
+  into it over that long, the way a game switches animations, with a note
+  showing how far the mix is. The animation being left keeps playing during
+  the blend. The mix time is exported (`mix` in `docs/RIG_FORMAT.md`, with the
+  blending recipe), the reference runtime gets `poseMix` and `partAlphaMix`,
+  and the reference player crossfades when you switch animations.
 - Rig: **skins** (Rig panel > Skin), to swap outfits or whole characters on
   one skeleton. A skin is a named set of layers: tick "Active layer in this
   skin" to put a layer in the skin being worn. A layer in a skin shows only

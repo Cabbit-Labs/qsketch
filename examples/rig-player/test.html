@@ -69,6 +69,20 @@
       log.push(`FAIL ${label} mesh vertex ${bad >> 1}: got ${pts[bad]?.toFixed(3)}, want ${s.mesh[bad]?.toFixed(3)}`);
     }
   }
+  // Crossfades between two animations.
+  for (const s of expected.mixes) {
+    const label = `mix ${s.from} @ ${s.fromT}s -> ${s.to} @ ${s.toT}s, ${s.weight}`;
+    const world = QRig.poseMix(rig, s.from, s.fromT, s.to, s.toT, s.weight);
+    for (const [name, want] of Object.entries(s.bones)) {
+      compare(`${label} bone ${name}`, world[rig.index.get(name)], want);
+    }
+    const got = QRig.partAlphaMix(rig, rig.parts.find((p) => p.name === "cloth"), s.from, s.fromT, s.to, s.toT, s.weight);
+    checked++;
+    if (Math.abs(got - s.alpha) > 2e-3) {
+      failed++;
+      log.push(`FAIL ${label} alpha of cloth: got ${got.toFixed(4)}, want ${s.alpha.toFixed(4)}`);
+    }
+  }
   document.getElementById("summary").textContent =
     failed === 0 ? `PASS: ${checked} matrices match the editor` : `FAIL: ${failed} of ${checked} differ`;
   document.getElementById("summary").className = failed === 0 ? "pass" : "fail";

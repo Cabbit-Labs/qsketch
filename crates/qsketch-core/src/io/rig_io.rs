@@ -334,6 +334,7 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         "format": "qsketch-rig",
         "version": 1,
         "canvas": { "width": doc.width, "height": doc.height },
+        "mix": rig.mix_ms() as f64 / 1000.0,
         "bones": bones,
         "ik": ik,
         "parts": parts,

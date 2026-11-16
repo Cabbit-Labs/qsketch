@@ -20,6 +20,7 @@ Shape, text and smart-object layers are exported as their drawn pixels.
 {
   "format": "qsketch-rig", "version": 1,
   "canvas": { "width": 256, "height": 256 },
+  "mix": 0.2,                      // crossfade seconds; see "Mixing"
   "bones": [                       // parents always come before children
     { "name": "root", "parent": null, "x": 128, "y": 200,
       "rotation": 0, "scaleX": 1, "scaleY": 1, "length": 30 }
@@ -220,6 +221,20 @@ earlier key's `curve` between keys; `"stepped"` switches instantly, `"linear"`
 fades). A part with no timeline in the playing animation uses its own `alpha`,
 and so does the setup pose. When drawing, multiply the part's `opacity` by
 the alpha; at 0 there is nothing to draw.
+
+## Mixing (crossfades)
+
+When a game switches from one animation to another, snapping looks abrupt, so
+blend for a short while: `mix` is the length (seconds) set in the editor, a
+default you are free to override per pair of animations. During the blend
+both animations keep playing. Work out each one's **local** bone transforms
+as in "Posing" (keys, drives, then IK, each with its own animation), then for
+every bone blend the two by the weight `w` (0 at the switch, 1 when the mix
+time is up): position and scale in a straight line, `a + (b - a) * w`, and
+rotation the short way round, `a + wrap180(b - a) * w`. Build the world
+matrices from the blended locals. A part's alpha blends the same way between
+its two alphas; draw the incoming animation's frame art. The setup pose can
+stand in for either side (blending in from, or out to, rest).
 
 ## Skins
 
