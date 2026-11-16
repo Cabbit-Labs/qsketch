@@ -1,233 +1,98 @@
 # qsketch
 
-A fast, professional sketching, painting and pixel-art desktop app. qsketch
-gives you a Photoshop/Aseprite-familiar workflow — layers and masks, blend
-modes, a non-destructive undo history, a document palette, dockable panels —
-built from scratch in Rust on top of `egui` and `wgpu` so strokes stay
-responsive even on large canvases, with full stylus pressure support (Windows
-Ink, WinTab, Wayland) and a fully remappable keyboard.
+A fast sketching, painting, pixel-art and animation app for the desktop, with
+a workflow familiar from Photoshop and Aseprite. Written from scratch in Rust
+on `egui` and `wgpu`, so strokes stay responsive on large canvases, with
+stylus pressure (Windows Ink, WinTab, Wayland) and a fully remappable
+keyboard.
 
 ![qsketch](docs/screenshot-main.png)
 
 ## Features
 
-- **Tiled, copy-on-write raster engine.** Layers are stored as 64x64 tiles
-  behind `Arc`s, so undo snapshots are cheap and only the tiles a stroke
-  actually touches are ever duplicated in memory.
-- **Photoshop-style brush engine.** Separate flow (per-dab deposit) and
-  opacity (per-stroke cap), a per-stroke coverage buffer so overlapping dabs
-  never exceed the opacity ceiling, pressure-to-size and pressure-to-opacity
-  curves, and thirteen built-in presets (Hard Round, Soft Round, Pencil, Ink
-  Pen, Airbrush, Marker, Pixel, Chalk, Charcoal, Spatter, Scatter Leaves,
-  Flat Marker, Dry Bristle) that switch from a quick list on the options
-  bar. Tip angle and roundness are set on a dial with grabbable handles;
-  import brush tips from PNGs or from GIMP (`.gbr`, `.gih`) and Photoshop
-  (`.abr`, sampled brushes) files, or drop your own texture PNGs into the
-  config folder's `textures/` directory. Shift+click draws a straight line
-  from the last stroke at any angle; Shift+Ctrl snaps it to a step you
-  choose (15° by default), and the Line and shape tools preview the exact
-  stroke they will lay down.
-- **Palettes and indexed color.** A per-document palette panel with ramps,
-  sorting, presets (PICO-8, DawnBringer, Endesga…), median-cut generation
-  from the image and `.gpl`/`.hex`/`.pal`/`.act`/`.aco`/Aseprite files.
-  Lock it and every edit snaps to it; Index Colors converts a document with
-  optional dither; Replace Color swaps one color for another. A shading ink
-  steps pixels along a palette ramp, and the Pencil's pixel-perfect mode
-  keeps hand-drawn 1 px lines free of doubled corners. Snap to grid, a
-  tiled preview for seamless tiles, crisp integer-scaled export and a
-  deduplicated tileset export (sheet + map) round out the pixel-art kit,
-  along with non-square pixel aspect ratios (2:1 and 1:2, kept in `.ase`
-  files too), dither ink that turns soft edges and partial opacity into
-  ordered dither patterns, RotSprite rotation in Free Transform, which
-  turns pixel art without blurring it or inventing colors, and a Slice tool
-  for named 9-slice UI parts that export as PNGs plus JSON and round-trip
-  through Aseprite files. Tilemap layers build levels from a shared
-  tileset: stamp tiles with the Tile tool, paint any cell and every other
-  use of that tile follows.
-- **Shape layers.** Pixel-art vector shapes: points you can keep moving,
-  redrawn without anti-aliasing every time, with fill and outline.
-- **HD index painting.** Posterize, Gradient Map and Black & White
-  adjustment layers plus a dither pattern layer, set up in one command, so
-  you paint in grayscale with any brush and the stack turns it into
-  dithered, re-indexable pixel art.
-- **Liquify.** Push, twirl, pinch, bloat and reconstruct with a brush,
-  live on the canvas, committed as one undo step.
-- **Free Transform.** Move, scale, rotate (about an anchor you can drag
-  anywhere), deform (corner pull) and warp
-  a floating selection or layer with on-canvas handles before it is
-  committed. The warp grid is a smooth spline surface, so pulling one node
-  eases into its neighbors with no seams; Smooth mode anti-aliases the
-  outline and Pixel mode keeps whole pixels.
-- **Retouching brushes.** Smudge drags colors along under the stroke; the
-  Clone Stamp copies from an Alt+clicked source point (aligned or not, from
-  one layer or all), both through the full brush engine.
-- **Photoshop `.psd` open and save** (8/16-bit RGB or grayscale; layer names,
-  visibility, opacity, blend modes and clipping round-trip; groups flatten
-  into the layer list on open).
-- **Animation.** Any document can have frames, edited in an Aseprite-style
-  Timeline panel: cels per layer and frame (linkable, with their own
-  opacity), continuous layers, tags with direction and repeat, frame
-  durations, drag-to-reorder, playback with Enter, onion skins tinted red
-  and blue (F3), and import from GIFs, APNGs, image sequences and sprite
-  sheets. Export as an animated GIF with an exact palette, APNG, a PNG
-  sequence, a sprite sheet with Aseprite-style JSON, or MP4 / WebM video
-  through ffmpeg.
-- **PaintTool SAI 2 `.sai2` open** with every layer: pixels (including
-  what reaches past the canvas), names, opacity, blend mode and visibility,
-  in SAI 2's stacking order. Save back as `.psd` to take the layers into
-  SAI 2 again. Folders, text and shape layers come in as plain layers.
-- **Aseprite `.ase`/`.aseprite` open and save** with full fidelity: RGBA,
-  grayscale and indexed sprites; every frame with durations, linked cels,
-  cel opacity, tags, continuous layers, layer colors and notes, tilesets
-  and tilemap layers, slices, the palette and the pixel aspect ratio all
-  round-trip.
-- **Save As any image format** (PNG, JPEG, WebP, BMP, TGA, TIFF) straight
-  from Save As, with a heads-up listing what that format drops (layers,
-  transparency, selection) before it writes.
-- **Draw together over [Leyline](https://github.com/mayathegreat/leyline).**
-  File ▸ Share via Leyline… puts the current canvas in a contact's or group's
-  hands; everyone paints on it at once, sees each other's named pointers, and
-  keeps their own undo. Leyline (running on the same computer) carries the
-  changes, queues them for whoever is offline, and replays them for whoever
-  joins later. See [docs/SHARING.md](docs/SHARING.md).
-- **Layer masks.** Photoshop-style per-layer masks: add one that reveals
-  all, hides all, or comes from the selection; paint on it with any brush
-  (white reveals, black hides); disable, apply or delete it. Masks round-trip
-  through `.qsk` and `.psd`, and follow the layer through moves, flips,
-  rotations and resizes.
-- **Adjustment layers.** Brightness/Contrast, Levels, Curves,
-  Hue/Saturation and Color Balance as layers that change everything below
-  them without touching it: paint the mask to limit where, lower the
-  opacity to soften, clip one to a single layer, or merge it down to bake
-  it in.
-- **Layer styles.** Non-destructive drop shadow, outer and inner glow,
-  stroke (outside, inside or centered) and color overlay, with a live
-  preview; effects follow the layer as you paint and never touch its
-  pixels. Copy and paste a style across layers.
-- **20 blend modes** (Normal through Luminosity, matching the W3C compositing
-  spec / Photoshop semantics), per-layer opacity, clipping masks, alpha lock,
-  layer groups (nested, with their own opacity/blend/visibility), and
-  merge-down/merge-visible/flatten.
-- **A real selection system.** Rectangle, ellipse, lasso, polygonal lasso and magic-wand
-  selections with add/subtract/intersect modifiers, anti-aliased edges,
-  marching-ants outlines, and move/lift/drop of floating selections. A
-  selection brush paints the selection directly, and Select ▸ Modify has the
-  usual reshaping: Border, Smooth, Expand, Contract, Feather, Sharpen and
-  Remove Holes, plus Reselect.
-- **A Filter menu with live preview.** 43 filters in Photoshop's groups
-  (Blur, Distort, Noise, Pixelate, Render, Sharpen, Stylize, Other) plus an
-  Experimental set (Outline, Glow, Vignette, Pencil Sketch, Dither,
-  Kaleidoscope, Chromatic Aberration, Scanlines, Pixel Sort, Glitch). They
-  respect the selection and alpha lock, run in premultiplied color so
-  transparent edges stay clean, and `Ctrl+F` repeats the last one.
-- **Smart objects.** Convert a layer (Layer › Smart Object) or paste an
-  image as one (Ctrl+Alt+V) and it keeps its original pixels: scale,
-  rotate, distort and warp it with Ctrl+T as often as you like, shrink it
-  and grow it back, and it is always drawn fresh from the original, never
-  worn down. Canvas resizes, flips and turns keep it smart too.
-- **Trace to vector.** Image › Trace to Vector turns a layer (posterize
-  first for flat colors) into smooth vector shapes, previewed live: color
-  or black & white, smooth curves, polygons or exact pixel edges, with
-  presets for logos, line art, pixel art and detailed pictures. The result
-  is a vector smart object that Ctrl+T and Image Size redraw crisp at any
-  size, and File › Export as SVG writes it out as a real vector file.
-- **Editable text layers.** The Text tool starts a text layer that stays
-  editable: click it again to change the words, font, size, style or color,
-  drag it to move it, and rasterize it only when you want pixels.
-- **Symmetry painting and stroke stabilizers.** Mirror strokes horizontally,
-  vertically or radially (up to 64 copies) around a movable center with
-  on-canvas guides you can drag (the center moves the set, a line slides or
-  rotates it), and steady shaky lines with a rope ("lazy brush") or
-  moving-average stabilizer per brush.
-- **Timelapse.** Record a document as you paint (File ▸ Timelapse); the
-  frames are saved in the `.qsk` and export as a looping GIF or as
-  numbered PNG frames for a video editor.
-- **Reference panel.** Keep a picture beside the canvas: pan, zoom, flip
-  it, view it in grayscale to judge values, and click it to pick colors.
-- **Rulers and guides.** Rulers in document pixels along the canvas; drag
-  a guide off either ruler, move it with the Move tool, snap shapes,
-  marquees, crops and moves to it. Guides live in the `.qsk`.
-- **Crash recovery and backups.** Unsaved documents are autosaved to the
-  settings folder on a timer and offered for recovery on the next launch if
-  qsketch didn't exit cleanly; saving keeps a few previous versions of the
-  file that File ▸ Restore Previous Version can bring back.
-- **GPU-accelerated canvas.** A `wgpu` compositor re-uploads only the dirty
-  64x64 tiles of the premultiplied composite each frame, drawn over a
-  checkerboard with an optional pixel grid at high zoom.
-- **Stylus pressure out of the box**, via native pen/touch events, the
-  WinTab driver API on Windows (works with "Use Windows Ink" off; barrel
-  buttons and the eraser tip are honored), or the optional `octotablet`
-  backend (Windows Ink RealTimeStylus / Wayland tablet-v2) for tilt and
-  eraser-tip detection.
-- **A dockable, modern UI** (`egui_dock`): drag, split, float and re-arrange
-  the Tools, Layers, History, Color, Swatches, Palette, Navigator, Brushes,
-  Brush Settings, Info, Reference, Tileset and Timeline panels however you like; the layout is remembered
-  between sessions. Coming from another program? Pick a SAI 2, Photoshop or
-  Aseprite-style arrangement in Preferences › Interface or Window ›
-  Workspace. Two open documents can sit side by side, and the
-  panels always follow the one you are drawing on. Four monochrome themes
-  (Ink, Graphite, Light, Sepia) plus a custom palette, a rounded or angular
-  shape language, an optional chrome texture, and a short startup
-  animation you can switch off.
-- **Document statistics.** Every `.qsk` remembers when it was started, how
-  long you have worked on it (the clock pauses when you do), how many edits
-  and saves it has seen; the Info panel shows them and the status bar shows
-  the file's size on disk.
-- **Every command is remappable.** All menu commands and tool shortcuts live
-  in one keymap you can rebind from Edit ▸ Preferences ▸ Keyboard Shortcuts;
-  see [`docs/SHORTCUTS.md`](docs/SHORTCUTS.md) for the defaults.
-- **A native, inspectable file format.** `.qsk` is a plain ZIP of PNGs plus a
-  JSON manifest — see [`docs/FILE_FORMAT.md`](docs/FILE_FORMAT.md).
+**Painting**
+- Brush engine with separate flow and opacity, pressure curves, thirteen
+  presets, and brush tips imported from PNG, GIMP (`.gbr`, `.gih`) and
+  Photoshop (`.abr`) files.
+- Smudge, Clone Stamp, Liquify, symmetry (mirror or radial) and stroke
+  stabilizers. Shift+click draws straight lines.
+- Stylus pressure out of the box; tilt and the eraser tip with the optional
+  `octotablet` backend.
+
+**Layers and editing**
+- 20 blend modes, groups, clipping masks, alpha lock, layer masks, adjustment
+  layers, and layer styles (shadow, glow, stroke, color overlay).
+- Smart objects that transform without losing quality, editable text layers,
+  shape layers, and Trace to Vector with SVG export.
+- Selections (rectangle, ellipse, lasso, polygon, magic wand, selection
+  brush) with the usual Modify commands, and Free Transform with deform and
+  warp.
+- 43 filters with live preview, plus an experimental set.
+- A linear undo history you can jump around in, rulers and guides, and a
+  reference panel.
+
+**Pixel art**
+- A document palette with ramps, presets and import from common palette
+  files. Lock it for indexed color; Index Colors converts with optional
+  dither.
+- Pixel-perfect pencil, shading and dither inks, snap to grid, tiled preview,
+  RotSprite rotation, non-square pixels.
+- Tilemap layers, tileset export, and a Slice tool for 9-slice UI parts.
+
+**Animation**
+- Frame animation in an Aseprite-style Timeline: cels, tags, onion skins,
+  and import from GIF, APNG, image sequences and sprite sheets.
+- Skeletal animation with the Bone tool and Rig panel: bones, two-bone IK,
+  weighted meshes, gear drives, skins, a dopesheet and curve graph, and
+  crossfades between animations. Bake it to frames, or export a rig for
+  games ([`docs/RIG_FORMAT.md`](docs/RIG_FORMAT.md)) with a reference
+  JavaScript runtime in [`examples/rig-player`](examples/rig-player).
+- Export as GIF, APNG, PNG sequence, sprite sheet with JSON, or MP4 / WebM
+  through ffmpeg. Timelapse recording of a document as you paint.
+
+**Files**
+- `.qsk`, the native format: a plain ZIP of PNGs plus a JSON manifest
+  ([`docs/FILE_FORMAT.md`](docs/FILE_FORMAT.md)).
+- Opens and saves Photoshop `.psd` and Aseprite `.ase` / `.aseprite`; opens
+  PaintTool SAI 2 `.sai2`.
+- Saves PNG, JPEG, WebP, BMP, TGA and TIFF, and says what each format drops
+  before it writes.
+- Autosave with crash recovery, and previous versions of saved files.
+
+**Interface**
+- Dockable panels with SAI 2, Photoshop and Aseprite-style layouts, four
+  themes plus a custom palette, and two documents side by side.
+- Every command can be rebound
+  ([`docs/SHORTCUTS.md`](docs/SHORTCUTS.md) lists the defaults).
+- Draw together over [Leyline](https://github.com/mayathegreat/leyline)
+  ([`docs/SHARING.md`](docs/SHARING.md)).
 
 ## Install
 
-### Windows
+Download from the
+[Releases](https://github.com/Cabbit-Labs/qsketch/releases) page.
 
-Download the latest installer (`qsketch-<version>-setup.exe`) or portable ZIP
-(`qsketch-<version>-windows-portable.zip`) from the
-[Releases](https://github.com/Cabbit-Labs/qsketch/releases) page. The
-installer adds a Start Menu entry, an optional desktop shortcut, a `.qsk`
-file association and Explorer thumbnails for `.qsk` files (a small shell
-extension, `qsketch_thumb.dll`, draws the preview stored in each file); the
-portable ZIP just needs unzipping and can be run from anywhere (settings
-still go to the per-user config directory below). Portable users get the
-thumbnails with the Register button under Preferences ▸ General ▸ Explorer,
-or `regsvr32 qsketch_thumb.dll`; neither needs administrator rights.
+**Windows:** run `qsketch-<version>-setup.exe`, or unzip
+`qsketch-<version>-windows-portable.zip` anywhere. The installer adds the
+`.qsk` file association and Explorer thumbnails; portable users can turn the
+thumbnails on under Preferences ▸ General ▸ Explorer.
 
-### Linux
-
-Grab the `qsketch-<version>-linux-x86_64.tar.gz` tarball from Releases. It
-contains the binary, licenses, a freedesktop.org `.desktop` entry and icons
-under `share/`, plus an `install.sh` that copies everything into
-`~/.local` (or a prefix you pass as its first argument):
+**Linux:**
 
 ```sh
 tar xzf qsketch-*-linux-x86_64.tar.gz
 cd qsketch-*-linux-x86_64
-./install.sh          # installs into ~/.local by default
+./install.sh          # installs into ~/.local, or a prefix you pass
 ```
 
-The install also registers the `application/x-qsketch` MIME type and a
-thumbnailer, so GNOME Files, Thunar, Nemo and friends show each `.qsk`'s
-picture as its icon (`qsketch --thumbnail in.qsk out.png 256` is what they
-run; it needs `qsketch` on your `PATH`).
+This also registers the `.qsk` file type and a thumbnailer for file managers.
 
-### Updates
+**Updates:** qsketch can update itself from a signed manifest. Enter the
+manifest URL your distributor gives you under Preferences ▸ General ▸
+Updates; without one, get new versions from the Releases page. Maintainers:
+see [`docs/RELEASING.md`](docs/RELEASING.md).
 
-qsketch can update itself from a signed manifest, but it ships without a
-manifest URL: enter the one your build's distributor gives you under
-Preferences ▸ General ▸ Updates (Help ▸ Check for Updates… opens that page
-while it is empty). Once set, qsketch checks it on startup (at most every 6
-hours) and on demand; if a newer release exists it offers to download it,
-verifies the minisign signature, then installs and relaunches: on Windows by
-running the installer silently, on Linux by replacing the running executable
-with the one from the tarball (so the install location must be writable by
-you, as `install.sh` sets up). The same page has the check interval and a
-way to skip a version. Without a URL, grab new versions from the Releases
-page. Maintainers publish to their own update channel with
-`scripts/release.sh`; see [`docs/RELEASING.md`](docs/RELEASING.md).
-
-### Build from source
+## Build from source
 
 ```sh
 git clone https://github.com/Cabbit-Labs/qsketch.git
@@ -235,57 +100,29 @@ cd qsketch
 cargo run --release -p qsketch
 ```
 
-**Linux build dependencies** (Debian/Ubuntu package names; `eframe`/`wgpu`
-need a windowing toolkit at build time):
+On Debian or Ubuntu, install the build dependencies first:
 
 ```sh
 sudo apt-get install libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev pkg-config
 ```
 
-**Windows:** build natively with the MSVC toolchain (`rustup target add
-x86_64-pc-windows-msvc`, then `cargo build --release -p qsketch`), or
-cross-compile from Linux with `scripts/build-windows.sh`, which builds against
-the `x86_64-pc-windows-gnu` target via mingw-w64 and packages both an NSIS
-installer and a portable ZIP under `dist/` (requires
-`x86_64-w64-mingw32-gcc`/`windres` and `makensis` on `PATH`).
+On Windows, build with the MSVC toolchain. `scripts/build-windows.sh`
+cross-compiles from Linux and packages the installer and portable ZIP (it
+needs mingw-w64 and `makensis`).
 
-## Quick start
+## Getting started
 
-qsketch opens to a **Home** tab; create a new document or open a `.qsk`/image
-file to get a document tab alongside it. The default layout has:
+qsketch opens on a Home tab: create a document or open a file. Tools are on
+the left; Color, Layers, History and the other panels are on the right. Drag
+any panel's tab to float or re-dock it, and use Window ▸ Workspace to switch
+layouts or reset them.
 
-- A **Tools** strip on the left (selection, crop, eyedropper, paint, fill,
-  shape and view tools — see [`docs/SHORTCUTS.md`](docs/SHORTCUTS.md) for the
-  full list and their keys).
-- **Color**, **Swatches** and **Palette** panels top-right for your
-  foreground/background colors, saved swatches and the document's own
-  palette (with a lock for indexed-color work).
-- **Navigator**, **Brushes** and **Info** in the middle-right, and **Layers**
-  and **History** (a Photoshop-style linear undo list you can jump to any
-  point in) at the bottom-right.
+If pen pressure isn't registering, check Edit ▸ Preferences ▸ Tablet & Pen.
 
-Every panel is dockable: drag its tab out to float it, drop it on another
-panel's edge to split, or use the Window menu to reopen a closed one.
-Window › Workspace switches between the qsketch, SAI 2, Photoshop and
-Aseprite layouts (also in Preferences › Interface), and Reset Workspace
-returns to the chosen one. Your
-layout, brush presets, swatches and keyboard shortcuts are all remembered
-between sessions.
+## Settings
 
-**Tablet setup:** on Windows qsketch reads the pen through the WinTab driver
-API when the driver provides it (so "Use Windows Ink" can stay off) and
-falls back to the standard pointer/touch input path otherwise; if pressure
-isn't registering, check **Edit ▸ Preferences ▸ Tablet & Pen**, where you
-can also turn on the `octotablet` backend for tilt and eraser-tip detection
-on Windows Ink and Wayland.
-
-## Where settings live
-
-qsketch stores its config as TOML in the platform's per-user config
-directory, resolved via the [`directories`](https://docs.rs/directories)
-crate's `ProjectDirs::from("dev", "cabbit-labs", "qSketch")` (the capitalized
-directory name predates the lowercase rename and is kept so existing settings
-stay put):
+Preferences, brush presets, swatches, shortcuts and the panel layout are kept
+in one TOML file:
 
 | Platform | Path |
 | --- | --- |
@@ -293,29 +130,21 @@ stay put):
 | Linux | `~/.config/qsketch/settings.toml` |
 | macOS | `~/Library/Application Support/dev.cabbit-labs.qSketch/settings.toml` |
 
-This one file holds general/UI/canvas/tablet preferences, brush presets and
-swatches, your keyboard shortcut overrides, and the serialized dock layout.
-(macOS is not currently packaged for release; see
-[`docs/ROADMAP.md`](docs/ROADMAP.md).)
-
-## The `.qsk` file format
-
-A `.qsk` file is a plain ZIP archive: one straight-alpha PNG per layer plus a
-JSON manifest describing the layer stack, so it stays inspectable and
-recoverable with ordinary tools even without qsketch. Full details in
-[`docs/FILE_FORMAT.md`](docs/FILE_FORMAT.md).
+macOS is not packaged for release yet.
 
 ## Documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how the crates, raster
+- [`docs/SHORTCUTS.md`](docs/SHORTCUTS.md): every action and its default key.
+- [`docs/FILE_FORMAT.md`](docs/FILE_FORMAT.md): the `.qsk` container.
+- [`docs/RIG_FORMAT.md`](docs/RIG_FORMAT.md): the rig export for games.
+- [`docs/SHARING.md`](docs/SHARING.md): drawing together over Leyline.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): how the crates, raster
   engine and renderer fit together.
-- [`docs/SHORTCUTS.md`](docs/SHORTCUTS.md) — every action and its default key.
-- [`docs/FILE_FORMAT.md`](docs/FILE_FORMAT.md) — the `.qsk` container.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's shipped and what isn't yet.
-- [`docs/RELEASING.md`](docs/RELEASING.md) — cutting a signed release that
-  installed copies pick up automatically.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev setup and how to add tools,
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): what has shipped and what hasn't.
+- [`docs/RELEASING.md`](docs/RELEASING.md): cutting a signed release.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): dev setup and how to add tools,
   actions and panels.
+- [`CHANGELOG.md`](CHANGELOG.md): what changed in each release.
 
 ## License
 
@@ -324,12 +153,18 @@ Dual-licensed under either the [MIT License](LICENSE-MIT) or the
 
 ## Credits
 
-qsketch is built on the shoulders of a great Rust graphics ecosystem:
+- [`egui`](https://github.com/emilk/egui) and `eframe`: the UI framework.
+- [`wgpu`](https://github.com/gfx-rs/wgpu): the GPU renderer.
+- [`egui_dock`](https://crates.io/crates/egui_dock): the dockable workspace.
+- [Phosphor Icons](https://phosphoricons.com/) (MIT): the icons.
+- [visioncortex](https://github.com/visioncortex/visioncortex) and
+  [VTracer](https://github.com/visioncortex/vtracer): image tracing;
+  [tiny-skia](https://github.com/linebender/tiny-skia): drawing the traced
+  shapes.
+- [libsai](https://github.com/Wunkolo/libsai) and the
+  [Photopea SAI2 specification](https://github.com/photopea/SAI2-specification):
+  the basis of the `.sai2` reader.
+- [`octotablet`](https://crates.io/crates/octotablet): the optional tablet
+  backend.
 
-- [`egui`](https://github.com/emilk/egui) / [`eframe`](https://github.com/emilk/egui) — immediate-mode UI framework and app scaffolding.
-- [`wgpu`](https://github.com/gfx-rs/wgpu) — the GPU renderer.
-- [`egui_dock`](https://crates.io/crates/egui_dock) — the dockable panel workspace.
-- [Phosphor Icons](https://phosphoricons.com/) (MIT) — the toolbar and panel iconography.
-- [visioncortex](https://github.com/visioncortex/visioncortex) / [VTracer](https://github.com/visioncortex/vtracer) (MIT OR Apache-2.0) — image tracing; [tiny-skia](https://github.com/linebender/tiny-skia) (BSD-3-Clause) — drawing the traced shapes.
-- [libsai](https://github.com/Wunkolo/libsai) (MIT) — the PaintTool SAI 2 pixel bit decoder qsketch's `.sai2` reader is ported from; the [Photopea SAI2 specification](https://github.com/photopea/SAI2-specification) for the container layout. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- [`octotablet`](https://crates.io/crates/octotablet) — optional tablet backend for pressure, tilt and eraser detection.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for license details.
