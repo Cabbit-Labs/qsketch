@@ -4,6 +4,10 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- File dialogs (Open, Save As, every export and import) belong to the app's
+  window now: they stay on top of it instead of getting lost behind it, and
+  clicking the app while one is open no longer brings up the desktop's
+  "qsketch is not responding: wait or force quit?" prompt (X11).
 - Rig usability, from rigging and animating a walking cat in the app (legs on
   IK, a mesh tail, a blink, two skins, two animations):
   - The Rig panel's controls keep their place. Layer, Mesh and Limb each

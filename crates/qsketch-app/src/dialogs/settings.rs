@@ -1,6 +1,7 @@
 //! Preferences window: general, interface, canvas, tablet and a full
 //! keyboard-shortcut editor with key capture and conflict detection.
 
+use crate::native_dialog::Ask as _;
 use egui::{Context, RichText, Ui};
 
 use crate::actions::{Action, Category, Shortcut, Trigger};
@@ -518,7 +519,7 @@ fn texture_editor(ui: &mut Ui, t: &mut crate::settings::TextureSettings) {
                         let dlg = rfd::FileDialog::new()
                             .set_title("Choose Panel Texture")
                             .add_filter("Images", &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"]);
-                        if let Some(p) = dlg.pick_file() {
+                        if let Some(p) = dlg.ask_file() {
                             t.custom_path = p.display().to_string();
                         }
                     }

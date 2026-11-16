@@ -3,6 +3,7 @@
 //! two selected slots, sorted, loaded from and saved to the usual palette
 //! files, and the whole thing can be locked so every edit snaps to it.
 
+use crate::native_dialog::Ask as _;
 use egui::{Ui, Vec2};
 use qsketch_core::palette::{self, Palette};
 use qsketch_core::Rgba8;
@@ -117,7 +118,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     let dlg = rfd::FileDialog::new()
                         .add_filter("Palettes", palette::LOAD_EXTENSIONS)
                         .add_filter("All files", &["*"]);
-                    if let Some(path) = dlg.pick_file() {
+                    if let Some(path) = dlg.ask_file() {
                         match palette::load(&path) {
                             Ok(p) => {
                                 pal = p;
@@ -138,7 +139,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                         .add_filter("Adobe Swatch Exchange (.aco)", &["aco"])
                         .add_filter("PNG strip (.png)", &["png"])
                         .set_file_name(format!("{}.gpl", if pal.name.is_empty() { "palette" } else { &pal.name }));
-                    if let Some(mut path) = dlg.save_file() {
+                    if let Some(mut path) = dlg.ask_save() {
                         if path.extension().is_none() {
                             path.set_extension("gpl");
                         }

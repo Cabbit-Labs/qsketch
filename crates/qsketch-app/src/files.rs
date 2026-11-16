@@ -1,5 +1,6 @@
 //! Open / save / export flows with native file dialogs.
 
+use crate::native_dialog::Ask as _;
 use std::path::{Path, PathBuf};
 
 use qsketch_core::io;
@@ -31,7 +32,7 @@ pub fn open_dialog(state: &mut AppState) {
         Some(dir) if dir.exists() => dlg.set_directory(dir),
         _ => dlg,
     };
-    if let Some(paths) = dlg.pick_files() {
+    if let Some(paths) = dlg.ask_files() {
         for p in paths {
             open_path(state, &p);
         }
@@ -152,7 +153,7 @@ pub fn save_as_then(state: &mut AppState, doc_id: DocId, then: Option<AfterClose
     if let Some(dir) = suggested.parent().filter(|d| d.exists() && !d.as_os_str().is_empty()) {
         dlg = dlg.set_directory(dir);
     }
-    let Some(mut path) = dlg.save_file() else { return false };
+    let Some(mut path) = dlg.ask_save() else { return false };
     if path.extension().is_none() || !io::can_save(&path) {
         // Unknown or missing extension: keep what was typed and make it a
         // native document rather than guessing a format.
@@ -224,7 +225,7 @@ pub fn export(state: &mut AppState, doc_id: DocId) -> bool {
     if let Some(dir) = entry.doc.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
         dlg = dlg.set_directory(dir);
     }
-    let Some(mut path) = dlg.save_file() else { return false };
+    let Some(mut path) = dlg.ask_save() else { return false };
     if path.extension().is_none() {
         path.set_extension("png");
     }
@@ -279,7 +280,7 @@ pub fn export_scaled(state: &mut AppState, doc_id: DocId, k: u32) -> bool {
     if let Some(dir) = entry.doc.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
         dlg = dlg.set_directory(dir);
     }
-    let Some(mut path) = dlg.save_file() else { return false };
+    let Some(mut path) = dlg.ask_save() else { return false };
     if path.extension().is_none() {
         path.set_extension("png");
     }
@@ -312,7 +313,7 @@ pub fn export_tileset(state: &mut AppState, doc_id: DocId) -> bool {
     if let Some(dir) = entry.doc.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
         dlg = dlg.set_directory(dir);
     }
-    let Some(mut path) = dlg.save_file() else { return false };
+    let Some(mut path) = dlg.ask_save() else { return false };
     path.set_extension("png");
     let flat = qsketch_core::composite::flatten(entry.doc.state());
     let ts = qsketch_core::ops::build_tileset(&flat, g, g, true);
@@ -385,7 +386,7 @@ pub fn export_slices(state: &mut AppState, doc_id: DocId) -> bool {
     if let Some(dir) = entry.doc.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
         dlg = dlg.set_directory(dir);
     }
-    let Some(dir) = dlg.pick_folder() else { return false };
+    let Some(dir) = dlg.ask_folder() else { return false };
     let target = dir.join(format!("{stem} slices"));
     match qsketch_core::slice::export(entry.doc.state(), &target) {
         Ok(n) => {
@@ -413,7 +414,7 @@ pub fn export_rig(state: &mut AppState, doc_id: DocId) -> bool {
     if let Some(dir) = entry.doc.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
         dlg = dlg.set_directory(dir);
     }
-    let Some(dir) = dlg.pick_folder() else { return false };
+    let Some(dir) = dlg.ask_folder() else { return false };
     let target = dir.join(format!("{stem} rig"));
     match qsketch_core::io::rig_io::export(entry.doc.state(), &target) {
         Ok(s) => {
@@ -478,7 +479,7 @@ pub fn export_svg(state: &mut AppState, doc_id: DocId) {
     let (w, h) = (entry.doc.width(), entry.doc.height());
     let stem = entry.doc.path.as_ref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().to_string());
     let name = format!("{}.svg", stem.unwrap_or_else(|| entry.doc.title.trim_end_matches('*').to_string()));
-    let Some(path) = rfd::FileDialog::new().add_filter("SVG", &["svg"]).set_file_name(name).save_file() else {
+    let Some(path) = rfd::FileDialog::new().add_filter("SVG", &["svg"]).set_file_name(name).ask_save() else {
         return;
     };
     match std::fs::write(&path, qsketch_core::trace::svg_document(w, h, &body)) {

@@ -1,6 +1,7 @@
 //! Model panel: a 3D model wearing a document as its live texture, so you can see what you
 //! are painting. The design, including what comes next, is in `docs/Q3D.md`.
 
+use crate::native_dialog::Ask as _;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
@@ -129,8 +130,7 @@ impl Model {
 }
 
 fn choose_file(state: &mut AppState) {
-    if let Some(path) =
-        rfd::FileDialog::new().set_title("Open 3D Model").add_filter("glTF binary", &["glb"]).pick_file()
+    if let Some(path) = rfd::FileDialog::new().set_title("Open 3D Model").add_filter("glTF binary", &["glb"]).ask_file()
     {
         state.model.open(&path);
     }

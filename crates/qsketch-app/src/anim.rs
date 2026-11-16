@@ -1,6 +1,7 @@
 //! Animation in the app: playback, the frame / tag / cel commands behind the
 //! Animation menu and the Timeline panel, and the import / export jobs.
 
+use crate::native_dialog::Ask as _;
 use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
@@ -522,7 +523,7 @@ pub fn import_frames(state: &mut AppState) {
     let files = rfd::FileDialog::new()
         .set_title("Import Frames (one file per frame)")
         .add_filter("Images", &["png", "gif", "jpg", "jpeg", "bmp", "tga", "webp", "tif", "tiff", "apng"])
-        .pick_files();
+        .ask_files();
     let Some(mut files) = files else { return };
     files.sort();
     let mut pictures: Vec<(Raster, u32)> = Vec::new();
@@ -588,7 +589,7 @@ pub fn import_layers(state: &mut AppState) {
     let files = rfd::FileDialog::new()
         .set_title("Import Images as Layers (one file per layer)")
         .add_filter("Images", &["png", "gif", "jpg", "jpeg", "bmp", "tga", "webp", "tif", "tiff"])
-        .pick_files();
+        .ask_files();
     let Some(mut files) = files else { return };
     files.sort();
     import_layer_files(state, &files);
@@ -661,7 +662,7 @@ pub fn import_sheet(state: &mut AppState) {
     let file = rfd::FileDialog::new()
         .set_title("Import Sprite Sheet")
         .add_filter("Images", &["png", "gif", "jpg", "jpeg", "bmp", "tga", "webp", "tif", "tiff"])
-        .pick_file();
+        .ask_file();
     let Some(path) = file else { return };
     match qsketch_core::io::image_io::import(&path) {
         Ok(sheet) => {

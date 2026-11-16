@@ -1,6 +1,7 @@
 //! Animation dialogs: frame, tag and cel properties, sprite-sheet import and
 //! the Export Animation dialog.
 
+use crate::native_dialog::Ask as _;
 use std::sync::Arc;
 
 use egui::{Context, Ui};
@@ -601,7 +602,7 @@ fn show_export(ctx: &Context, state: &mut AppState) {
             if let Some(d) = &dir {
                 dlg = dlg.set_directory(d);
             }
-            dlg.pick_folder().map(|f| f.join(format!("{stem}{suffix}")))
+            dlg.ask_folder().map(|f| f.join(format!("{stem}{suffix}")))
         } else {
             let (name, exts): (&str, &[&str]) = match d.format {
                 ExportFormat::Gif => ("Animated GIF", &["gif"]),
@@ -619,7 +620,7 @@ fn show_export(ctx: &Context, state: &mut AppState) {
             if let Some(d) = &dir {
                 dlg = dlg.set_directory(d);
             }
-            dlg.save_file().map(|mut p| {
+            dlg.ask_save().map(|mut p| {
                 if p.extension().is_none() {
                     p.set_extension(d.format.extension());
                 }

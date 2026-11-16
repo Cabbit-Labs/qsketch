@@ -3,6 +3,7 @@
 //! document as its edits are committed, and exports run on their own thread
 //! as background jobs with progress in the status bar.
 
+use crate::native_dialog::Ask as _;
 use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
@@ -133,7 +134,7 @@ pub fn export(state: &mut AppState, doc_id: DocId, gif: bool) {
         if let Some(d) = &dir {
             dlg = dlg.set_directory(d);
         }
-        dlg.save_file().map(|mut p| {
+        dlg.ask_save().map(|mut p| {
             if p.extension().is_none() {
                 p.set_extension("gif");
             }
@@ -144,7 +145,7 @@ pub fn export(state: &mut AppState, doc_id: DocId, gif: bool) {
         if let Some(d) = &dir {
             dlg = dlg.set_directory(d);
         }
-        dlg.pick_folder().map(|d| d.join(format!("{stem} timelapse")))
+        dlg.ask_folder().map(|d| d.join(format!("{stem} timelapse")))
     };
     let Some(target) = target else { return };
     let done = Arc::new(AtomicUsize::new(0));

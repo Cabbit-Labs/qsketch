@@ -46,6 +46,11 @@ fontdb.workspace = true
 ab_glyph.workspace = true
 epaint_default_fonts.workspace = true
 
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+# Only to keep the window manager from flagging the app while a system file
+# dialog is open (see native_dialog.rs).
+x11rb = "0.13"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",

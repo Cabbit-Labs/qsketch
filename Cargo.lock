@@ -2599,6 +2599,7 @@ dependencies = [
  "wgpu",
  "windows-sys 0.59.0",
  "winresource",
+ "x11rb",
 ]
 
 [[package]]

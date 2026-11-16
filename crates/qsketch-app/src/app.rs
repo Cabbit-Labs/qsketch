@@ -2890,8 +2890,9 @@ impl eframe::App for QSketchApp {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        crate::native_dialog::set_parent(frame);
 
         // Theme / icon changes from preferences.
         let ui_now = &self.state.settings.ui;

@@ -1,6 +1,7 @@
 //! Brush Settings panel: Photoshop-style section list on the left, the
 //! selected section's controls on the right, and a live stroke preview below.
 
+use crate::native_dialog::Ask as _;
 use egui::{Color32, Sense, Ui, Vec2};
 use qsketch_core::brush::{LEGACY_EDGE_FEATHER, MAX_EDGE_FEATHER};
 use qsketch_core::{AngleControl, BrushSettings, Rgba8, TextureMode, TipImage};
@@ -997,7 +998,7 @@ fn run_deferred(ui: &mut Ui, state: &mut AppState, tool: ToolKind, deferred: Vec
                     )
                     .add_filter("Brush files (GIMP, Photoshop)", &["gbr", "gih", "abr"])
                     .add_filter("Images", &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"]);
-                let Some(path) = dlg.pick_file() else { continue };
+                let Some(path) = dlg.ask_file() else { continue };
                 match state.library.import(kind, &path) {
                     Ok(name) => {
                         apply_library_pick(state, tool, kind, &name);

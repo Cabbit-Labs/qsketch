@@ -12,6 +12,7 @@ mod dialogs;
 mod files;
 mod fonts;
 mod frame_stats;
+mod native_dialog;
 mod panels;
 mod settings;
 mod share;

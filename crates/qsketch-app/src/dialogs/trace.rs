@@ -4,6 +4,7 @@
 //! Ctrl+T and Image Size redraw crisp at any size, and which File › Export
 //! as SVG writes out as a real vector file.
 
+use crate::native_dialog::Ask as _;
 use std::sync::{mpsc, Arc};
 
 use egui::{Context, RichText, Ui};
@@ -171,7 +172,7 @@ fn export_svg(state: &mut AppState) {
     let body = art.svg_paths(&|p| p, Some([1.0, 0.0, 0.0, 1.0, b.x as f32, b.y as f32]), 1.0);
     let name =
         format!("{}.svg", e.doc.title.trim_end_matches('*').rsplit_once('.').map_or(e.doc.title.as_str(), |(n, _)| n));
-    let Some(path) = rfd::FileDialog::new().add_filter("SVG", &["svg"]).set_file_name(name).save_file() else {
+    let Some(path) = rfd::FileDialog::new().add_filter("SVG", &["svg"]).set_file_name(name).ask_save() else {
         return;
     };
     match std::fs::write(&path, trace::svg_document(w, h, &body)) {

@@ -3,6 +3,7 @@
 //! pick colors straight out of it (click sets the foreground color, Alt+click
 //! the background). The last picture is remembered between sessions.
 
+use crate::native_dialog::Ask as _;
 use std::path::{Path, PathBuf};
 
 use egui::{Color32, ColorImage, Sense, TextureHandle, TextureOptions, Ui, Vec2};
@@ -146,7 +147,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             if let Some(dir) = r.path.as_ref().and_then(|p| p.parent()).filter(|d| d.exists()) {
                 dlg = dlg.set_directory(dir);
             }
-            if let Some(path) = dlg.pick_file() {
+            if let Some(path) = dlg.ask_file() {
                 r.open(&path);
                 match &r.error {
                     Some(e) => toasts.push(crate::ui::toasts::Level::Error, format!("Couldn't open reference: {e}")),
