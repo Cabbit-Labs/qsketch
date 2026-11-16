@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.72.2 — 2026-11-16
 
 - Model panel: right-click a section to rename it or merge it into another.
   The sections are saved in `name.sections.json` beside the model, along with
