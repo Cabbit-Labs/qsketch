@@ -46,7 +46,8 @@ fn pick_layer_at(state: &mut AppState, doc_id: DocId, pos: Pos2) {
 }
 
 pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
-    let model_overlay = state.model.canvas_overlay(doc_id, state.active_doc);
+    let doc_size = state.doc(doc_id).map_or((1, 1), |d| (d.doc.width(), d.doc.height()));
+    let model_overlay = state.model.canvas_overlay(ui.ctx(), doc_id, state.active_doc, doc_size);
     let avail = ui.available_size_before_wrap();
     let (rect, response) = ui.allocate_exact_size(avail, Sense::click_and_drag());
     if rect.width() < 2.0 || rect.height() < 2.0 {
@@ -228,6 +229,21 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                             let p = state.doc(doc_id).unwrap().view.screen_to_doc(*pos);
                             state.tool_opts.clone_source = Some((doc_id, p));
                             state.tool_opts.clone_offset = None;
+                            continue;
+                        }
+                        // Ctrl+Alt+right-click selects the 3D model's section painted under the cursor.
+                        if *button == egui::PointerButton::Secondary
+                            && modifiers.command
+                            && modifiers.alt
+                            && !modifiers.shift
+                            && state.model.picks_on_canvas(doc_id, state.active_doc)
+                        {
+                            let at = state.doc(doc_id).unwrap().view.screen_to_doc(*pos);
+                            let picked = state.model.pick_on_canvas(doc_id, state.active_doc, at, doc_size);
+                            let msg =
+                                picked.map_or("No section is painted here".to_string(), |n| format!("Section: {n}"));
+                            state.status_msg = Some((msg, std::time::Instant::now()));
+                            ui.ctx().request_repaint();
                             continue;
                         }
                         // Ctrl+Shift+right-click jumps to the layer under the cursor.

@@ -9,6 +9,13 @@ All notable changes to qSketch are documented in this file.
   which way up you turned it, and come back when the model is opened again.
 - Models you open are listed in File ▸ Open Recent, and the empty Model panel
   has a button to reopen the last one.
+- Ctrl+Alt+right-click on the canvas selects the model section painted at
+  that spot, so you can ask "which part is this?" from the texture side.
+- Models open in the background with a spinner, and sections are found for
+  models of any size (over 400,000 triangles used to wait for a button). The
+  canvas highlight of a section is drawn as one image, which on a
+  million-triangle model cuts the cost of having a section selected from 40%
+  of a processor core to nothing measurable.
 
 ## 0.72.1 — 2026-11-16
 

@@ -10,7 +10,7 @@ use egui::{epaint::Vertex as ScreenVertex, Color32, RichText, Sense, Ui};
 use qsketch_3d::camera::{model_matrix, mul, pick_triangle, up_in_mesh};
 use qsketch_3d::hidden::{find_hidden, without_triangles};
 use qsketch_3d::mesh::{embedded_texture, EmbeddedImage};
-use qsketch_3d::unwrap::{rearrange, section_coverage, Report, Texture};
+use qsketch_3d::unwrap::{rearrange, section_coverage, section_map, Report, Texture, NO_SECTION};
 use qsketch_3d::{find_sections, Mesh, Orbit, Sections};
 use qsketch_core::{Mask, Pt};
 
@@ -21,12 +21,12 @@ use crate::ui::widgets::small_button;
 
 const SPIN_RADIANS_PER_SECOND: f32 = 0.6;
 const DRAG_RADIANS_PER_POINT: f32 = 0.01;
-/// Sections are found automatically up to this size; larger meshes pause the app noticeably, so they wait for the button.
-const AUTO_SECTION_TRIANGLES: usize = 400_000;
 /// A selected section extends this far past its edges, so paint reaches the rim without leaving a seam.
 const SELECTION_PADDING: u32 = 3;
 /// About three rows of section buttons.
 const SECTION_LIST_HEIGHT: f32 = 66.0;
+/// The section map is made no larger than this on its longer side.
+const MAX_MAP_SIDE: u32 = 2048;
 const CANVAS_HIGHLIGHT: Color32 = Color32::from_rgba_premultiplied(0, 90, 115, 120);
 
 #[derive(Default)]
@@ -52,6 +52,9 @@ pub struct Model {
     /// Also highlight the selected section on the canvas.
     show_on_canvas: bool,
     job: Option<Receiver<Result<Finished, String>>>,
+    map: Option<SectionMap>,
+    /// A model being read on another thread, and its path.
+    loading: Option<(PathBuf, Receiver<anyhow::Result<Loaded>>)>,
     /// Rearrange normally drops surfaces nothing can see; this keeps them.
     keep_hidden: bool,
     /// The sections were renamed, merged or read from the sidecar, so they are kept rather than found again.
@@ -73,71 +76,113 @@ struct Finished {
     removed: usize,
 }
 
-/// What a canvas needs to highlight the selected section. Cheap to take each frame.
+/// A model read from disk, with its sections: the saved ones if it has a sidecar, else found afresh.
+struct Loaded {
+    path: PathBuf,
+    mesh: Mesh,
+    embedded: Option<EmbeddedImage>,
+    sections: Option<Sections>,
+    turns: u8,
+    /// The sections came from the sidecar.
+    edited: bool,
+}
+
+/// Reads a model and its sidecar. Without a sidecar the sections are found here when `find` is set.
+fn load(path: &Path, find: bool) -> anyhow::Result<Loaded> {
+    let bytes = std::fs::read(path)?;
+    let mesh = Mesh::from_glb(&bytes)?;
+    let saved =
+        std::fs::read_to_string(sidecar(path)).ok().and_then(|t| Sections::from_json(&t, mesh.triangle_count()));
+    let (edited, turns) = (saved.is_some(), saved.as_ref().map_or(0, |(_, turns)| *turns));
+    let sections = match saved {
+        Some((sections, _)) => Some(sections),
+        None if find => Some(find_sections(&mesh, up_in_mesh(0), None)),
+        None => None,
+    };
+    Ok(Loaded { path: path.to_path_buf(), embedded: embedded_texture(&bytes), mesh, sections, turns, edited })
+}
+
+/// The selected section's highlight for a canvas: one image the size of the texture. Cheap to take each frame.
 pub struct CanvasOverlay {
-    mesh: Arc<Mesh>,
-    sections: Arc<Sections>,
-    selected: u32,
+    image: egui::TextureHandle,
 }
 
 impl CanvasOverlay {
-    /// Fills the selected section's triangles at their UV positions on the canvas.
+    /// Lays the highlight over a document `width` by `height` pixels, following the view's zoom and rotation.
     pub fn paint(&self, painter: &egui::Painter, view: &crate::canvas::view::CanvasView, width: f32, height: f32) {
-        let mut shape = egui::Mesh::default();
-        for (t, tri) in self.mesh.indices.chunks_exact(3).enumerate() {
-            if self.sections.of_triangle[t] != self.selected {
-                continue;
-            }
-            let first = shape.vertices.len() as u32;
-            for &i in tri {
-                let uv = self.mesh.vertices[i as usize].uv;
-                let pos = view.doc_to_screen(Pt::new(uv[0] * width, uv[1] * height));
-                shape.vertices.push(ScreenVertex { pos, uv: egui::epaint::WHITE_UV, color: CANVAS_HIGHLIGHT });
-            }
-            shape.indices.extend([first, first + 1, first + 2]);
+        let mut shape = egui::Mesh::with_texture(self.image.id());
+        for (u, v) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+            let pos = view.doc_to_screen(Pt::new(u * width, v * height));
+            shape.vertices.push(ScreenVertex { pos, uv: egui::pos2(u, v), color: Color32::WHITE });
         }
+        shape.indices.extend([0, 1, 2, 0, 2, 3]);
         painter.add(shape);
     }
 }
 
+/// Which section owns each pixel of the texture, kept until the model, its sections or the size change.
+struct SectionMap {
+    /// Model generation, sections generation, and the document's size.
+    key: (u64, u64, u32, u32),
+    size: (u32, u32),
+    owner: Vec<u32>,
+    /// The highlight image, and the section it was made for.
+    image: Option<(u32, egui::TextureHandle)>,
+}
+
 impl Model {
-    /// Load a `.glb`; a failure is shown in the panel. Returns whether it loaded.
-    pub fn open(&mut self, path: &Path) -> bool {
-        let loaded = std::fs::read(path)
-            .map_err(anyhow::Error::from)
-            .and_then(|b| Ok((Mesh::from_glb(&b)?, embedded_texture(&b))));
-        match loaded {
-            Ok((mesh, embedded)) => {
-                self.embedded = embedded;
-                (self.center, self.radius) = mesh.bounds();
-                self.mesh = Some(Arc::new(mesh));
-                self.path = Some(path.to_path_buf());
-                self.generation += 1;
-                self.orbit = Orbit::default();
-                self.turns = 0;
-                self.error = None;
-                self.sections = None;
-                self.selected = None;
-                self.show_on_canvas = true;
-                (self.edited, self.unsaved, self.renaming) = (false, false, None);
-                let triangles = self.mesh.as_ref().map_or(0, |m| m.triangle_count());
-                let saved =
-                    std::fs::read_to_string(sidecar(path)).ok().and_then(|t| Sections::from_json(&t, triangles));
-                if let Some((sections, turns)) = saved {
-                    self.sections = Some(Arc::new(sections));
-                    self.sections_generation += 1;
-                    self.turns = turns;
-                    self.edited = true;
-                } else if triangles <= AUTO_SECTION_TRIANGLES {
-                    self.find_sections();
-                }
+    /// Starts loading a `.glb` on another thread; the panel shows it, or why it failed, when that finishes.
+    pub fn open(&mut self, path: &Path) {
+        let (send, receive) = mpsc::channel();
+        let file = path.to_path_buf();
+        std::thread::spawn(move || {
+            let _ = send.send(load(&file, true));
+        });
+        self.loading = Some((path.to_path_buf(), receive));
+        self.error = None;
+    }
+
+    /// Takes a finished load. Returns the model's path once, when it has just appeared.
+    fn finish_loading(&mut self, ctx: &egui::Context) -> Option<PathBuf> {
+        let (path, job) = self.loading.as_ref()?;
+        let result = match job.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => {
+                ctx.request_repaint_after(std::time::Duration::from_millis(50));
+                return None;
+            }
+            Err(mpsc::TryRecvError::Disconnected) => Err(anyhow::anyhow!("the loading thread stopped unexpectedly")),
+        };
+        let path = path.clone();
+        self.loading = None;
+        match result {
+            Ok(loaded) => {
+                self.show(loaded);
+                Some(path)
             }
             Err(e) => {
                 let name = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy();
                 self.error = Some(format!("Couldn't open {name}: {e:#}"));
+                None
             }
         }
-        self.error.is_none()
+    }
+
+    /// Replaces the model on show with a loaded one.
+    fn show(&mut self, loaded: Loaded) {
+        self.embedded = loaded.embedded;
+        (self.center, self.radius) = loaded.mesh.bounds();
+        self.mesh = Some(Arc::new(loaded.mesh));
+        self.path = Some(loaded.path);
+        self.generation += 1;
+        self.orbit = Orbit::default();
+        self.turns = loaded.turns;
+        self.error = None;
+        self.sections = loaded.sections.map(Arc::new);
+        self.sections_generation += 1;
+        self.selected = None;
+        self.show_on_canvas = true;
+        (self.edited, self.unsaved, self.renaming) = (loaded.edited, false, None);
     }
 
     fn find_sections(&mut self) {
@@ -175,12 +220,70 @@ impl Model {
         self.find_sections();
     }
 
+    /// Whether `doc` is the document this model is wearing.
+    fn wears(&self, doc: DocId, active: Option<DocId>) -> bool {
+        self.mesh.is_some() && self.texture.or(active) == Some(doc)
+    }
+
+    /// The map of sections over a `width` by `height` document, made on first use.
+    fn section_map(&mut self, width: u32, height: u32) -> Option<&mut SectionMap> {
+        let (mesh, sections) = (self.mesh.as_ref()?, self.sections.as_ref()?);
+        let key = (self.generation, self.sections_generation, width, height);
+        if self.map.as_ref().is_none_or(|m| m.key != key) {
+            // A huge texture is mapped at reduced size: the highlight does not need every pixel.
+            let scale = (MAX_MAP_SIDE as f32 / width.max(height).max(1) as f32).min(1.0);
+            let size = (((width as f32 * scale) as u32).max(1), ((height as f32 * scale) as u32).max(1));
+            let owner = section_map(mesh, sections, size.0, size.1);
+            self.map = Some(SectionMap { key, size, owner, image: None });
+        }
+        self.map.as_mut()
+    }
+
     /// The highlight for a canvas, if it shows the document this model is wearing.
-    pub fn canvas_overlay(&self, doc: DocId, active: Option<DocId>) -> Option<CanvasOverlay> {
-        if !self.show_on_canvas || self.texture.or(active) != Some(doc) {
+    pub fn canvas_overlay(
+        &mut self,
+        ctx: &egui::Context,
+        doc: DocId,
+        active: Option<DocId>,
+        size: (u32, u32),
+    ) -> Option<CanvasOverlay> {
+        if !self.show_on_canvas || !self.wears(doc, active) {
             return None;
         }
-        Some(CanvasOverlay { mesh: self.mesh.clone()?, sections: self.sections.clone()?, selected: self.selected? })
+        let selected = self.selected?;
+        let map = self.section_map(size.0, size.1)?;
+        if map.image.as_ref().is_none_or(|(section, _)| *section != selected) {
+            let pixels = map
+                .owner
+                .iter()
+                .map(|&o| if o == selected { CANVAS_HIGHLIGHT } else { Color32::TRANSPARENT })
+                .collect();
+            let image = egui::ColorImage::new([map.size.0 as usize, map.size.1 as usize], pixels);
+            map.image = Some((selected, ctx.load_texture("model_section", image, egui::TextureOptions::NEAREST)));
+        }
+        map.image.as_ref().map(|(_, image)| CanvasOverlay { image: image.clone() })
+    }
+
+    /// Selects the section painted at `at`, in document pixels, and returns its name. `None` if this document
+    /// is not the model's texture or no section covers that pixel.
+    pub fn pick_on_canvas(&mut self, doc: DocId, active: Option<DocId>, at: Pt, size: (u32, u32)) -> Option<String> {
+        if !self.wears(doc, active) || at.x < 0.0 || at.y < 0.0 || at.x >= size.0 as f32 || at.y >= size.1 as f32 {
+            return None;
+        }
+        let map = self.section_map(size.0, size.1)?;
+        let x = ((at.x / size.0 as f32 * map.size.0 as f32) as usize).min(map.size.0 as usize - 1);
+        let y = ((at.y / size.1 as f32 * map.size.1 as f32) as usize).min(map.size.1 as usize - 1);
+        let section = map.owner[y * map.size.0 as usize + x];
+        if section == NO_SECTION {
+            return None;
+        }
+        self.selected = Some(section);
+        self.sections.as_ref().and_then(|s| s.list.get(section as usize)).map(|s| s.name.clone())
+    }
+
+    /// Whether a canvas click can pick a section in `doc`.
+    pub fn picks_on_canvas(&self, doc: DocId, active: Option<DocId>) -> bool {
+        self.sections.is_some() && self.wears(doc, active)
     }
 }
 
@@ -291,7 +394,14 @@ fn finish_rearrange(ui: &Ui, state: &mut AppState) {
         Ok(done) => {
             let doc = crate::files::open_path(state, &done.texture);
             let turns = state.model.turns;
-            state.model.open(&done.model);
+            match load(&done.model, false) {
+                Ok(loaded) => state.model.show(loaded),
+                Err(e) => {
+                    state.model.error = Some(format!("Couldn't open {}: {e:#}", done.model.display()));
+                    return;
+                }
+            }
+            state.settings.push_recent(done.model.clone());
             state.model.embedded = None; // it is the document just opened
             state.model.turns = turns;
             state.model.texture = doc;
@@ -314,12 +424,22 @@ fn finish_rearrange(ui: &Ui, state: &mut AppState) {
 
 pub fn ui(ui: &mut Ui, state: &mut AppState) {
     finish_rearrange(ui, state);
+    if let Some(path) = state.model.finish_loading(ui.ctx()) {
+        state.settings.push_recent(path);
+    }
     if state.model.unsaved && ui.memory(|m| m.focused().is_none()) {
         state.model.save_sections();
     }
     toolbar(ui, state);
     if let Some(error) = &state.model.error {
         ui.colored_label(ui.visuals().error_fg_color, error);
+    }
+    if let Some((path, _)) = &state.model.loading {
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label(format!("Opening {name}…"));
+        });
     }
     let Some(mesh) = state.model.mesh.clone() else {
         // The model worked on last, from the recent files, is one click away.
@@ -451,7 +571,9 @@ fn section_row(ui: &mut Ui, state: &mut AppState) {
     let mut select_on_canvas = false;
     ui.horizontal_wrapped(|ui| {
         ui.checkbox(&mut model.tint_all, "Tint All");
-        ui.checkbox(&mut model.show_on_canvas, "Show on Canvas");
+        ui.checkbox(&mut model.show_on_canvas, "Show on Canvas").on_hover_text(
+            "Tint the selected section on the texture. Ctrl+Alt+right-click the canvas to select the section painted there.",
+        );
         if ui
             .add_enabled(model.selected.is_some(), egui::Button::new("Select on Canvas").small())
             .on_hover_text("Make this section the canvas selection, so brushes and fills stay inside it")

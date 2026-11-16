@@ -23,7 +23,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 | # | Step | Status |
 |---|------|--------|
 | 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | Done |
-| 2 | Sections: find them, list, pick on the model, highlight in both views, rename and merge | Mostly done; picking on the canvas still to come |
+| 2 | Sections: find them, list, pick on the model or the canvas, highlight in both views, rename and merge | Done; splitting a section by hand is not built |
 | 2b | Rearrange Texture: one continuous island per section, with the paint baked across | Done; a few pieces still fold |
 | 3 | Overlays: island outlines, tints, labels, mapped pixels only | Planned |
 | 4 | Paint limits: paint only inside a section, through the selection system | Done: Select on Canvas |
@@ -48,8 +48,12 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 ### 2. Sections
 
 A section is a named set of triangles, drawn from one UV island or several. A triangle's UV gives its canvas pixels,
-so one selection can be shown in both views. Picking on the model tests the click against the projected triangles. Picking on the
-canvas looks up an ID map rendered in UV space.
+so one selection can be shown in both views. Picking on the model tests the click against the projected triangles.
+Picking on the canvas (Ctrl+Alt+right-click) looks up a map of which section owns each texture pixel; the same map,
+kept until the model or its sections change, makes the canvas highlight a single image.
+
+A model loads and has its sections found on a background thread, so even a million triangles open without
+freezing the app.
 
 ### The sectioner (generated models)
 
@@ -127,8 +131,10 @@ Found by using the panel by hand. Ticked as each lands on `main`.
       wider than thick on the peel, 2 to 9 on the creature), so no thinness test tells them apart.
 - [x] Rename and merge sections, kept in a sidecar beside the model
 - [x] Remember the model between sessions: models join the recent files, and the empty panel offers the last one
-- [ ] Find sections off the UI thread, and check the 987,308-triangle peel in the app
-- [ ] Pick a section by clicking the canvas
+- [x] Find sections off the UI thread, and check the 987,308-triangle peel in the app: it opens with a spinner and
+      no freeze, and the canvas highlight is one cached image (a selected section cost 40% of a core per frame as
+      triangles)
+- [x] Pick a section by clicking the canvas: Ctrl+Alt+right-click
 
 ## Open questions
 

@@ -42,9 +42,7 @@ pub fn open_dialog(state: &mut AppState) {
 pub fn open_path(state: &mut AppState, path: &Path) -> Option<DocId> {
     // A 3D model opens in its panel rather than as a document.
     if crate::panels::model::is_model(path) {
-        if state.model.open(path) {
-            state.settings.push_recent(path.to_path_buf());
-        }
+        state.model.open(path);
         state.show_panel_requests.push(crate::workspace::PanelKind::Model);
         return None;
     }

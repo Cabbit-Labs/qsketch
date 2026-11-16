@@ -681,19 +681,13 @@ fn dilate(rgba: &mut [u8], filled: &mut [bool], size: usize, passes: u32) {
     }
 }
 
-/// Which pixels of a `width` by `height` texture belong to a section. The result grows by `padding`
-/// pixels into unclaimed texture, so painting reaches past the rim, but never into another section.
-pub fn section_coverage(
-    mesh: &Mesh,
-    sections: &Sections,
-    section: u32,
-    width: u32,
-    height: u32,
-    padding: u32,
-) -> Vec<bool> {
-    const NONE: u32 = u32::MAX;
+/// Marks a texture pixel no section covers, in [`section_map`].
+pub const NO_SECTION: u32 = u32::MAX;
+
+/// The section that owns each pixel of a `width` by `height` texture, row by row.
+pub fn section_map(mesh: &Mesh, sections: &Sections, width: u32, height: u32) -> Vec<u32> {
     let (w, h) = (width as usize, height as usize);
-    let mut owner = vec![NONE; w * h];
+    let mut owner = vec![NO_SECTION; w * h];
     for (t, tri) in mesh.indices.chunks_exact(3).enumerate() {
         let p = [0, 1, 2].map(|k| {
             let uv = mesh.vertices[tri[k] as usize].uv;
@@ -720,6 +714,22 @@ pub fn section_coverage(
             }
         }
     }
+    owner
+}
+
+/// Which pixels of a `width` by `height` texture belong to a section. The result grows by `padding`
+/// pixels into unclaimed texture, so painting reaches past the rim, but never into another section.
+pub fn section_coverage(
+    mesh: &Mesh,
+    sections: &Sections,
+    section: u32,
+    width: u32,
+    height: u32,
+    padding: u32,
+) -> Vec<bool> {
+    const NONE: u32 = NO_SECTION;
+    let (w, h) = (width as usize, height as usize);
+    let mut owner = section_map(mesh, sections, width, height);
     for _ in 0..padding {
         let before = owner.clone();
         for y in 0..h {
