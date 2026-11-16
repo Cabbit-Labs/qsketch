@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.72.0 — 2026-11-16
 
 - File dialogs (Open, Save As, every export and import) belong to the app's
   window now: they stay on top of it instead of getting lost behind it, and
