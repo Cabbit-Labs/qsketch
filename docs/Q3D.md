@@ -114,6 +114,17 @@ Generated meshes are far too dense for games: the peel is 139,428 triangles and 
 quadric edge collapse, keep section boundaries where possible, create a clean new UV layout per section, and bake the
 old texture onto it. Clean islands then make the older tools work better too.
 
+## Polish pass (2026-11-16)
+
+Found by using the panel by hand. Ticked as each lands on `main`.
+
+- [x] Extract Texture, panning, larger panel, clearer errors (0.72.1)
+- [ ] The sectioner over-splits compact low-poly models (a 1,680-triangle creature came out as 16 parts)
+- [ ] Rename and merge sections, kept in a sidecar beside the model
+- [ ] Remember the model between sessions
+- [ ] Find sections off the UI thread, and check the 987,308-triangle peel in the app
+- [ ] Pick a section by clicking the canvas
+
 ## Open questions
 
 - Saving a section sidecar: beside the model, or inside the `.qsk`? Leaning beside the model, with the `.qsk` keeping a
