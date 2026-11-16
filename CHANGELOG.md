@@ -7,6 +7,8 @@ All notable changes to qSketch are documented in this file.
 - Model panel: right-click a section to rename it or merge it into another.
   The sections are saved in `name.sections.json` beside the model, along with
   which way up you turned it, and come back when the model is opened again.
+- Models you open are listed in File ▸ Open Recent, and the empty Model panel
+  has a button to reopen the last one.
 
 ## 0.72.1 — 2026-11-16
 

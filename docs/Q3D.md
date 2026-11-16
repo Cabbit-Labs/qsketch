@@ -41,7 +41,8 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
   active one or a fixed one), and rotate 90 degrees, since generated models often come in with the wrong axis up.
 - **Extract Texture** saves the color texture stored inside the model (PNG, JPEG or WebP) as `name_texture` beside
   it, never overwriting, and opens that as the texture document. The model file itself is not changed.
-- Not yet: the model is not remembered between sessions, and only GLB with an embedded buffer loads. Draco and
+- An opened model joins File > Open Recent, and the empty Model panel offers to reopen the last one.
+- Not yet: only GLB with an embedded buffer loads. Draco and
   meshopt compressed models are refused with a message saying so.
 
 ### 2. Sections
@@ -125,7 +126,7 @@ Found by using the panel by hand. Ticked as each lands on `main`.
       it is and handled by merging. A peel strip and a creature's limb measure the same (slices about 1.5 times
       wider than thick on the peel, 2 to 9 on the creature), so no thinness test tells them apart.
 - [x] Rename and merge sections, kept in a sidecar beside the model
-- [ ] Remember the model between sessions
+- [x] Remember the model between sessions: models join the recent files, and the empty panel offers the last one
 - [ ] Find sections off the UI thread, and check the 987,308-triangle peel in the app
 - [ ] Pick a section by clicking the canvas
 

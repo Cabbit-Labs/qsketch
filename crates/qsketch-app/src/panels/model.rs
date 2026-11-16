@@ -101,8 +101,8 @@ impl CanvasOverlay {
 }
 
 impl Model {
-    /// Load a `.glb`; a failure is shown in the panel.
-    pub fn open(&mut self, path: &Path) {
+    /// Load a `.glb`; a failure is shown in the panel. Returns whether it loaded.
+    pub fn open(&mut self, path: &Path) -> bool {
         let loaded = std::fs::read(path)
             .map_err(anyhow::Error::from)
             .and_then(|b| Ok((Mesh::from_glb(&b)?, embedded_texture(&b))));
@@ -137,6 +137,7 @@ impl Model {
                 self.error = Some(format!("Couldn't open {name}: {e:#}"));
             }
         }
+        self.error.is_none()
     }
 
     fn find_sections(&mut self) {
@@ -183,6 +184,10 @@ impl Model {
     }
 }
 
+pub fn is_model(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("glb"))
+}
+
 /// Where a model's sections are kept: `name.sections.json` beside it. The model file is never changed.
 fn sidecar(model: &Path) -> PathBuf {
     model.with_extension("sections.json")
@@ -191,7 +196,7 @@ fn sidecar(model: &Path) -> PathBuf {
 fn choose_file(state: &mut AppState) {
     if let Some(path) = rfd::FileDialog::new().set_title("Open 3D Model").add_filter("glTF binary", &["glb"]).ask_file()
     {
-        state.model.open(&path);
+        crate::files::open_path(state, &path);
     }
 }
 
@@ -317,7 +322,19 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         ui.colored_label(ui.visuals().error_fg_color, error);
     }
     let Some(mesh) = state.model.mesh.clone() else {
-        ui.centered_and_justified(|ui| ui.label(RichText::new("Open a .glb model to see it here").weak()));
+        // The model worked on last, from the recent files, is one click away.
+        let last = state.settings.general.recent_files.iter().find(|p| is_model(p) && p.is_file()).cloned();
+        ui.add_space(ui.available_height() * 0.35);
+        ui.vertical_centered(|ui| {
+            ui.label(RichText::new("Open a .glb model to see it here").weak());
+            if let Some(last) = last {
+                let name = last.file_name().unwrap_or_default().to_string_lossy().to_string();
+                ui.add_space(6.0);
+                if ui.button(format!("Reopen {name}")).on_hover_text(last.display().to_string()).clicked() {
+                    crate::files::open_path(state, &last);
+                }
+            }
+        });
         return;
     };
 
