@@ -7,6 +7,7 @@ use egui::{Align2, Color32, FontId, Pos2, Sense, Stroke, Ui};
 use qsketch_core::rig::{BoneId, Curve, KeyValue};
 use qsketch_core::{IkConstraint, LayerId};
 
+use super::rig_graph;
 use crate::dialogs::rig::Easing;
 use crate::state::AppState;
 use crate::ui::icons;
@@ -436,6 +437,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                         }
                     },
                 );
+                ui.toggle_value(&mut rui.graph, "Curves").on_hover_text(
+                    "Show the curve graph: the selected bone's values over time, with handles to shape how it moves between keys",
+                );
                 ui.separator();
                 if ui
                     .button("Key all")
@@ -714,18 +718,31 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             });
         });
 
+        // --- the curve graph, above the dopesheet so it stays put too.
+        let mut graph_scrub = None;
+        if let (true, Some(a)) = (rui.graph, anim_edit.as_mut()) {
+            let subject = rig_graph::Subject { bone: rui.sel, ik: ik_info.as_ref().map(|c| c.id), layer: layer_id };
+            let width = ui.available_width().max(GUTTER + 160.0) - GUTTER - 14.0;
+            let step = ruler_step(a.duration_ms, width);
+            ui.separator();
+            if let Some(t) = rig_graph::ui(ui, a, &subject, rui.time_ms, GUTTER, step) {
+                graph_scrub = Some(t);
+            }
+        }
         // --- the dopesheet, last: it grows with the animation, and the
         // controls above it stay where they are.
         if let Some(a) = &anim_edit {
             ui.separator();
             track = key_track(ui, a.duration_ms, rui.time_ms, &rows, &frame_durs, current_frame);
         }
+        track.scrub = track.scrub.or(graph_scrub);
     });
 
     // --- write back --------------------------------------------------------------
     let Some(e) = state.doc_mut(doc_id) else { return };
     e.rig_ui.anim = rui.anim;
     e.rig_ui.easing = rui.easing;
+    e.rig_ui.graph = rui.graph;
     e.rig_ui.nearest = rui.nearest;
     e.rig_ui.weights = rui.weights;
     e.rig_ui.brush = rui.brush;

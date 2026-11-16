@@ -24,10 +24,22 @@ pub enum Easing {
     Ease,
     EaseIn,
     EaseOut,
+    /// Runs past the next key's value and settles back onto it.
+    Overshoot,
+    /// Backs away first, then goes.
+    Anticipate,
 }
 
 impl Easing {
-    pub const ALL: [Easing; 5] = [Easing::Linear, Easing::Stepped, Easing::Ease, Easing::EaseIn, Easing::EaseOut];
+    pub const ALL: [Easing; 7] = [
+        Easing::Linear,
+        Easing::Stepped,
+        Easing::Ease,
+        Easing::EaseIn,
+        Easing::EaseOut,
+        Easing::Overshoot,
+        Easing::Anticipate,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -36,6 +48,8 @@ impl Easing {
             Easing::Ease => "Ease in-out",
             Easing::EaseIn => "Ease in",
             Easing::EaseOut => "Ease out",
+            Easing::Overshoot => "Overshoot",
+            Easing::Anticipate => "Anticipate",
         }
     }
 
@@ -46,6 +60,8 @@ impl Easing {
             Easing::Ease => Curve::Bezier([0.42, 0.0, 0.58, 1.0]),
             Easing::EaseIn => Curve::Bezier([0.42, 0.0, 1.0, 1.0]),
             Easing::EaseOut => Curve::Bezier([0.0, 0.0, 0.58, 1.0]),
+            Easing::Overshoot => Curve::Bezier([0.34, 1.56, 0.64, 1.0]),
+            Easing::Anticipate => Curve::Bezier([0.36, -0.56, 0.66, 0.0]),
         }
     }
 }

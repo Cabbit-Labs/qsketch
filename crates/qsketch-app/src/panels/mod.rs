@@ -13,6 +13,7 @@ pub mod navigator;
 pub mod palette;
 pub mod reference;
 pub mod rig;
+mod rig_graph;
 pub mod swatches;
 pub mod thumbs;
 pub mod tileset;

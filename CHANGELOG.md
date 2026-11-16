@@ -4,6 +4,17 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Rig: a **curve graph** (Rig panel > Curves). It plots the selected bone's
+  turn, move and scale over time, plus its IK mix and the active layer's
+  opacity, on the same time axis as the dopesheet. Each stretch between two
+  keys has two handles: drag them to shape how the value gets from one key to
+  the next, past the keys if you like (overshoot, anticipation). A row of
+  presets (Linear, Stepped, Ease in-out, Ease in, Ease out, Overshoot,
+  Anticipate) and four number fields set the same thing, so the easing of a
+  key can now be changed after it is set; Apply to all gives every key shown
+  the same easing. Click a curve to pick another stretch, a name on the left
+  to hide its curve, anywhere else to scrub. Overshoot and Anticipate are also
+  in "Easing for new keys".
 - Rig, from animating a 15-bone clockwork machine in the app:
   - Gears: a bone can be **turned by** another bone (Rig panel > Bone > Turned
     by) with a ratio, so you key one gear and everything meshed with it

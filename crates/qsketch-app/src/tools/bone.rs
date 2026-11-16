@@ -45,6 +45,8 @@ pub struct RigUi {
     pub anim: Option<usize>,
     pub time_ms: u32,
     pub easing: Easing,
+    /// The Rig panel shows the curve graph under the dopesheet.
+    pub graph: bool,
     /// Preview with nearest-neighbor sampling (pixel art).
     pub nearest: bool,
     /// An animation property was edited in the tool options and waits for
@@ -87,6 +89,7 @@ impl Default for RigUi {
             anim: None,
             time_ms: 0,
             easing: Easing::Linear,
+            graph: false,
             nearest: false,
             edited: false,
             weights: false,
