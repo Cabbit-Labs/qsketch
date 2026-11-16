@@ -46,6 +46,78 @@ pub struct Sections {
     pub list: Vec<Section>,
 }
 
+impl Sections {
+    /// Renames a section. An empty name is ignored.
+    pub fn rename(&mut self, index: u32, name: &str) {
+        let name = name.trim();
+        if let (Some(section), false) = (self.list.get_mut(index as usize), name.is_empty()) {
+            section.name = name.to_string();
+        }
+    }
+
+    /// Moves every triangle of `from` into `into` and removes `from` from the list. Returns where a section
+    /// that was at `index` is afterwards, so a selection can follow it.
+    pub fn merge(&mut self, from: u32, into: u32) -> impl Fn(u32) -> u32 {
+        let valid = from != into && (from as usize) < self.list.len() && (into as usize) < self.list.len();
+        if valid {
+            self.list[into as usize].triangles += self.list[from as usize].triangles;
+            self.list.remove(from as usize);
+            for s in &mut self.of_triangle {
+                *s = match *s {
+                    s if s == from => into - u32::from(into > from),
+                    s if s > from => s - 1,
+                    s => s,
+                };
+            }
+        }
+        move |index| match index {
+            _ if !valid => index,
+            i if i == from => into - u32::from(into > from),
+            i if i > from => i - 1,
+            i => i,
+        }
+    }
+
+    /// The sidecar file's text: names, the model's quarter turns, and each triangle's section as runs.
+    pub fn to_json(&self, turns: u8) -> String {
+        let mut runs: Vec<[u32; 2]> = Vec::new();
+        for &s in &self.of_triangle {
+            match runs.last_mut() {
+                Some(run) if run[0] == s => run[1] += 1,
+                _ => runs.push([s, 1]),
+            }
+        }
+        let names: Vec<&str> = self.list.iter().map(|s| s.name.as_str()).collect();
+        serde_json::json!({"version": 1, "triangles": self.of_triangle.len(), "turns": turns, "names": names, "runs": runs})
+            .to_string()
+    }
+
+    /// Reads a sidecar back, or `None` if it is damaged or was written for a model with a different triangle count.
+    pub fn from_json(text: &str, triangles: usize) -> Option<(Self, u8)> {
+        let root: serde_json::Value = serde_json::from_str(text).ok()?;
+        if root.get("version")?.as_u64()? != 1 || root.get("triangles")?.as_u64()? as usize != triangles {
+            return None;
+        }
+        let mut list: Vec<Section> = root
+            .get("names")?
+            .as_array()?
+            .iter()
+            .map(|n| Some(Section { name: n.as_str()?.to_string(), triangles: 0 }))
+            .collect::<Option<_>>()?;
+        let mut of_triangle = Vec::with_capacity(triangles);
+        for run in root.get("runs")?.as_array()? {
+            let (section, length) = (run.get(0)?.as_u64()? as usize, run.get(1)?.as_u64()? as usize);
+            if section >= list.len() || of_triangle.len() + length > triangles {
+                return None;
+            }
+            list[section].triangles += length as u32;
+            of_triangle.resize(of_triangle.len() + length, section as u32);
+        }
+        let turns = root.get("turns").and_then(serde_json::Value::as_u64).unwrap_or(0) as u8 % 4;
+        (of_triangle.len() == triangles).then_some((Sections { of_triangle, list }, turns))
+    }
+}
+
 struct Graph {
     offsets: Vec<u32>,
     neighbors: Vec<u32>,
@@ -619,6 +691,51 @@ pub fn find_sections(mesh: &Mesh, up: [f32; 3], texture: Option<&Texture>) -> Se
 mod tests {
     use super::*;
     use crate::mesh::Vertex;
+
+    fn three_sections() -> Sections {
+        let section = |name: &str, triangles| Section { name: name.to_string(), triangles };
+        Sections {
+            of_triangle: vec![0, 0, 1, 2, 2, 2, 1],
+            list: vec![section("a", 2), section("b", 2), section("c", 3)],
+        }
+    }
+
+    #[test]
+    fn merging_moves_triangles_and_renumbers() {
+        let mut s = three_sections();
+        let moved = s.merge(0, 2);
+        assert_eq!(s.of_triangle, vec![1, 1, 0, 1, 1, 1, 0]);
+        assert_eq!(
+            s.list,
+            vec![Section { name: "b".into(), triangles: 2 }, Section { name: "c".into(), triangles: 5 }]
+        );
+        assert_eq!((moved(0), moved(1), moved(2)), (1, 0, 1));
+
+        let mut s = three_sections();
+        let moved = s.merge(2, 0);
+        assert_eq!(s.of_triangle, vec![0, 0, 1, 0, 0, 0, 1]);
+        assert_eq!((moved(2), moved(1)), (0, 1));
+
+        let mut s = three_sections();
+        let _ = s.merge(1, 1);
+        let _ = s.merge(9, 0);
+        assert_eq!(s.list.len(), 3, "merging a section into itself or a missing one changes nothing");
+    }
+
+    #[test]
+    fn a_sidecar_reads_back_and_rejects_another_model() {
+        let mut s = three_sections();
+        s.rename(1, "  stem ");
+        s.rename(0, "   ");
+        let text = s.to_json(3);
+        let (back, turns) = Sections::from_json(&text, 7).unwrap();
+        assert_eq!((&back.of_triangle, &back.list, turns), (&s.of_triangle, &s.list, 3));
+        assert_eq!(back.list[1].name, "stem");
+        assert_eq!(back.list[0].name, "a");
+        assert!(Sections::from_json(&text, 8).is_none());
+        assert!(Sections::from_json("{", 7).is_none());
+        assert!(Sections::from_json(&text.replace("[2,3]", "[5,3]"), 7).is_none());
+    }
 
     /// Adds a closed box from `min` to `max`, as twelve triangles subdivided `n` times along X and Z faces.
     fn add_box(mesh: &mut Mesh, min: [f32; 3], max: [f32; 3], n: u32) {

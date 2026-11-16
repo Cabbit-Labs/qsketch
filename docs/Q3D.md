@@ -23,7 +23,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 | # | Step | Status |
 |---|------|--------|
 | 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | Done |
-| 2 | Sections: find them, list, pick on the model, highlight in both views | Mostly done; picking on the canvas and saving edits still to come |
+| 2 | Sections: find them, list, pick on the model, highlight in both views, rename and merge | Mostly done; picking on the canvas still to come |
 | 2b | Rearrange Texture: one continuous island per section, with the paint baked across | Done; a few pieces still fold |
 | 3 | Overlays: island outlines, tints, labels, mapped pixels only | Planned |
 | 4 | Paint limits: paint only inside a section, through the selection system | Done: Select on Canvas |
@@ -66,9 +66,11 @@ peel has 888 islands, and many are scraps a few pixels wide. The sectioner turns
    slice along the part, because a curved strip has no single plane. Neighbors then vote to clear speckle along the rims.
    With a texture available, a part painted in two clearly different colors splits along that paint line instead,
    which follows real surfaces better: facing direction put cream and yellow into the same section on the peel.
-5. **Name and keep (not built yet):** let the user rename, merge and split, and save the result in the sidecar so the
-   automatic pass runs once and those edits are kept. For now sections are named "Part A top" and so on, and are
-   recomputed on load.
+5. **Name and keep:** right-click a section to rename it or merge it into another. The result is saved in
+   `model.sections.json` beside the model, together with its quarter turns, and read back when the model opens, so
+   the automatic pass runs once and those edits are kept. The file is ignored if the model's triangle count has
+   changed. "Discard Edits and Find Sections Again" in the same menu deletes it. Splitting a section by hand is
+   not built yet.
 
 The peel comes out as four strips with a top and underside each, plus the stem and hub: nine sections in about
 0.13 s for 139,428 triangles and 1.1 s for 987,308. `cargo run -p qsketch-3d --example section_report -- model.glb -z`
@@ -119,15 +121,15 @@ old texture onto it. Clean islands then make the older tools work better too.
 Found by using the panel by hand. Ticked as each lands on `main`.
 
 - [x] Extract Texture, panning, larger panel, clearer errors (0.72.1)
-- [ ] The sectioner over-splits compact low-poly models (a 1,680-triangle creature came out as 16 parts)
-- [ ] Rename and merge sections, kept in a sidecar beside the model
+- [x] The sectioner over-splits compact low-poly models (a 1,680-triangle creature came out as 16 parts): left as
+      it is and handled by merging. A peel strip and a creature's limb measure the same (slices about 1.5 times
+      wider than thick on the peel, 2 to 9 on the creature), so no thinness test tells them apart.
+- [x] Rename and merge sections, kept in a sidecar beside the model
 - [ ] Remember the model between sessions
 - [ ] Find sections off the UI thread, and check the 987,308-triangle peel in the app
 - [ ] Pick a section by clicking the canvas
 
 ## Open questions
 
-- Saving a section sidecar: beside the model, or inside the `.qsk`? Leaning beside the model, with the `.qsk` keeping a
-  link to it.
 - Only GLB is planned to start. OBJ and glTF with external files can follow if they are needed.
 - Should texture documents be remembered per model between sessions?

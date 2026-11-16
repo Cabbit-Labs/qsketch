@@ -54,6 +54,12 @@ pub struct Model {
     job: Option<Receiver<Result<Finished, String>>>,
     /// Rearrange normally drops surfaces nothing can see; this keeps them.
     keep_hidden: bool,
+    /// The sections were renamed, merged or read from the sidecar, so they are kept rather than found again.
+    edited: bool,
+    /// The sidecar is behind the sections and is written once typing stops.
+    unsaved: bool,
+    /// The section being renamed in its menu, the text typed so far, and the frame the menu was last drawn.
+    renaming: Option<(u32, String, u64)>,
     /// The color texture stored inside the model file, until it has been extracted.
     embedded: Option<EmbeddedImage>,
 }
@@ -113,7 +119,16 @@ impl Model {
                 self.sections = None;
                 self.selected = None;
                 self.show_on_canvas = true;
-                if self.mesh.as_ref().is_some_and(|m| m.triangle_count() <= AUTO_SECTION_TRIANGLES) {
+                (self.edited, self.unsaved, self.renaming) = (false, false, None);
+                let triangles = self.mesh.as_ref().map_or(0, |m| m.triangle_count());
+                let saved =
+                    std::fs::read_to_string(sidecar(path)).ok().and_then(|t| Sections::from_json(&t, triangles));
+                if let Some((sections, turns)) = saved {
+                    self.sections = Some(Arc::new(sections));
+                    self.sections_generation += 1;
+                    self.turns = turns;
+                    self.edited = true;
+                } else if triangles <= AUTO_SECTION_TRIANGLES {
                     self.find_sections();
                 }
             }
@@ -129,6 +144,34 @@ impl Model {
         self.sections = Some(Arc::new(find_sections(mesh, up_in_mesh(self.turns), None)));
         self.sections_generation += 1;
         self.selected = None;
+        self.edited = false;
+    }
+
+    /// Changes the sections and marks them to be saved beside the model.
+    fn edit_sections(&mut self, edit: impl FnOnce(&mut Sections)) {
+        let Some(sections) = &mut self.sections else { return };
+        edit(Arc::make_mut(sections));
+        self.sections_generation += 1;
+        (self.edited, self.unsaved) = (true, true);
+    }
+
+    /// Writes the sections and the model's turns to the sidecar file.
+    fn save_sections(&mut self) {
+        self.unsaved = false;
+        let (Some(sections), Some(path)) = (&self.sections, &self.path) else { return };
+        let file = sidecar(path);
+        if let Err(e) = std::fs::write(&file, sections.to_json(self.turns)) {
+            self.error = Some(format!("Couldn't save {}: {e}", file.display()));
+        }
+    }
+
+    /// Throws away renames and merges and finds the sections afresh.
+    fn discard_section_edits(&mut self) {
+        if let Some(path) = &self.path {
+            let _ = std::fs::remove_file(sidecar(path));
+        }
+        self.unsaved = false;
+        self.find_sections();
     }
 
     /// The highlight for a canvas, if it shows the document this model is wearing.
@@ -138,6 +181,11 @@ impl Model {
         }
         Some(CanvasOverlay { mesh: self.mesh.clone()?, sections: self.sections.clone()?, selected: self.selected? })
     }
+}
+
+/// Where a model's sections are kept: `name.sections.json` beside it. The model file is never changed.
+fn sidecar(model: &Path) -> PathBuf {
+    model.with_extension("sections.json")
 }
 
 fn choose_file(state: &mut AppState) {
@@ -246,6 +294,8 @@ fn finish_rearrange(ui: &Ui, state: &mut AppState) {
             state.model.sections = Some(Arc::new(done.sections));
             state.model.sections_generation += 1;
             state.model.selected = None;
+            state.model.edited = true;
+            state.model.save_sections();
             let r = done.report;
             let note = format!(
                 "Texture rearranged: {} islands, {} hidden triangles removed. {} triangles folded over, {} pixels overlap.",
@@ -259,6 +309,9 @@ fn finish_rearrange(ui: &Ui, state: &mut AppState) {
 
 pub fn ui(ui: &mut Ui, state: &mut AppState) {
     finish_rearrange(ui, state);
+    if state.model.unsaved && ui.memory(|m| m.focused().is_none()) {
+        state.model.save_sections();
+    }
     toolbar(ui, state);
     if let Some(error) = &state.model.error {
         ui.colored_label(ui.visuals().error_fg_color, error);
@@ -395,16 +448,88 @@ fn section_row(ui: &mut Ui, state: &mut AppState) {
     }
     let model = &mut state.model;
     // A model with many sections scrolls its list, so the view below keeps its room.
+    let mut change = None;
     egui::ScrollArea::vertical().id_salt("model_sections").max_height(SECTION_LIST_HEIGHT).show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
             for (i, section) in sections.list.iter().enumerate() {
                 let i = i as u32;
-                if ui.selectable_label(model.selected == Some(i), &section.name).clicked() {
+                let button = ui
+                    .selectable_label(model.selected == Some(i), &section.name)
+                    .on_hover_text(format!("{} triangles. Right-click to rename or merge.", section.triangles));
+                if button.clicked() {
                     model.selected = if model.selected == Some(i) { None } else { Some(i) };
                 }
+                button.context_menu(|ui| section_menu(ui, model, &sections, i, &mut change));
             }
         });
     });
+    match change {
+        Some(Change::Rename(i, name)) => model.edit_sections(|s| s.rename(i, &name)),
+        Some(Change::Merge(from, into)) => {
+            let mut moved = None;
+            model.edit_sections(|s| moved = Some(s.merge(from, into)));
+            model.selected = moved.map(|moved| moved(from));
+            model.renaming = None;
+        }
+        Some(Change::Discard) => model.discard_section_edits(),
+        None => {}
+    }
+}
+
+enum Change {
+    Rename(u32, String),
+    Merge(u32, u32),
+    Discard,
+}
+
+/// A section's right-click menu: its name to edit, the sections it can merge into, and a way back.
+fn section_menu(ui: &mut Ui, model: &mut Model, sections: &Sections, index: u32, change: &mut Option<Change>) {
+    // A menu that was not on screen last frame has just opened: start from the current name, ready to type over.
+    let frame = ui.ctx().cumulative_pass_nr();
+    let opened = model.renaming.as_ref().is_none_or(|(i, _, last)| *i != index || last + 1 < frame);
+    if opened {
+        model.renaming = Some((index, sections.list[index as usize].name.clone(), frame));
+    }
+    if let Some((_, text, last)) = &mut model.renaming {
+        *last = frame;
+        ui.label("Name");
+        let field = egui::TextEdit::singleline(text).desired_width(180.0).show(ui);
+        if opened {
+            field.response.request_focus();
+            let all = egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(text.chars().count()),
+            );
+            let mut edit = field.state;
+            edit.cursor.set_char_range(Some(all));
+            edit.store(ui.ctx(), field.response.id);
+        }
+        if field.response.changed() {
+            *change = Some(Change::Rename(index, text.clone()));
+        }
+        if field.response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            ui.close();
+        }
+    }
+    ui.menu_button("Merge Into", |ui| {
+        for (other, section) in sections.list.iter().enumerate().filter(|(other, _)| *other as u32 != index) {
+            if ui.button(&section.name).clicked() {
+                *change = Some(Change::Merge(index, other as u32));
+                ui.close();
+            }
+        }
+    });
+    if model.edited {
+        ui.separator();
+        if ui
+            .button("Discard Edits and Find Sections Again")
+            .on_hover_text("Forgets every rename and merge for this model")
+            .clicked()
+        {
+            *change = Some(Change::Discard);
+            ui.close();
+        }
+    }
 }
 
 fn toolbar(ui: &mut Ui, state: &mut AppState) {
@@ -417,8 +542,10 @@ fn toolbar(ui: &mut Ui, state: &mut AppState) {
         }
         if small_button(ui, "Rotate 90°").on_hover_text("Turn the model if the wrong axis is up").clicked() {
             state.model.turns = (state.model.turns + 1) % 4;
-            // Which side is "top" depends on which way is up.
-            if state.model.sections.is_some() {
+            if state.model.edited {
+                state.model.save_sections();
+            } else if state.model.sections.is_some() {
+                // Which side is "top" depends on which way is up.
                 state.model.find_sections();
             }
         }
