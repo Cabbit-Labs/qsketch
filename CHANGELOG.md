@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.72.1 — 2026-11-16
 
 - Model panel (Window ▸ Model), from testing it by hand on generated and
   hand-made models:
