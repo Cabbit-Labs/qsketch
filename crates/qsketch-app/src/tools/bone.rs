@@ -488,8 +488,9 @@ pub fn sync_preview(entry: &mut DocEntry, tool_active: bool) {
     let rig = &entry.doc.state().rig;
     let anim = tool_active.then(|| entry.rig_ui.anim_in(rig)).flatten();
     // The setup pose is shown as drawn, except that layers hidden at rest
-    // are hidden, so the checkbox has a visible effect.
-    let preview = tool_active && (anim.is_some() || !rig.rest_alpha.is_empty());
+    // or by the active skin are hidden, so those settings have a visible
+    // effect.
+    let preview = tool_active && (anim.is_some() || !rig.rest_alpha.is_empty() || rig.active_skin().is_some());
     if !preview {
         entry.rig_ui.pose_key = None;
         entry.doc.set_pose_preview(None);

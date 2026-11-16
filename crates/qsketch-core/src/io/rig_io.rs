@@ -109,7 +109,12 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         })
         .collect();
 
-    // Parts: every visible layer with pixels, bottom to top.
+    // Skins, with unique names; parts list the skins they belong to.
+    let mut used_skins: Vec<String> = Vec::new();
+    let skin_names: Vec<String> = rig.skins.iter().map(|s| unique(&mut used_skins, &s.name, "skin")).collect();
+
+    // Parts: every visible layer with pixels, bottom to top (those of every
+    // skin, whichever is active).
     let setup = rig.pose(None);
     let mut part_names: Vec<String> = Vec::new();
     let mut files: Vec<String> = Vec::new();
@@ -218,6 +223,15 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
         let rest = rig.rest_alpha_of(l.id());
         if rest < 0.999 {
             part["alpha"] = json!(rest);
+        }
+        let in_skins: Vec<&str> = skin_names
+            .iter()
+            .zip(&rig.skins)
+            .filter(|(_, s)| s.layers.contains(&l.id()))
+            .map(|(n, _)| n.as_str())
+            .collect();
+        if !in_skins.is_empty() {
+            part["skins"] = json!(in_skins);
         }
         if let Some(m) = mesh {
             // Bones are listed once, vertices refer to them by position:
@@ -328,6 +342,12 @@ pub fn export(doc: &DocState, dir: &Path) -> anyhow::Result<RigExportSummary> {
     if !drives.is_empty() {
         out["drives"] = json!(drives);
     }
+    if !skin_names.is_empty() {
+        out["skins"] = json!(skin_names);
+        if let Some(a) = rig.active_skin() {
+            out["skin"] = json!(skin_names[a]);
+        }
+    }
     if frame_images > 0 {
         let secs: Vec<f64> = (0..nframes).map(|f| doc.frame_duration(f) as f64 / 1000.0).collect();
         out["frames"] = json!(secs);
@@ -382,6 +402,37 @@ mod tests {
         assert_eq!(rot[0]["curve"], "linear");
         assert_eq!(rot[1]["curve"], json!([0.25, 0.0, 0.75, 1.0]));
         assert_eq!(json["animations"]["walk"]["duration"], 1.5);
+    }
+
+    #[test]
+    fn skins_are_exported_with_every_skins_parts() {
+        let mut doc = DocState::new(32, 32, None);
+        doc.layers[0].raster.fill_rect(IRect::new(2, 2, 4, 4), Rgba8::new(255, 0, 0, 255));
+        doc.layers[0].props.name = "body".into();
+        for name in ["helmet", "hat"] {
+            doc.add_layer(name, None);
+            let top = doc.layers.len() - 1;
+            doc.layers[top].raster.fill_rect(IRect::new(2, 2, 4, 4), Rgba8::new(0, 0, 255, 255));
+        }
+        let ids: Vec<_> = doc.layers.iter().map(|l| l.id()).collect();
+        doc.rig.add_bone("root", None, 8.0, 8.0, 10.0);
+        let knight = doc.rig.add_skin("knight");
+        let wizard = doc.rig.add_skin("wizard");
+        doc.rig.set_in_skin(knight, ids[1], true);
+        doc.rig.set_in_skin(wizard, ids[2], true);
+        doc.rig.skin = Some(knight);
+        let j = exported(&doc);
+        assert_eq!(j["skins"], json!(["knight", "wizard"]));
+        assert_eq!(j["skin"], "knight");
+        // The wizard's hat is exported although the knight is worn.
+        let parts = j["parts"].as_array().unwrap();
+        assert_eq!(parts.len(), 3);
+        assert!(parts[0].get("skins").is_none());
+        assert_eq!(parts[1]["skins"], json!(["knight"]));
+        assert_eq!(parts[2]["skins"], json!(["wizard"]));
+        // The editor shows only the worn skin's layers.
+        let posed = crate::rig::posed_copy(&doc, None, 0, crate::raster::ResizeFilter::Nearest);
+        assert!(posed.layers[2].props.opacity < 0.01 && posed.layers[1].props.opacity > 0.99);
     }
 
     /// A mini runtime written from docs/RIG_FORMAT.md, reading only the JSON

@@ -317,6 +317,14 @@
   }
 
   /**
+   * Whether `part` is drawn while the skin named `skin` is worn (see "Skins"
+   * in the doc): a part in no skin always is; with `skin` null every part is.
+   */
+  function partInSkin(part, skin) {
+    return skin == null || !part.skins || part.skins.length === 0 || part.skins.includes(skin);
+  }
+
+  /**
    * The document frame showing at `seconds` (see "Frame art" in the doc):
    * the frames cycle, in whole milliseconds. 0 when the file has no frames.
    */
@@ -373,7 +381,7 @@
   const canvasBlend = (name) => BLEND[name] || "source-over";
 
   const QRig = {
-    IDENTITY, mul, apply, inverse, trs, wrap180, ease, sample, load, pose, partMatrix, partAlpha, frameAt, partImage, meshPoints, meshTriangles, canvasBlend,
+    IDENTITY, mul, apply, inverse, trs, wrap180, ease, sample, load, pose, partMatrix, partAlpha, partInSkin, frameAt, partImage, meshPoints, meshTriangles, canvasBlend,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = QRig;
   else root.QRig = QRig;

@@ -248,6 +248,13 @@ pub struct IkTrack {
     pub keys: Vec<Key<IkValue>>,
 }
 
+/// A named set of layers that show together (see `Rig::skins`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Skin {
+    pub name: String,
+    pub layers: Vec<LayerId>,
+}
+
 /// A document's skeleton, attachments and animations.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Rig {
@@ -269,6 +276,14 @@ pub struct Rig {
     /// Bones turned by other bones (gears); at most one per bone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drives: Vec<Drive>,
+    /// Skins: named sets of layers, to swap outfits or whole characters on
+    /// one skeleton. A layer in any skin shows only while a skin holding it
+    /// is the active one; layers in no skin always show.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skins: Vec<Skin>,
+    /// The active skin (an index into `skins`); `None` shows every layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skin: Option<usize>,
     #[serde(default)]
     next_bone_id: BoneId,
     #[serde(default)]
@@ -396,6 +411,7 @@ impl Rig {
             && self.attachments.is_empty()
             && self.meshes.is_empty()
             && self.rest_alpha.is_empty()
+            && self.skins.is_empty()
     }
 
     pub fn bone_index(&self, id: BoneId) -> Option<usize> {
@@ -578,8 +594,69 @@ impl Rig {
         self.attachments.retain(|a| doc_layers.contains(&a.layer));
         self.meshes.retain(|m| doc_layers.contains(&m.layer));
         self.rest_alpha.retain(|(l, _)| doc_layers.contains(l));
+        for s in &mut self.skins {
+            s.layers.retain(|l| doc_layers.contains(l));
+        }
         for a in &mut self.animations {
             a.alpha.retain(|t| doc_layers.contains(&t.layer));
+        }
+    }
+
+    /// The active skin, if it still exists.
+    pub fn active_skin(&self) -> Option<usize> {
+        self.skin.filter(|&i| i < self.skins.len())
+    }
+
+    /// Whether the active skin lets `layer` show: always for a layer in no
+    /// skin, and for every layer while no skin is active.
+    pub fn skin_shows(&self, layer: LayerId) -> bool {
+        let Some(active) = self.active_skin() else { return true };
+        self.skins[active].layers.contains(&layer) || !self.skins.iter().any(|s| s.layers.contains(&layer))
+    }
+
+    /// Add a skin and make it the active one; returns its index. The name is
+    /// made unique (the game export refers to skins by name).
+    pub fn add_skin(&mut self, name: &str) -> usize {
+        let name = self.unique_skin_name(name, None);
+        self.skins.push(Skin { name, layers: Vec::new() });
+        self.skin = Some(self.skins.len() - 1);
+        self.skins.len() - 1
+    }
+
+    /// `name`, or `name 2`, `name 3`... when another skin (not `except`)
+    /// already has it.
+    pub fn unique_skin_name(&self, name: &str, except: Option<usize>) -> String {
+        let base = if name.trim().is_empty() { "skin" } else { name.trim() };
+        let taken = |n: &str| self.skins.iter().enumerate().any(|(i, s)| Some(i) != except && s.name == n);
+        if !taken(base) {
+            return base.to_string();
+        }
+        (2..).map(|n| format!("{base} {n}")).find(|n| !taken(n)).unwrap_or_else(|| base.to_string())
+    }
+
+    /// A copy of skin `i` (same layers), made the active one.
+    pub fn duplicate_skin(&mut self, i: usize) -> Option<usize> {
+        let layers = self.skins.get(i)?.layers.clone();
+        let n = self.add_skin(&format!("{} copy", self.skins[i].name));
+        self.skins[n].layers = layers;
+        Some(n)
+    }
+
+    /// Remove skin `i`; its layers show always again unless another skin
+    /// holds them. No skin is active afterwards.
+    pub fn remove_skin(&mut self, i: usize) {
+        if i < self.skins.len() {
+            self.skins.remove(i);
+            self.skin = None;
+        }
+    }
+
+    /// Put `layer` in skin `i` or take it out.
+    pub fn set_in_skin(&mut self, i: usize, layer: LayerId, inside: bool) {
+        let Some(s) = self.skins.get_mut(i) else { return };
+        s.layers.retain(|l| *l != layer);
+        if inside {
+            s.layers.push(layer);
         }
     }
 
@@ -605,6 +682,9 @@ impl Rig {
             let tr = a.alpha.iter().find(|tr| tr.layer == layer)?;
             sample(&tr.keys, a.local_time(t))
         });
+        if !self.skin_shows(layer) {
+            return 0.0;
+        }
         keyed.unwrap_or_else(|| self.rest_alpha_of(layer)).clamp(0.0, 1.0)
     }
 
@@ -1234,6 +1314,7 @@ pub fn posed_copy(doc: &DocState, anim: Option<usize>, t_ms: u32, filter: Resize
     if rig.attachments.is_empty()
         && rig.meshes.is_empty()
         && rig.rest_alpha.is_empty()
+        && rig.active_skin().is_none()
         && rig.animations.iter().all(|a| a.alpha.is_empty())
     {
         return out;
@@ -1858,6 +1939,35 @@ mod tests {
     fn render_frame_raster(doc: &DocState, frame: usize) -> Raster {
         crate::anim::render_frame(doc, frame)
     }
+    #[test]
+    fn skins_show_their_own_layers() {
+        let mut rig = Rig::default();
+        let knight = rig.add_skin("knight");
+        let wizard = rig.add_skin("knight");
+        assert_eq!(rig.skins[wizard].name, "knight 2");
+        // Layer 1 is the knight's, 2 the wizard's, 3 both, 4 in no skin.
+        rig.set_in_skin(knight, 1, true);
+        rig.set_in_skin(wizard, 2, true);
+        rig.set_in_skin(knight, 3, true);
+        rig.set_in_skin(wizard, 3, true);
+        rig.skin = Some(knight);
+        let shown = |rig: &Rig| [1, 2, 3, 4].map(|l| rig.alpha_at(None, l) > 0.5);
+        assert_eq!(shown(&rig), [true, false, true, true]);
+        rig.skin = Some(wizard);
+        assert_eq!(shown(&rig), [false, true, true, true]);
+        // No active skin: everything, for working on the art.
+        rig.skin = None;
+        assert_eq!(shown(&rig), [true; 4]);
+        // A removed skin frees its layers, and layers that are gone drop out.
+        rig.skin = Some(wizard);
+        rig.remove_skin(knight);
+        assert_eq!(rig.active_skin(), None);
+        rig.skin = Some(0);
+        assert_eq!(shown(&rig), [true, true, true, true]);
+        rig.prune(&[1, 4]);
+        assert!(rig.skins[0].layers.is_empty());
+    }
+
     #[test]
     fn reparenting_keeps_a_bone_where_it_is() {
         let mut rig = Rig::default();

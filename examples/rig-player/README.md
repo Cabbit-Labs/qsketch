@@ -6,7 +6,7 @@ JavaScript, no build step, no dependencies.
 
 | File | What it is |
 |------|------------|
-| `rig-runtime.js` | The posing math: curves, animation sampling, drives (gears), two-bone IK, part matrices. Knows nothing about the DOM, so it is the piece to port to another engine. |
+| `rig-runtime.js` | The posing math: curves, animation sampling, drives (gears), two-bone IK, part matrices, skins. Knows nothing about the DOM, so it is the piece to port to another engine. |
 | `player.js`, `index.html` | A canvas player: pick an animation, play, scrub, change speed, show the bones. |
 | `test.html` | Checks the runtime against the editor (see below). |
 | `sample/` | A small character exported from qSketch (idle, walk with IK legs, wave); its arms and legs are meshes that bend at the elbow and knee. |

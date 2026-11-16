@@ -16,6 +16,7 @@
     rig: null,
     images: new Map(), // part image path -> HTMLImageElement
     anim: null, // animation name, or null for the setup pose
+    skin: null, // skin name, or null to draw every part
     time: 0, // seconds, as played (not wrapped)
     playing: true,
     speed: 1,
@@ -51,6 +52,13 @@
     const first = Object.keys(rig.animations)[0] ?? null;
     select.value = first ?? "";
     setAnimation(first);
+    // Skins: the one the file was exported wearing, else the first.
+    const skins = rig.json.skins || [];
+    const skinSelect = $("skin");
+    skinSelect.replaceChildren(...skins.map((n) => new Option(n, n)), new Option("All parts", ""));
+    state.skin = skins.length ? rig.json.skin ?? skins[0] : null;
+    skinSelect.value = state.skin ?? "";
+    $("skin-label").hidden = skins.length === 0;
     const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
     status(
       `${name}: ${count(rig.bones.length, "bone")}, ${count(rig.parts.length, "part")}, ${count(Object.keys(rig.animations).length, "animation")}`
@@ -169,6 +177,7 @@
     ctx.imageSmoothingEnabled = !state.pixel;
     const world = QRig.pose(rig, state.anim, state.time);
     for (const part of rig.parts) {
+      if (!QRig.partInSkin(part, state.skin)) continue;
       const alpha = QRig.partAlpha(rig, part, state.anim, state.time);
       if (alpha <= 0) continue;
       ctx.globalAlpha = part.opacity * alpha;
@@ -222,6 +231,7 @@
 
   // --- controls ----------------------------------------------------------------
   $("anim").addEventListener("change", (e) => setAnimation(e.target.value || null));
+  $("skin").addEventListener("change", (e) => (state.skin = e.target.value || null));
   $("play").addEventListener("click", () => {
     const an = state.rig.animations[state.anim];
     if (!an) return;

@@ -266,6 +266,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         ui.label("Open a document to rig it.");
         return;
     };
+    let bone_tool = state.effective_tool() == crate::tools::ToolKind::Bone;
+    let mut use_bone_tool = false;
     let Some(e) = state.doc(doc_id) else { return };
     let mut rui = e.rig_ui.clone();
     let rig = &e.doc.state().rig;
@@ -362,9 +364,34 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let mut alpha_key: Option<f32> = None;
     let mut rest_alpha: Option<f32> = None;
     let mut track = TrackOut::default();
+    // Skins.
+    let skin_names: Vec<String> = rig.skins.iter().map(|s| s.name.clone()).collect();
+    let skin_cur = rig.active_skin();
+    let in_skin = skin_cur.is_some_and(|i| rig.skins[i].layers.contains(&layer_id));
+    let layer_skins: Vec<&str> =
+        rig.skins.iter().filter(|s| s.layers.contains(&layer_id)).map(|s| s.name.as_str()).collect();
+    let skin_note = match (layer_skins.is_empty(), skin_names.is_empty()) {
+        (_, true) => String::new(),
+        (true, false) => format!("{layer_name}: in no skin, always shown"),
+        (false, false) => format!("{layer_name}: in {}", layer_skins.join(", ")),
+    };
+    let mut skin_pick: Option<Option<usize>> = None;
+    let mut skin_name = skin_cur.map(|i| skin_names[i].clone());
+    let (mut new_skin, mut dup_skin, mut del_skin) = (false, false, false);
+    let mut skin_member: Option<bool> = None;
 
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         ui.spacing_mut().item_spacing = egui::vec2(8.0, 5.0);
+        if !bone_tool {
+            // Poses, animations and skins are only drawn with the Bone tool.
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(
+                    ui.visuals().warn_fg_color,
+                    "The canvas shows the layers as drawn: the pose, animation and skin show with the Bone tool.",
+                );
+                use_bone_tool = ui.button("Use the Bone tool").clicked();
+            });
+        }
         // --- animation -------------------------------------------------------
         ui.horizontal_wrapped(|ui| {
             ui.strong("Animation");
@@ -718,6 +745,52 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             });
         });
 
+        // --- skins ---------------------------------------------------------------
+        ui.horizontal_wrapped(|ui| {
+            ui.strong("Skin").on_hover_text(
+                "Skins swap outfits or whole characters on one skeleton. A layer you put in a skin shows only while that skin is worn; layers in no skin always show.",
+            );
+            let text = skin_cur.map_or_else(|| "All layers".to_string(), |i| skin_names[i].clone());
+            egui::ComboBox::from_id_salt("rig_panel_skin").selected_text(text).width(130.0).show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(skin_cur.is_none(), "All layers")
+                    .on_hover_text("Wear no skin: every layer shows, to work on the art")
+                    .clicked()
+                {
+                    skin_pick = Some(None);
+                }
+                for (i, n) in skin_names.iter().enumerate() {
+                    if ui.selectable_label(skin_cur == Some(i), n).clicked() {
+                        skin_pick = Some(Some(i));
+                    }
+                }
+            });
+            new_skin = ui.button("New").on_hover_text("New skin").clicked();
+            if let Some(name) = skin_name.as_mut() {
+                ui.add(egui::TextEdit::singleline(name).desired_width(110.0));
+                let mut member = in_skin;
+                if ui
+                    .checkbox(&mut member, "Active layer in this skin")
+                    .on_hover_text("The active layer shows only while a skin it is in is worn")
+                    .changed()
+                {
+                    skin_member = Some(member);
+                }
+                dup_skin = ui
+                    .button("Duplicate")
+                    .on_hover_text("A new skin with the same layers, to swap some of them out")
+                    .clicked();
+                del_skin = ui
+                    .button(format!("{} Delete", icons::TRASH))
+                    .on_hover_text("Delete this skin (its layers stay, and show always again)")
+                    .clicked();
+            }
+            if !skin_note.is_empty() {
+                ui.separator();
+                ui.label(&skin_note);
+            }
+        });
+
         // --- the curve graph, above the dopesheet so it stays put too.
         let mut graph_scrub = None;
         if let (true, Some(a)) = (rui.graph, anim_edit.as_mut()) {
@@ -822,6 +895,39 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             }
             e.rig_ui.edited = true;
         }
+    }
+    // Skins.
+    if let Some(pick) = skin_pick {
+        if pick != skin_cur {
+            e.doc.state_mut().rig.skin = pick;
+            e.doc.commit("Change Skin");
+        }
+    }
+    if let (Some(i), Some(name)) = (skin_cur, &skin_name) {
+        let rig = &mut e.doc.state_mut().rig;
+        if rig.skins.get(i).is_some_and(|s| &s.name != name) {
+            rig.skins[i].name = name.clone();
+            e.rig_ui.edited = true;
+        }
+    }
+    if new_skin {
+        let rig = &mut e.doc.state_mut().rig;
+        let n = rig.skins.len() + 1;
+        rig.add_skin(&format!("skin {n}"));
+        e.doc.commit("New Skin");
+    } else if dup_skin {
+        if let Some(i) = skin_cur {
+            e.doc.state_mut().rig.duplicate_skin(i);
+            e.doc.commit("Duplicate Skin");
+        }
+    } else if del_skin {
+        if let Some(i) = skin_cur {
+            e.doc.state_mut().rig.remove_skin(i);
+            e.doc.commit("Delete Skin");
+        }
+    } else if let (Some(i), Some(inside)) = (skin_cur, skin_member) {
+        e.doc.state_mut().rig.set_in_skin(i, layer_id, inside);
+        e.doc.commit(if inside { "Add Layer to Skin" } else { "Remove Layer from Skin" });
     }
     if let (Some(b), Some(p)) = (sel, new_parent) {
         if e.doc.state_mut().rig.set_parent(b, p) {
@@ -962,6 +1068,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     } else if e.rig_ui.edited && !ui.input(|i| i.pointer.any_down()) && ui.memory(|m| m.focused().is_none()) {
         e.rig_ui.edited = false;
         e.doc.commit("Edit Rig");
+    }
+    if use_bone_tool {
+        state.set_tool(crate::tools::ToolKind::Bone);
     }
     if open_dialog {
         crate::dialogs::rig::open(state, doc_id);

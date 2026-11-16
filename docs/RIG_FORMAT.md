@@ -27,6 +27,8 @@ Shape, text and smart-object layers are exported as their drawn pixels.
   "drives": [                      // optional; absent = none. See "Drives"
     { "bone": "small gear", "source": "big gear", "ratio": -2 }
   ],
+  "skins": ["knight", "wizard"],   // optional; absent = none. See "Skins"
+  "skin": "knight",                // optional: the skin worn at export
   "ik": [                          // optional; absent = none
     { "name": "ik 1", "bones": ["thigh", "shin"], "target": "foot target",
       "bend": 1, "mix": 1 }
@@ -38,6 +40,7 @@ Shape, text and smart-object layers are exported as their drawn pixels.
       "transform": [a, b, c, d, e, f],  // see below
       "opacity": 1.0, "blend": "normal",
       "alpha": 0.0,                     // optional: shown this much at rest
+      "skins": ["knight"],              // optional: see "Skins"
       "mesh": { "cols": 4, "rows": 3,   // optional: see "Meshes"
                 "bones": ["thigh", "shin"],
                 "vertices": [ [0, 1.0], [0, 0.7, 1, 0.3], ... ] } }
@@ -217,6 +220,17 @@ earlier key's `curve` between keys; `"stepped"` switches instantly, `"linear"`
 fades). A part with no timeline in the playing animation uses its own `alpha`,
 and so does the setup pose. When drawing, multiply the part's `opacity` by
 the alpha; at 0 there is nothing to draw.
+
+## Skins
+
+A skin is a named set of parts, for swapping outfits or whole characters on
+one skeleton. `skins` lists the names; a part's own `skins` lists the skins
+it belongs to. Pick one skin to wear and draw a part when it has no `skins`
+(it belongs to every look) or its `skins` include the one worn; skip it
+otherwise. `skin` is the one that was worn in the editor at export, a sensible
+default. Skins only choose which parts are drawn: bones, animations, alpha
+timelines and meshes are shared, so every animation plays in every skin, and
+you can switch skins at any time. Without a `skins` list, draw every part.
 
 ## Drawing a part
 

@@ -4,6 +4,17 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Rig: **skins** (Rig panel > Skin), to swap outfits or whole characters on
+  one skeleton. A skin is a named set of layers: tick "Active layer in this
+  skin" to put a layer in the skin being worn. A layer in a skin shows only
+  while that skin is worn; layers in no skin always show; "All layers" wears
+  none, to work on the art. Duplicate copies a skin to swap a few layers out.
+  Every animation plays in every skin, and the worn skin is what Bake and
+  Export Animation draw. The game export writes the parts of every skin with
+  the skins they belong to (`skins` in `docs/RIG_FORMAT.md`), and the
+  reference player has a skin picker.
+- Rig panel: when the Bone tool is not the active tool, a line says the canvas
+  shows the layers as drawn, with a button to switch to it.
 - Rig: a **curve graph** (Rig panel > Curves). It plots the selected bone's
   turn, move and scale over time, plus its IK mix and the active layer's
   opacity, on the same time axis as the dopesheet. Each stretch between two
