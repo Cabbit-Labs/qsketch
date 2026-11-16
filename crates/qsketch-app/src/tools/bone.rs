@@ -342,7 +342,7 @@ pub fn handle(state: &mut AppState, doc_id: DocId, ev: CanvasEvent) {
                         let parent = parent.filter(|&p| rig.bone(p).is_some());
                         let parent_world = parent.and_then(|p| rig.bone_index(p)).and_then(|i| pose.get(i).copied());
                         let local = parent_world.and_then(|w| w.inverse()).map_or(head, |inv| inv.apply(head));
-                        let name = unique_bone_name(rig);
+                        let name = new_bone_name(rig, parent);
                         let id = rig.add_bone(name, parent, local.x, local.y, 1.0);
                         rig.drag_bone(None, 0, id, BoneDrag::AimStretch, inp.doc, Curve::Linear);
                         entry.rig_ui.sel = Some(id);
@@ -512,6 +512,22 @@ fn adopt_active_layer(entry: &mut DocEntry, id: BoneId) {
         b.name = name;
     }
     rig.attach(lid, id);
+}
+
+/// A name for a new bone: a child continues its parent's name ("tail",
+/// "tail 2", "tail 3" down a chain); a root is "bone N". A bone that takes
+/// the active layer is renamed after the layer right after.
+fn new_bone_name(rig: &Rig, parent: Option<BoneId>) -> String {
+    let Some(parent) = parent.and_then(|p| rig.bone(p)) else { return unique_bone_name(rig) };
+    // "tail 2" continues as "tail 3", not "tail 2 2".
+    let base = match parent.name.rsplit_once(' ') {
+        Some((stem, n)) if !stem.is_empty() && n.parse::<u32>().is_ok() => stem,
+        _ => parent.name.as_str(),
+    };
+    (2..)
+        .map(|n| format!("{base} {n}"))
+        .find(|name| rig.bones.iter().all(|b| &b.name != name))
+        .unwrap_or_else(|| unique_bone_name(rig))
 }
 
 fn unique_bone_name(rig: &Rig) -> String {

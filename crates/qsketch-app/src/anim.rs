@@ -623,6 +623,15 @@ pub fn import_layer_files(state: &mut AppState, files: &[std::path::PathBuf]) {
             }
         }
     };
+    // A new document nothing has been done to yet (the one the app starts
+    // with) is replaced: the parts decide the canvas size, not it.
+    let blank = state.active_doc.filter(|&id| {
+        state.doc(id).is_some_and(|e| e.doc.path.is_none() && !e.doc.can_undo() && e.doc.state().layers.len() == 1)
+    });
+    if let Some(id) = blank {
+        state.remove_document(id);
+        state.active_doc = None;
+    }
     match state.active_doc {
         Some(doc) => {
             edit(state, doc, "Import Layers", |s| {

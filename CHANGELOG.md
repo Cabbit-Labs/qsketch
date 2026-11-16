@@ -4,6 +4,33 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Rig usability, from rigging and animating a walking cat in the app (legs on
+  IK, a mesh tail, a blink, two skins, two animations):
+  - The Rig panel's controls keep their place. Layer, Mesh and Limb each
+    start at a fixed spot (they used to share one row and slide sideways with
+    the selection, so Attach could end up where Make mesh had been), the row
+    names line up in a column, and the Bone tool notice sits at the end of a
+    row instead of pushing everything down.
+  - Show and Hide switch a layer at once, whatever the easing for new keys
+    is, and a layer's first opacity key also keys how it was at the start, so
+    a blink keyed at 0.9 s no longer hides the eye from 0 s. To fade, set an
+    opacity and Key it.
+  - The layer finder (Ctrl+Shift+right-click) picks from what the canvas
+    shows with the Bone tool: parts where the pose puts them, and not layers
+    that the worn skin or an opacity key hides.
+  - Import Images as Layers replaces the untouched blank document the app
+    starts with, so the parts set the canvas size instead of landing in a
+    corner of a 1920×1080 canvas.
+  - A bone grown from another continues its name (tail, tail 2, tail 3)
+    instead of "bone 7".
+  - Auto weights uses the whole chain of bones under the layer's bone, so a
+    three-bone tail bends along its length.
+  - A document that was fitted to the canvas stays fitted when a panel is
+    resized, in both directions.
+  - Smaller things: a new child bone's angle reads 0° instead of 360°; the
+    curve graph's legend gives each line its own range and starts on a
+    timeline that moves; the bone name field is wider; Attach says when it
+    will move a layer from another bone.
 - Rig: **mixing** (crossfades). With more than one animation, the Rig panel
   has a "mix" time: pick another animation while one plays and the pose blends
   into it over that long, the way a game switches animations, with a note

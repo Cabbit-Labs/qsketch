@@ -366,6 +366,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     let mut key_bone = false;
     let mut pick_bone: Option<BoneId> = None;
     let mut alpha_key: Option<f32> = None;
+    let mut alpha_switch: Option<f32> = None;
     let mut rest_alpha: Option<f32> = None;
     let mut track = TrackOut::default();
     // Skins.
@@ -386,19 +387,21 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         ui.spacing_mut().item_spacing = egui::vec2(8.0, 5.0);
-        if !bone_tool {
-            // Poses, animations and skins are only drawn with the Bone tool.
-            ui.horizontal_wrapped(|ui| {
+        // Poses, animations and skins are only drawn with the Bone tool. The
+        // notice goes at the end of a row that is there anyway, so it never
+        // pushes the controls around.
+        let mut tool_notice = |ui: &mut Ui| {
+            if !bone_tool {
+                use_bone_tool = ui.button("Use the Bone tool").clicked();
                 ui.colored_label(
                     ui.visuals().warn_fg_color,
                     "The canvas shows the layers as drawn: the pose, animation and skin show with the Bone tool.",
                 );
-                use_bone_tool = ui.button("Use the Bone tool").clicked();
-            });
-        }
+            }
+        };
         // --- animation -------------------------------------------------------
         ui.horizontal_wrapped(|ui| {
-            ui.strong("Animation");
+            row_label(ui, "Animation");
             let text = cur.and_then(|a| names.get(a).cloned()).unwrap_or_else(|| "Setup pose".into());
             egui::ComboBox::from_id_salt("rig_panel_anim").selected_text(text).width(130.0).show_ui(ui, |ui| {
                 if ui.selectable_label(cur.is_none(), "Setup pose").clicked() {
@@ -510,18 +513,22 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 if let Some((from, w)) = &mixing {
                     ui.colored_label(ui.visuals().warn_fg_color, format!("mixing from “{from}” {:.0}%", w * 100.0));
                 }
+                tool_notice(ui);
             });
         } else {
             ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "Setup pose: bones you draw or drag edit the skeleton itself. Pick or create an animation to pose and key bones over time.",
-                    )
-                    .weak(),
-                );
                 ui.checkbox(&mut rui.adopt, "New bones take the active layer").on_hover_text(
                     "A bone you draw is attached to the active layer and named after it, when that layer follows no bone yet. Pick a layer, draw its bone, pick the next.",
                 );
+                if bone_tool {
+                    ui.label(
+                        egui::RichText::new(
+                            "Setup pose: bones you draw or drag edit the skeleton itself. Pick or create an animation to pose and key bones over time.",
+                        )
+                        .weak(),
+                    );
+                }
+                tool_notice(ui);
             });
         }
         ui.separator();
@@ -555,7 +562,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 ui.label(egui::RichText::new("click a bone on the canvas, or pick one here").weak());
                 return;
             };
-            ui.add(egui::TextEdit::singleline(&mut b.name).desired_width(110.0)).on_hover_text("The bone's name");
+            ui.add(egui::TextEdit::singleline(&mut b.name).desired_width(150.0)).on_hover_text("The bone's name");
             let parent_text = b.parent.map_or_else(|| "no parent".to_string(), |p| format!("in {}", target_name(rig, p)));
             egui::ComboBox::from_id_salt("rig_panel_parent")
                 .selected_text(parent_text)
@@ -653,8 +660,103 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         });
         ui.separator();
 
-        // --- limb, mesh, layer: one wrapped row of compact groups ----------------
+        // --- layer, mesh, limb: a row each, so every control keeps its place
+        // whatever is selected.
         ui.horizontal_wrapped(|ui| {
+            row_label(ui, "Layer");
+            // Buttons first and the names after, so the buttons stay put when
+            // the active layer changes.
+            if rui.sel.is_some() && rui.sel == layer_bone {
+                detach = ui
+                    .add_sized([64.0, 20.0], egui::Button::new("Detach"))
+                    .on_hover_text("Stop the active layer following its bone")
+                    .clicked();
+            } else if ui
+                .add_enabled_ui(sel_name.is_some(), |ui| ui.add_sized([64.0, 20.0], egui::Button::new("Attach")))
+                .inner
+                .on_hover_text(match (&sel_name, &attached) {
+                    (Some(n), Some(old)) => format!("Move the active layer from “{old}” to “{n}”"),
+                    (Some(n), None) => format!("Make the active layer follow “{n}”"),
+                    (None, _) => "Select a bone on the canvas first".to_string(),
+                })
+                .clicked()
+            {
+                attach = true;
+            }
+            ui.separator();
+            ui.strong("Visibility");
+            let mut visible_at_rest = rest_alpha_now >= 0.5;
+            if ui
+                .checkbox(&mut visible_at_rest, "at rest")
+                .on_hover_text("Whether the active layer shows when an animation doesn't key it (and in the setup pose)")
+                .changed()
+            {
+                rest_alpha = Some(if visible_at_rest { 1.0 } else { 0.0 });
+            }
+            if cur.is_some() {
+                if ui
+                    .button("Show")
+                    .on_hover_text("Show the layer from the playhead on, at once (to fade instead, set an opacity and Key it)")
+                    .clicked()
+                {
+                    alpha_switch = Some(1.0);
+                }
+                if ui
+                    .button("Hide")
+                    .on_hover_text("Hide the layer from the playhead on, at once (to fade instead, set an opacity and Key it)")
+                    .clicked()
+                {
+                    alpha_switch = Some(0.0);
+                }
+                ui.add(egui::DragValue::new(&mut rui.alpha_key).speed(0.01).range(0.0..=1.0).prefix("opacity "))
+                    .on_hover_text("Opacity of the active layer at the playhead right now");
+                if ui.button("Key").on_hover_text("Key this opacity at the playhead").clicked() {
+                    alpha_key = Some(rui.alpha_key);
+                }
+            }
+            // The names last: they change with the active layer, and nothing
+            // after them can be pushed around.
+            ui.separator();
+            ui.label(match &attached {
+                Some(b) => format!("{layer_name} → {b}"),
+                None => format!("{layer_name}: not attached"),
+            });
+        });
+        // The mesh and the limb share a row; the mesh group keeps a fixed
+        // width so the limb controls after it don't move with the layer.
+        ui.horizontal_wrapped(|ui| {
+            row_label(ui, "Mesh");
+            let mesh_size = egui::vec2(470.0, 20.0);
+            ui.allocate_ui_with_layout(mesh_size, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_size(mesh_size);
+                match mesh_dims {
+                    Some((c, r)) => {
+                        ui.label(format!("{c}×{r}"));
+                        ui.toggle_value(&mut rui.weights, "Paint weights")
+                            .on_hover_text("Drag on the art to add the selected bone's weight; hold Ctrl to remove it");
+                        if rui.weights {
+                            ui.add(egui::DragValue::new(&mut rui.brush).range(2.0..=200.0).prefix("size ").suffix(" px"));
+                            ui.add(egui::DragValue::new(&mut rui.strength).speed(0.01).range(0.01..=1.0).prefix("strength "));
+                        }
+                        auto_near = ui
+                            .button("Auto weights")
+                            .on_hover_text("Weight each vertex to this layer's bone, its parent and the chain of bones that hangs from it")
+                            .clicked();
+                        auto_all = ui.button("All bones").on_hover_text("Auto weights from every bone").clicked();
+                        if ui.button(format!("{} Remove", icons::TRASH)).on_hover_text("Remove this layer's mesh").clicked() {
+                            del_mesh = true;
+                        }
+                    }
+                    None => {
+                        ui.add(egui::DragValue::new(&mut rui.cell).range(4..=64).suffix(" px")).on_hover_text("Mesh cell size");
+                        make_mesh = ui
+                            .add_enabled(layer_bounds.is_some(), egui::Button::new("Make mesh"))
+                            .on_hover_text("Lay a grid over the active layer so it can bend; it starts rigid")
+                            .clicked();
+                    }
+                }
+            });
+            ui.separator();
             ui.strong("Limb");
             match ik_edit.as_mut() {
                 Some(c) => {
@@ -681,87 +783,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     ui.label(egui::RichText::new("select a bone that has a parent").weak());
                 }
             }
-
-            ui.separator();
-            ui.strong("Mesh");
-            match mesh_dims {
-                Some((c, r)) => {
-                    ui.label(format!("{c}×{r}"));
-                    ui.toggle_value(&mut rui.weights, "Paint weights")
-                        .on_hover_text("Drag on the art to add the selected bone's weight; hold Ctrl to remove it");
-                    if rui.weights {
-                        ui.add(egui::DragValue::new(&mut rui.brush).range(2.0..=200.0).prefix("size ").suffix(" px"));
-                        ui.add(egui::DragValue::new(&mut rui.strength).speed(0.01).range(0.01..=1.0).prefix("strength "));
-                    }
-                    auto_near = ui
-                        .button("Auto weights")
-                        .on_hover_text("Weight each vertex to this layer's bone, its parent and its children")
-                        .clicked();
-                    auto_all = ui.button("All bones").on_hover_text("Auto weights from every bone").clicked();
-                    if ui.button(format!("{} Remove", icons::TRASH)).on_hover_text("Remove this layer's mesh").clicked() {
-                        del_mesh = true;
-                    }
-                }
-                None => {
-                    ui.add(egui::DragValue::new(&mut rui.cell).range(4..=64).suffix(" px")).on_hover_text("Mesh cell size");
-                    make_mesh = ui
-                        .add_enabled(layer_bounds.is_some(), egui::Button::new("Make mesh"))
-                        .on_hover_text("Lay a grid over the active layer so it can bend; it starts rigid")
-                        .clicked();
-                }
-            }
-
-            ui.separator();
-            ui.strong("Layer");
-            // Buttons first and the names after, so the buttons stay put when
-            // the active layer changes.
-            if rui.sel.is_some() && rui.sel == layer_bone {
-                detach = ui.button("Detach").on_hover_text("Stop the active layer following its bone").clicked();
-            } else if ui
-                .add_enabled(sel_name.is_some(), egui::Button::new("Attach"))
-                .on_hover_text(match &sel_name {
-                    Some(n) => format!("Make the active layer follow “{n}”"),
-                    None => "Select a bone on the canvas first".to_string(),
-                })
-                .clicked()
-            {
-                attach = true;
-            }
-            ui.separator();
-            ui.strong("Visibility");
-            let mut visible_at_rest = rest_alpha_now >= 0.5;
-            if ui
-                .checkbox(&mut visible_at_rest, "at rest")
-                .on_hover_text("Whether the active layer shows when an animation doesn't key it (and in the setup pose)")
-                .changed()
-            {
-                rest_alpha = Some(if visible_at_rest { 1.0 } else { 0.0 });
-            }
-            if cur.is_some() {
-                if ui.button("Show").on_hover_text("Key the layer fully shown at the playhead").clicked() {
-                    alpha_key = Some(1.0);
-                }
-                if ui.button("Hide").on_hover_text("Key the layer hidden at the playhead").clicked() {
-                    alpha_key = Some(0.0);
-                }
-                ui.add(egui::DragValue::new(&mut rui.alpha_key).speed(0.01).range(0.0..=1.0).prefix("opacity "))
-                    .on_hover_text("Opacity of the active layer at the playhead right now");
-                if ui.button("Key").on_hover_text("Key this opacity at the playhead").clicked() {
-                    alpha_key = Some(rui.alpha_key);
-                }
-            }
-            // The names last: they change with the active layer, and nothing
-            // after them can be pushed around.
-            ui.separator();
-            ui.label(match &attached {
-                Some(b) => format!("{layer_name} → {b}"),
-                None => format!("{layer_name}: not attached"),
-            });
         });
 
         // --- skins ---------------------------------------------------------------
         ui.horizontal_wrapped(|ui| {
-            ui.strong("Skin").on_hover_text(
+            row_label(ui, "Skin").on_hover_text(
                 "Skins swap outfits or whole characters on one skeleton. A layer you put in a skin shows only while that skin is worn; layers in no skin always show.",
             );
             let text = skin_cur.map_or_else(|| "All layers".to_string(), |i| skin_names[i].clone());
@@ -1040,10 +1066,13 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             Row::Alpha(l) => rig.remove_alpha_keys_at(a, l, t),
         }
         e.doc.commit("Delete Keys");
+    } else if let (Some(alpha), Some(a)) = (alpha_switch, cur) {
+        e.doc.state_mut().rig.switch_alpha(a, layer_id, time, alpha);
+        e.doc.commit(if alpha < 0.5 { "Hide Layer Key" } else { "Show Layer Key" });
     } else if let Some(alpha) = alpha_key {
         if let Some(a) = cur {
             let curve = e.rig_ui.easing.curve();
-            e.doc.state_mut().rig.set_alpha_key(a, layer_id, time, alpha, curve);
+            e.doc.state_mut().rig.key_alpha_from_rest(a, layer_id, time, alpha, curve);
             e.doc.commit(if alpha < 0.5 { "Hide Layer Key" } else { "Show Layer Key" });
         }
     } else if let Some(rest) = rest_alpha {
@@ -1102,6 +1131,17 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     if export_rig {
         crate::files::export_rig(state, doc_id);
     }
+}
+
+/// The name that starts a row of the panel, in a column of its own so the
+/// controls after it line up from row to row.
+fn row_label(ui: &mut Ui, name: &str) -> egui::Response {
+    let size = egui::vec2(72.0, 20.0);
+    ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        ui.set_min_size(size);
+        ui.strong(name)
+    })
+    .inner
 }
 
 fn target_name(rig: &qsketch_core::Rig, id: BoneId) -> String {

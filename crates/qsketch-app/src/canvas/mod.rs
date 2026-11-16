@@ -23,11 +23,16 @@ fn pick_layer_at(state: &mut AppState, doc_id: DocId, pos: Pos2) {
     let Some(entry) = state.doc_mut(doc_id) else { return };
     let p = entry.view.screen_to_doc(pos);
     let (x, y) = (p.x.floor() as i32, p.y.floor() as i32);
-    let s = entry.doc.state();
-    let hit = (0..s.layers.len()).rev().find(|&i| {
-        let l = &s.layers[i];
-        !l.is_group() && s.effectively_visible(i) && l.props.opacity > 0.0 && l.raster.get_pixel(x, y).a > 24
+    // Look at what is on screen: with a pose preview showing (Bone tool),
+    // parts are where the skeleton puts them, and a layer that the worn skin
+    // or an opacity key hides is not there to be picked.
+    let shown = entry.doc.shown_state();
+    let hit = (0..shown.layers.len()).rev().find(|&i| {
+        let l = &shown.layers[i];
+        !l.is_group() && shown.effectively_visible(i) && l.props.opacity > 0.01 && l.raster.get_pixel(x, y).a > 24
     });
+    let s = entry.doc.state();
+    let hit = hit.filter(|&i| i < s.layers.len());
     let msg = match hit {
         Some(i) => {
             let (id, name) = (s.layers[i].props.id, s.layers[i].props.name.clone());
@@ -64,12 +69,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
             entry.view.fit(w, h);
         } else if old.x > 1.0
             && (old - rect.size()).abs().max_elem() > 8.0
-            && entry.view.shows_all(old, w, h)
-            && !entry.view.shows_all(rect.size(), w, h)
+            && (entry.view.is_fit(old, w, h)
+                || (entry.view.shows_all(old, w, h) && !entry.view.shows_all(rect.size(), w, h)))
         {
-            // The canvas shrank (a panel opened under it, the window got
-            // smaller) and now cuts off a document that showed whole: fit it
-            // again, so opening the Rig panel doesn't hide the top and bottom.
+            // The canvas changed size (a panel opened or was resized, the
+            // window changed). A document that was fitted stays fitted, and
+            // one that showed whole and would now be cut off is fitted again,
+            // so opening the Rig panel doesn't hide the top and bottom.
             entry.view.fit(w, h);
         }
     }

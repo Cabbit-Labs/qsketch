@@ -10,7 +10,7 @@ use qsketch_core::LayerId;
 
 use crate::dialogs::rig::Easing;
 
-const HEIGHT: f32 = 180.0;
+const HEIGHT: f32 = 160.0;
 /// A straight line, written as a Bézier: where the handles of a linear
 /// stretch start.
 const STRAIGHT: [f32; 4] = [1.0 / 3.0, 1.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0];
@@ -217,7 +217,14 @@ pub fn ui(ui: &mut Ui, anim: &mut RigAnim, subject: &Subject, time_ms: u32, gutt
                 (tl, ks[i].t)
             })
         };
-        gs.seg = gs.seg.and_then(|s| pick(s.0)).or_else(|| Tl::ALL.into_iter().find_map(pick));
+        // The timeline picked before; else the first one that goes somewhere
+        // (a turn held at 0 has nothing to shape); else any with two keys.
+        let moves = |tl: Tl| of(tl).windows(2).any(|w| w[0].v != w[1].v);
+        gs.seg = gs
+            .seg
+            .and_then(|s| pick(s.0))
+            .or_else(|| Tl::ALL.into_iter().filter(|&tl| moves(tl)).find_map(pick))
+            .or_else(|| Tl::ALL.into_iter().find_map(pick));
         gs.at = time_ms;
     }
     let seg_keys = gs.seg.and_then(|(tl, from)| {
@@ -388,7 +395,10 @@ pub fn ui(ui: &mut Ui, anim: &mut RigAnim, subject: &Subject, time_ms: u32, gutt
         let y = legend_y(n);
         let col = if hidden { weak.gamma_multiply(0.5) } else { tint(rgb) };
         names.line_segment([Pos2::new(rect.left() + 8.0, y), Pos2::new(rect.left() + 22.0, y)], Stroke::new(3.0, col));
-        let (lo, hi) = raw[Tl::ALL.iter().position(|&x| x == tl).unwrap_or(0)];
+        // This line's own range (x and y of a move are scaled together, but
+        // each says how far it goes itself).
+        let comp = LINES[i].1;
+        let (lo, hi) = of(tl).iter().fold((f32::MAX, f32::MIN), |(lo, hi), k| (lo.min(k.v[comp]), hi.max(k.v[comp])));
         let label = if hidden {
             format!("{label} (hidden)")
         } else if hi - lo < 1e-4 {

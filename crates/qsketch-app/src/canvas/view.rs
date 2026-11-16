@@ -88,6 +88,25 @@ impl CanvasView {
         })
     }
 
+    /// The zoom that fits the whole document in a viewport of `size` with a
+    /// small margin.
+    fn fit_zoom(&self, size: Vec2, doc_w: u32, doc_h: u32) -> f32 {
+        let margin = 24.0;
+        let zx = (size.x - margin * 2.0) / (doc_w as f32 * self.aspect.max(0.01));
+        let zy = (size.y - margin * 2.0) / doc_h as f32;
+        zx.min(zy).clamp(MIN_ZOOM, MAX_ZOOM)
+    }
+
+    /// Whether the view is as `fit` left it for a viewport of `size`: the
+    /// document centered, unrotated and exactly filling it.
+    pub fn is_fit(&self, size: Vec2, doc_w: u32, doc_h: u32) -> bool {
+        let z = self.fit_zoom(size, doc_w, doc_h);
+        self.rotation == 0.0
+            && (self.zoom - z).abs() <= z * 0.005
+            && (self.center.x - doc_w as f32 / 2.0).abs() < 0.5
+            && (self.center.y - doc_h as f32 / 2.0).abs() < 0.5
+    }
+
     /// Fit the whole document in the viewport with a small margin.
     pub fn fit(&mut self, doc_w: u32, doc_h: u32) {
         let vp = self.viewport;
@@ -96,10 +115,7 @@ impl CanvasView {
         }
         self.rotation = 0.0;
         self.flip_h = false;
-        let margin = 24.0;
-        let zx = (vp.width() - margin * 2.0) / (doc_w as f32 * self.aspect.max(0.01));
-        let zy = (vp.height() - margin * 2.0) / doc_h as f32;
-        self.zoom = zx.min(zy).clamp(MIN_ZOOM, MAX_ZOOM);
+        self.zoom = self.fit_zoom(vp.size(), doc_w, doc_h);
         self.center = Pt::new(doc_w as f32 / 2.0, doc_h as f32 / 2.0);
         self.initialized = true;
     }

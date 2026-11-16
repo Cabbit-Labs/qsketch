@@ -711,6 +711,35 @@ impl Rig {
         upsert(&mut an.alpha[ti].keys, time_ms, alpha.clamp(0.0, 1.0), curve);
     }
 
+    /// Like `set_alpha_key`, as the editor keys opacity: a layer's first key,
+    /// when later than the start, also keys its rest value at the start, so
+    /// the layer is as it was until then.
+    pub fn key_alpha_from_rest(&mut self, anim: usize, layer: LayerId, time_ms: u32, alpha: f32, curve: Curve) {
+        let unkeyed =
+            self.animations.get(anim).is_some_and(|a| !a.alpha.iter().any(|t| t.layer == layer && !t.keys.is_empty()));
+        if unkeyed && time_ms > 0 {
+            let rest = self.rest_alpha_of(layer);
+            self.set_alpha_key(anim, layer, 0, rest, curve);
+        }
+        self.set_alpha_key(anim, layer, time_ms, alpha, curve);
+    }
+
+    /// Show (`alpha` 1) or hide (0) `layer` from `time_ms` on, at once: the
+    /// key before it holds its value until then instead of fading.
+    pub fn switch_alpha(&mut self, anim: usize, layer: LayerId, time_ms: u32, alpha: f32) {
+        self.key_alpha_from_rest(anim, layer, time_ms, alpha, Curve::Stepped);
+        let Some(an) = self.animations.get_mut(anim) else { return };
+        let time_ms = time_ms.min(an.duration_ms);
+        let Some(tr) = an.alpha.iter_mut().find(|t| t.layer == layer) else { return };
+        let at = tr.keys.partition_point(|k| k.time_ms < time_ms);
+        if let Some(k) = tr.keys.get_mut(at) {
+            k.curve = Curve::Stepped;
+        }
+        if let Some(prev) = at.checked_sub(1).and_then(|i| tr.keys.get_mut(i)) {
+            prev.curve = Curve::Stepped;
+        }
+    }
+
     /// The times of `layer`'s opacity keys in animation `anim`.
     pub fn alpha_key_times(&self, anim: usize, layer: LayerId) -> Vec<u32> {
         self.animations
@@ -933,7 +962,7 @@ impl Rig {
                 match anim {
                     None => {
                         let bm = &mut self.bones[bi];
-                        bm.rotation = local;
+                        bm.rotation = wrap180(local);
                         if drag == BoneDrag::AimStretch {
                             bm.length = (dx * dx + dy * dy).sqrt().max(1.0);
                         }
@@ -1998,6 +2027,26 @@ mod tests {
     fn render_frame_raster(doc: &DocState, frame: usize) -> Raster {
         crate::anim::render_frame(doc, frame)
     }
+    #[test]
+    fn show_and_hide_switch_at_once() {
+        let mut rig = Rig::default();
+        let an = rig.add_animation("blink", 2000);
+        // An eye that closes at 900 and opens at 1050, keyed with fading
+        // easing selected: it must still switch, and be open before 900.
+        rig.switch_alpha(an, 5, 900, 0.0);
+        rig.switch_alpha(an, 5, 1050, 1.0);
+        let at = |rig: &Rig, t| rig.alpha_at(Some((an, t)), 5);
+        assert_eq!([0, 899, 900, 1049, 1050, 1500].map(|t| at(&rig, t)), [1.0, 1.0, 0.0, 0.0, 1.0, 1.0]);
+        // A fade key after a switch still fades from it.
+        rig.set_alpha_key(an, 5, 1250, 0.0, Curve::Linear);
+        rig.animations[an].alpha[0].keys[2].curve = Curve::Linear;
+        assert!(near(at(&rig, 1150), 0.5));
+        // A layer hidden at rest stays hidden until its first key.
+        rig.set_rest_alpha(6, 0.0);
+        rig.switch_alpha(an, 6, 900, 1.0);
+        assert_eq!([rig.alpha_at(Some((an, 100)), 6), rig.alpha_at(Some((an, 950)), 6)], [0.0, 1.0]);
+    }
+
     #[test]
     fn a_crossfade_blends_two_animations() {
         let mut rig = Rig::default();

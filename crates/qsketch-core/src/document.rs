@@ -923,6 +923,14 @@ impl Document {
         self.dirty.insert_all();
     }
 
+    /// What the canvas shows: the pose preview while there is one (layers
+    /// where the skeleton puts them, those the skin or an opacity key hides
+    /// at zero opacity), else the layers as they are. Layer order matches
+    /// `state()`.
+    pub fn shown_state(&self) -> &DocState {
+        self.pose_preview.as_ref().unwrap_or(&self.working)
+    }
+
     pub fn has_pose_preview(&self) -> bool {
         self.pose_preview.is_some()
     }

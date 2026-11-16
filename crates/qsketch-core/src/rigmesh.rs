@@ -130,8 +130,9 @@ impl Rig {
 
     /// Weight every vertex of `layer`'s mesh by closeness to bones, in the
     /// setup pose. With `nearby`, only the layer's own bone, its parent and
-    /// its children compete (a limb's picture follows the limb); otherwise
-    /// every bone does.
+    /// the bones that hang from it (children, their children and so on: a
+    /// tail's whole chain) compete, so a limb's picture follows the limb;
+    /// otherwise every bone does.
     pub fn auto_weights(&mut self, layer: LayerId, nearby: bool) {
         let Some(mi) = self.meshes.iter().position(|m| m.layer == layer) else { return };
         let setup = self.pose(None);
@@ -141,7 +142,20 @@ impl Rig {
             candidates = (0..self.bones.len())
                 .filter(|&i| {
                     let b = &self.bones[i];
-                    b.id == own_id || Some(b.id) == own_parent || b.parent == Some(own_id)
+                    // Walk up from the bone: under the layer's bone?
+                    let mut up = b.parent;
+                    let mut under = false;
+                    for _ in 0..self.bones.len() {
+                        match up {
+                            Some(p) if p == own_id => {
+                                under = true;
+                                break;
+                            }
+                            Some(p) => up = self.bone(p).and_then(|x| x.parent),
+                            None => break,
+                        }
+                    }
+                    b.id == own_id || Some(b.id) == own_parent || under
                 })
                 .collect();
         }
