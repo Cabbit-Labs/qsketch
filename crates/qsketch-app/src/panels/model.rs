@@ -9,6 +9,7 @@ use std::sync::Arc;
 use egui::{epaint::Vertex as ScreenVertex, Color32, RichText, Sense, Ui};
 use qsketch_3d::camera::{model_matrix, mul, pick_triangle, up_in_mesh};
 use qsketch_3d::hidden::{find_hidden, without_triangles};
+use qsketch_3d::mesh::{embedded_texture, EmbeddedImage};
 use qsketch_3d::unwrap::{rearrange, section_coverage, Report, Texture};
 use qsketch_3d::{find_sections, Mesh, Orbit, Sections};
 use qsketch_core::{Mask, Pt};
@@ -24,6 +25,8 @@ const DRAG_RADIANS_PER_POINT: f32 = 0.01;
 const AUTO_SECTION_TRIANGLES: usize = 400_000;
 /// A selected section extends this far past its edges, so paint reaches the rim without leaving a seam.
 const SELECTION_PADDING: u32 = 3;
+/// About three rows of section buttons.
+const SECTION_LIST_HEIGHT: f32 = 66.0;
 const CANVAS_HIGHLIGHT: Color32 = Color32::from_rgba_premultiplied(0, 90, 115, 120);
 
 #[derive(Default)]
@@ -51,6 +54,8 @@ pub struct Model {
     job: Option<Receiver<Result<Finished, String>>>,
     /// Rearrange normally drops surfaces nothing can see; this keeps them.
     keep_hidden: bool,
+    /// The color texture stored inside the model file, until it has been extracted.
+    embedded: Option<EmbeddedImage>,
 }
 
 /// A finished Rearrange Texture run, whose files are on disk.
@@ -92,9 +97,12 @@ impl CanvasOverlay {
 impl Model {
     /// Load a `.glb`; a failure is shown in the panel.
     pub fn open(&mut self, path: &Path) {
-        let loaded = std::fs::read(path).map_err(anyhow::Error::from).and_then(|b| Mesh::from_glb(&b));
+        let loaded = std::fs::read(path)
+            .map_err(anyhow::Error::from)
+            .and_then(|b| Ok((Mesh::from_glb(&b)?, embedded_texture(&b))));
         match loaded {
-            Ok(mesh) => {
+            Ok((mesh, embedded)) => {
+                self.embedded = embedded;
                 (self.center, self.radius) = mesh.bounds();
                 self.mesh = Some(Arc::new(mesh));
                 self.path = Some(path.to_path_buf());
@@ -109,7 +117,10 @@ impl Model {
                     self.find_sections();
                 }
             }
-            Err(e) => self.error = Some(format!("{e:#}")),
+            Err(e) => {
+                let name = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy();
+                self.error = Some(format!("Couldn't open {name}: {e:#}"));
+            }
         }
     }
 
@@ -136,14 +147,42 @@ fn choose_file(state: &mut AppState) {
     }
 }
 
-/// The first `name_rearranged` base that overwrites nothing.
-fn free_base(model: &Path) -> PathBuf {
+/// The first `name_suffix` base beside the model for which none of `extensions` exists yet.
+fn free_base(model: &Path, suffix: &str, extensions: &[&str]) -> PathBuf {
     let stem = model.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "model".into());
     let directory = model.parent().unwrap_or(Path::new("."));
     (1..)
-        .map(|n| directory.join(if n == 1 { format!("{stem}_rearranged") } else { format!("{stem}_rearranged{n}") }))
-        .find(|base| !base.with_extension("glb").exists() && !base.with_extension("png").exists())
+        .map(|n| directory.join(if n == 1 { format!("{stem}_{suffix}") } else { format!("{stem}_{suffix}{n}") }))
+        .find(|base| extensions.iter().all(|e| !base.with_extension(e).exists()))
         .expect("an unused file name")
+}
+
+/// Saves the texture stored inside the model as an image beside it, and opens that to paint on.
+fn extract_texture(state: &mut AppState) {
+    let (Some(image), Some(path)) = (state.model.embedded.clone(), state.model.path.clone()) else { return };
+    // An earlier extraction that is still untouched is opened again, not copied.
+    let first = path.with_file_name(format!(
+        "{}_texture.{}",
+        path.file_stem().unwrap_or_default().to_string_lossy(),
+        image.extension
+    ));
+    let already = std::fs::read(&first).is_ok_and(|bytes| bytes == image.bytes);
+    let file =
+        if already { first } else { free_base(&path, "texture", &[image.extension]).with_extension(image.extension) };
+    if !already {
+        if let Err(e) = std::fs::write(&file, &image.bytes) {
+            state.model.error = Some(format!("Couldn't save {}: {e}", file.display()));
+            return;
+        }
+    }
+    if let Some(doc) = crate::files::open_path(state, &file) {
+        state.model.texture = Some(doc);
+        state.model.embedded = None;
+        if !already {
+            let note = format!("Saved the model's texture as {}", file.display());
+            state.toasts.push(crate::ui::toasts::Level::Info, note);
+        }
+    }
 }
 
 /// Starts laying the model's texture out again per section, on a background thread.
@@ -174,7 +213,7 @@ fn start_rearrange(state: &mut AppState) {
                 image::ColorType::Rgba8,
                 image::ImageFormat::Png,
             )?;
-            let base = free_base(&path);
+            let base = free_base(&path, "rearranged", &["glb", "png"]);
             let (model, texture) = (base.with_extension("glb"), base.with_extension("png"));
             std::fs::write(&texture, &png)?;
             std::fs::write(&model, result.mesh.to_glb(&png))?;
@@ -200,6 +239,7 @@ fn finish_rearrange(ui: &Ui, state: &mut AppState) {
             let doc = crate::files::open_path(state, &done.texture);
             let turns = state.model.turns;
             state.model.open(&done.model);
+            state.model.embedded = None; // it is the document just opened
             state.model.turns = turns;
             state.model.texture = doc;
             // The triangles are in the same order, so the sections found from the paint still apply.
@@ -234,9 +274,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         return;
     }
     let model = &mut state.model;
-    if response.dragged() {
-        let delta = response.drag_delta();
+    let delta = response.drag_delta();
+    if response.dragged_by(egui::PointerButton::Primary) {
         model.orbit.rotate(-delta.x * DRAG_RADIANS_PER_POINT, delta.y * DRAG_RADIANS_PER_POINT);
+    } else if response.dragged() {
+        model.orbit.pan_by(delta.x, delta.y, rect.height(), rect.width() / rect.height());
     }
     if response.hovered() {
         let scroll = ui.input(|i| i.smooth_scroll_delta.y);
@@ -282,14 +324,25 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
 
     // Only a visible canvas sends its pixels to the GPU, and the model reads those.
-    if doc.is_some_and(|id| needs_full_upload(state.render_state.as_ref(), id, doc_size.0, doc_size.1)) {
-        ui.painter().text(
-            rect.left_top() + egui::vec2(12.0, 12.0),
-            egui::Align2::LEFT_TOP,
-            "Show this document's canvas to see it on the model",
+    let note = if doc.is_none() {
+        Some(if state.model.embedded.is_some() {
+            "Extract Texture opens this model's own texture to paint on"
+        } else {
+            "Open or create an image to paint as this model's texture"
+        })
+    } else if doc.is_some_and(|id| needs_full_upload(state.render_state.as_ref(), id, doc_size.0, doc_size.1)) {
+        Some("Show this document's canvas to see it on the model")
+    } else {
+        None
+    };
+    if let Some(note) = note {
+        let galley = ui.painter().layout(
+            note.to_string(),
             egui::FontId::proportional(16.0),
             ui.visuals().warn_fg_color,
+            rect.width() - 24.0,
         );
+        ui.painter().galley(rect.left_top() + egui::vec2(12.0, 12.0), galley, ui.visuals().warn_fg_color);
     }
 }
 
@@ -312,6 +365,8 @@ fn select_section_on_canvas(state: &mut AppState) {
     entry.doc.state_mut().selection = if mask.is_empty() { None } else { Some(Arc::new(mask)) };
     entry.doc.commit("Select Section");
     entry.sel_outline = None;
+    // The selection outline now marks the section, and the tint would hide the paint.
+    state.model.selected = None;
 }
 
 /// One button per section; clicking it selects the section, and clicking again clears it.
@@ -339,13 +394,16 @@ fn section_row(ui: &mut Ui, state: &mut AppState) {
         select_section_on_canvas(state);
     }
     let model = &mut state.model;
-    ui.horizontal_wrapped(|ui| {
-        for (i, section) in sections.list.iter().enumerate() {
-            let i = i as u32;
-            if ui.selectable_label(model.selected == Some(i), &section.name).clicked() {
-                model.selected = if model.selected == Some(i) { None } else { Some(i) };
+    // A model with many sections scrolls its list, so the view below keeps its room.
+    egui::ScrollArea::vertical().id_salt("model_sections").max_height(SECTION_LIST_HEIGHT).show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            for (i, section) in sections.list.iter().enumerate() {
+                let i = i as u32;
+                if ui.selectable_label(model.selected == Some(i), &section.name).clicked() {
+                    model.selected = if model.selected == Some(i) { None } else { Some(i) };
+                }
             }
-        }
+        });
     });
 }
 
@@ -364,19 +422,33 @@ fn toolbar(ui: &mut Ui, state: &mut AppState) {
                 state.model.find_sections();
             }
         }
-        if small_button(ui, "Reset View").clicked() {
+        if small_button(ui, "Reset View")
+            .on_hover_text("Drag to turn the model, scroll to zoom, middle or right-drag to slide it")
+            .clicked()
+        {
             state.model.orbit = Orbit::default();
+        }
+        if state.model.embedded.is_some()
+            && small_button(ui, "Extract Texture")
+                .on_hover_text("Save the texture stored inside the model as an image beside it, and open it to paint on")
+                .clicked()
+        {
+            extract_texture(state);
         }
         ui.checkbox(&mut state.model.spin, "Spin");
         if state.model.job.is_some() {
             ui.spinner();
             ui.label("Rearranging…");
-        } else if small_button(ui, "Rearrange Texture")
-            .on_hover_text("Lay the texture out again with each part in one piece. Writes a new model and texture beside the original.")
-            .clicked()
-            && state.model.texture.or(state.active_doc).is_some()
-        {
-            start_rearrange(state);
+        } else {
+            let has_texture = state.model.texture.or(state.active_doc).is_some();
+            if ui
+                .add_enabled(has_texture, egui::Button::new("Rearrange Texture").small())
+                .on_hover_text("Lay the texture out again with each part in one piece. Writes a new model and texture beside the original.")
+                .on_disabled_hover_text("Open the model's texture first")
+                .clicked()
+            {
+                start_rearrange(state);
+            }
         }
         ui.checkbox(&mut state.model.keep_hidden, "Keep Hidden Surfaces")
             .on_hover_text("Rearrange normally removes surfaces that can never be seen, such as the inside of a hollow model");

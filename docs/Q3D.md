@@ -1,6 +1,7 @@
 # q3d: paint textures with the 3D model beside you
 
-**Status: in progress on the `q3d` branch. Nothing here has shipped.** Each step below is marked as it lands.
+**Status: steps 1, 2, 2b and 4 are in the app (since 0.69.0) and still experimental; the rest is planned.** Each
+step below is marked as it lands.
 
 A texture atlas is hard to read: the pixels for one part of a model are scattered across many islands. q3d puts the
 model in a dockable qSketch panel, showing the document as its live texture, so you can see what you are painting and
@@ -21,7 +22,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 
 | # | Step | Status |
 |---|------|--------|
-| 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | Done; live update during a stroke unverified |
+| 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | Done |
 | 2 | Sections: find them, list, pick on the model, highlight in both views | Mostly done; picking on the canvas and saving edits still to come |
 | 2b | Rearrange Texture: one continuous island per section, with the paint baked across | Done; a few pieces still fold |
 | 3 | Overlays: island outlines, tints, labels, mapped pixels only | Planned |
@@ -36,9 +37,12 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
   they are made, with no save. The document's canvas must be visible, since only visible documents upload tiles.
 - The 3D view renders off screen with its own depth buffer and MSAA, because egui's render pass has neither, and is
   then copied into the panel.
-- Controls: orbit, zoom, spin, texture document (the active one or a fixed one), and rotate 90 degrees, since
-  generated models often come in with the wrong axis up.
-- Not yet: the model is not remembered between sessions, and only GLB with an embedded buffer loads.
+- Controls: drag to orbit, scroll to zoom, middle or right-drag to slide the model, spin, texture document (the
+  active one or a fixed one), and rotate 90 degrees, since generated models often come in with the wrong axis up.
+- **Extract Texture** saves the color texture stored inside the model (PNG, JPEG or WebP) as `name_texture` beside
+  it, never overwriting, and opens that as the texture document. The model file itself is not changed.
+- Not yet: the model is not remembered between sessions, and only GLB with an embedded buffer loads. Draco and
+  meshopt compressed models are refused with a message saying so.
 
 ### 2. Sections
 
@@ -101,7 +105,8 @@ pixels only (everything outside the UVs shown black). Drawn from a texture rende
 
 **Select on Canvas** turns the selected section into the document's selection, as one undoable step, so every brush,
 fill and filter respects it. The mask grows 3 pixels past the section into unclaimed texture, so paint reaches past the
-rim without showing a seam, and never into another section.
+rim without showing a seam, and never into another section. The section's tint is cleared at the same time, so it
+does not cover the paint.
 
 ### 6. Simplifier
 

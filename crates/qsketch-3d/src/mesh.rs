@@ -125,6 +125,13 @@ impl Mesh {
         let (json, bin) = split_glb(bytes)?;
         let root: Value = serde_json::from_slice(json).context("the file's JSON is invalid")?;
         let doc = Doc { root: &root, bin };
+        if let Some(required) = root.get("extensionsRequired").and_then(Value::as_array) {
+            for name in ["KHR_draco_mesh_compression", "EXT_meshopt_compression"] {
+                if required.iter().any(|e| e.as_str() == Some(name)) {
+                    bail!("the model is compressed ({name}), which is not supported; export it without compression");
+                }
+            }
+        }
 
         let mut mesh = Mesh::default();
         let scene = root.get("scene").and_then(Value::as_u64).unwrap_or(0) as usize;
@@ -141,6 +148,43 @@ impl Mesh {
         }
         Ok(mesh)
     }
+}
+
+/// An image stored inside a model file, still encoded.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EmbeddedImage {
+    pub bytes: Vec<u8>,
+    /// The file extension for its format: `png`, `jpg` or `webp`.
+    pub extension: &'static str,
+}
+
+/// The color texture stored inside a `.glb`, if it has one: the first material's base color image, or failing
+/// that the first image in the file.
+pub fn embedded_texture(glb: &[u8]) -> Option<EmbeddedImage> {
+    let (json, bin) = split_glb(glb).ok()?;
+    let root: Value = serde_json::from_slice(json).ok()?;
+    let index = |v: &Value, path: &str| v.pointer(path).and_then(Value::as_u64);
+    let from_material = || {
+        let material = index(&root, "/meshes/0/primitives/0/material").unwrap_or(0);
+        let texture = index(&root, &format!("/materials/{material}/pbrMetallicRoughness/baseColorTexture/index"))?;
+        let texture = root.pointer(&format!("/textures/{texture}"))?;
+        index(texture, "/source").or_else(|| index(texture, "/extensions/EXT_texture_webp/source"))
+    };
+    let image = root.pointer(&format!("/images/{}", from_material().unwrap_or(0)))?;
+    let view = root.pointer(&format!("/bufferViews/{}", index(image, "/bufferView")?))?;
+    if index(view, "/buffer").unwrap_or(0) != 0 {
+        return None;
+    }
+    let start = index(view, "/byteOffset").unwrap_or(0) as usize;
+    let bytes = bin.get(start..start.checked_add(index(view, "/byteLength")? as usize)?)?;
+    // The bytes say what they are more reliably than the file's own label.
+    let extension = match bytes {
+        [0x89, b'P', b'N', b'G', ..] => "png",
+        [0xFF, 0xD8, ..] => "jpg",
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "webp",
+        _ => return None,
+    };
+    Some(EmbeddedImage { bytes: bytes.to_vec(), extension })
 }
 
 fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
@@ -179,8 +223,10 @@ fn split_glb(bytes: &[u8]) -> Result<(&[u8], &[u8])> {
     let (mut json, mut bin) = (None, &[][..]);
     let mut at = 12usize;
     while let (Some(len), Some(kind)) = (u32_at(at), u32_at(at + 4)) {
-        let end =
-            (at + 8).checked_add(len as usize).filter(|&e| e <= bytes.len()).ok_or_else(|| anyhow!("cut short"))?;
+        let end = (at + 8)
+            .checked_add(len as usize)
+            .filter(|&e| e <= bytes.len())
+            .ok_or_else(|| anyhow!("the file is cut short"))?;
         let chunk = &bytes[at + 8..end];
         match kind {
             0x4E4F534A => json = Some(chunk), // "JSON"
@@ -549,6 +595,24 @@ mod tests {
         let back = Mesh::from_glb(&original.to_glb(b"not really a png")).unwrap();
         assert_eq!(back.vertices, original.vertices);
         assert_eq!(back.indices, original.indices);
+    }
+
+    #[test]
+    fn the_texture_inside_a_model_can_be_read_back() {
+        let mesh = Mesh::from_glb(&glb(&triangle_json(json!({"mesh": 0})), &triangle_bin())).unwrap();
+        let png = b"\x89PNG\r\n\x1a\n and the rest";
+        let found = embedded_texture(&mesh.to_glb(png)).unwrap();
+        assert_eq!((found.bytes.as_slice(), found.extension), (&png[..], "png"));
+        assert_eq!(embedded_texture(&glb(&triangle_json(json!({"mesh": 0})), &triangle_bin())), None);
+        assert_eq!(embedded_texture(&mesh.to_glb(b"not an image")), None);
+    }
+
+    #[test]
+    fn a_compressed_model_says_so() {
+        let mut json = triangle_json(json!({"mesh": 0}));
+        json["extensionsRequired"] = json!(["KHR_draco_mesh_compression"]);
+        let error = Mesh::from_glb(&glb(&json, &triangle_bin())).unwrap_err();
+        assert!(format!("{error}").contains("compressed"), "{error}");
     }
 
     #[test]

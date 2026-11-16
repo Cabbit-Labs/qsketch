@@ -459,7 +459,12 @@ impl Workspace {
             }
         }
         // Fall back to a floating window.
-        let size = if kind == PanelKind::BrushSettings { egui::vec2(640.0, 560.0) } else { egui::vec2(260.0, 360.0) };
+        let size = match kind {
+            PanelKind::BrushSettings => egui::vec2(640.0, 560.0),
+            // Room for the controls on two rows and a view large enough to judge paint by.
+            PanelKind::Model => egui::vec2(440.0, 560.0),
+            _ => egui::vec2(260.0, 360.0),
+        };
         let rect = egui::Rect::from_min_size(egui::pos2(120.0, 120.0), size);
         let surface = self.dock.add_window(vec![kind]);
         if let Some(ws) = self.dock.get_window_state_mut(surface) {

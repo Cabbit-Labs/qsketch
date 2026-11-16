@@ -2,6 +2,25 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Model panel (Window ▸ Model), from testing it by hand on generated and
+  hand-made models:
+  - Extract Texture saves the texture stored inside a `.glb` as an image
+    beside the model and opens it to paint on, so a model no longer needs its
+    texture as a separate file first.
+  - Middle or right-drag slides the model, so you can zoom in on a part that
+    is not at its center. Reset View puts it back.
+  - Select on Canvas clears the section's tint, which used to cover what you
+    painted on both the canvas and the model. The selection outline marks
+    the section from then on.
+  - The panel opens larger, and a long list of sections scrolls instead of
+    squeezing the 3D view.
+  - Rearrange Texture is disabled with a reason while there is no texture to
+    rearrange (it used to do nothing when clicked).
+  - A model that fails to open names the file and the cause, and a Draco or
+    meshopt compressed model says that compression is the problem.
+
 ## 0.72.0 — 2026-11-16
 
 - File dialogs (Open, Save As, every export and import) belong to the app's

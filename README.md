@@ -50,6 +50,12 @@ keyboard.
 - Export as GIF, APNG, PNG sequence, sprite sheet with JSON, or MP4 / WebM
   through ffmpeg. Timelapse recording of a document as you paint.
 
+**3D models (experimental)**
+- The Model panel shows a `.glb` wearing the document as its texture, live as
+  you paint. It finds the model's parts, limits painting to one of them, and
+  can lay a scattered texture out again part by part
+  ([`docs/Q3D.md`](docs/Q3D.md)).
+
 **Files**
 - `.qsk`, the native format: a plain ZIP of PNGs plus a JSON manifest
   ([`docs/FILE_FORMAT.md`](docs/FILE_FORMAT.md)).
@@ -138,6 +144,7 @@ macOS is not packaged for release yet.
 - [`docs/FILE_FORMAT.md`](docs/FILE_FORMAT.md): the `.qsk` container.
 - [`docs/RIG_FORMAT.md`](docs/RIG_FORMAT.md): the rig export for games.
 - [`docs/SHARING.md`](docs/SHARING.md): drawing together over Leyline.
+- [`docs/Q3D.md`](docs/Q3D.md): painting textures with the 3D model beside you.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): how the crates, raster
   engine and renderer fit together.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md): what has shipped and what hasn't.

@@ -96,11 +96,13 @@ pub struct Orbit {
     pub pitch: f32,
     /// Multiplies the distance that exactly frames the model; below 1 is closer.
     pub zoom: f32,
+    /// How far the view is slid right and up, in model units (the model's radius is 1).
+    pub pan: [f32; 2],
 }
 
 impl Default for Orbit {
     fn default() -> Self {
-        Self { yaw: 0.6, pitch: 0.45, zoom: 1.0 }
+        Self { yaw: 0.6, pitch: 0.45, zoom: 1.0, pan: [0.0; 2] }
     }
 }
 
@@ -108,6 +110,8 @@ impl Orbit {
     const FOV_Y: f32 = 35.0 * std::f32::consts::PI / 180.0;
     const MARGIN: f32 = 1.05;
     const MAX_PITCH: f32 = 1.55;
+    /// Far enough to bring any part of the model to the middle of the view.
+    const MAX_PAN: f32 = 1.5;
 
     pub fn rotate(&mut self, dyaw: f32, dpitch: f32) {
         self.yaw = (self.yaw + dyaw).rem_euclid(std::f32::consts::TAU);
@@ -118,13 +122,27 @@ impl Orbit {
         self.zoom = (self.zoom * factor).clamp(0.1, 5.0);
     }
 
+    /// How far the camera sits from the model's center.
+    fn distance(&self, aspect: f32) -> f32 {
+        let half = Self::FOV_Y / 2.0;
+        // A narrow panel must back away until the sphere also fits horizontally.
+        let half_fit = if aspect < 1.0 { (half.tan() * aspect).atan() } else { half };
+        Self::MARGIN / half_fit.sin() * self.zoom
+    }
+
+    /// Slides the view by a drag of `dx`, `dy` points (y down) in a view `height` points tall, so the
+    /// model's center follows the pointer.
+    pub fn pan_by(&mut self, dx: f32, dy: f32, height: f32, aspect: f32) {
+        let per_point = 2.0 * self.distance(aspect.max(1e-3)) * (Self::FOV_Y / 2.0).tan() / height.max(1.0);
+        self.pan[0] = (self.pan[0] + dx * per_point).clamp(-Self::MAX_PAN, Self::MAX_PAN);
+        self.pan[1] = (self.pan[1] - dy * per_point).clamp(-Self::MAX_PAN, Self::MAX_PAN);
+    }
+
     /// World to clip space, with wgpu's 0..1 depth.
     pub fn view_proj(&self, aspect: f32) -> Mat4 {
         let aspect = aspect.max(1e-3);
         let half = Self::FOV_Y / 2.0;
-        // A narrow panel must back away until the sphere also fits horizontally.
-        let half_fit = if aspect < 1.0 { (half.tan() * aspect).atan() } else { half };
-        let distance = Self::MARGIN / half_fit.sin() * self.zoom;
+        let distance = self.distance(aspect);
         let (near, far) = ((distance - 2.0).max(distance * 0.05), distance + 2.0);
 
         let (sy, cy, sp, cp) = (self.yaw.sin(), self.yaw.cos(), self.pitch.sin(), self.pitch.cos());
@@ -132,10 +150,22 @@ impl Orbit {
         let right = [cy, 0.0, -sy];
         let up = [-sy * sp, cp, -cy * sp];
         let view = [
-            right[0], up[0], back[0], 0.0, //
-            right[1], up[1], back[1], 0.0, //
-            right[2], up[2], back[2], 0.0, //
-            0.0, 0.0, -distance, 1.0,
+            right[0],
+            up[0],
+            back[0],
+            0.0, //
+            right[1],
+            up[1],
+            back[1],
+            0.0, //
+            right[2],
+            up[2],
+            back[2],
+            0.0, //
+            self.pan[0],
+            self.pan[1],
+            -distance,
+            1.0,
         ];
 
         let f = 1.0 / half.tan();
@@ -179,7 +209,7 @@ mod tests {
             mesh.vertices.extend([v(-1.0, -1.0, z), v(1.0, -1.0, z), v(0.0, 1.0, z)]);
             mesh.indices.extend([base, base + 1, base + 2]);
         }
-        let vp = Orbit { yaw: 0.0, pitch: 0.0, zoom: 1.0 }.view_proj(1.0);
+        let vp = Orbit { yaw: 0.0, pitch: 0.0, ..Orbit::default() }.view_proj(1.0);
         assert_eq!(pick_triangle(&mesh, &vp, [0.0, 0.0]), Some(1), "the camera is on the +Z side");
         assert_eq!(pick_triangle(&mesh, &vp, [0.95, 0.95]), None);
     }
@@ -193,7 +223,7 @@ mod tests {
     #[test]
     fn unit_sphere_fits_at_any_aspect() {
         for aspect in [0.3, 1.0, 2.5] {
-            let vp = Orbit { yaw: 0.0, pitch: 0.0, zoom: 1.0 }.view_proj(aspect);
+            let vp = Orbit { yaw: 0.0, pitch: 0.0, ..Orbit::default() }.view_proj(aspect);
             for p in [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0]] {
                 let c = clip(&vp, p);
                 assert!(c[0].abs() <= 1.0 && c[1].abs() <= 1.0, "{p:?} at aspect {aspect}: {c:?}");
@@ -203,14 +233,24 @@ mod tests {
 
     #[test]
     fn depth_is_in_range_and_near_is_smaller() {
-        let vp = Orbit { yaw: 0.0, pitch: 0.0, zoom: 1.0 }.view_proj(1.0);
+        let vp = Orbit { yaw: 0.0, pitch: 0.0, ..Orbit::default() }.view_proj(1.0);
         let (near, far) = (clip(&vp, [0.0, 0.0, 1.0])[2], clip(&vp, [0.0, 0.0, -1.0])[2]);
         assert!((0.0..=1.0).contains(&near) && (0.0..=1.0).contains(&far) && near < far, "{near} {far}");
     }
 
     #[test]
+    fn panning_keeps_the_center_under_the_pointer() {
+        let (height, aspect) = (400.0, 1.5);
+        let mut orbit = Orbit { zoom: 0.4, ..Orbit::default() };
+        orbit.pan_by(60.0, -100.0, height, aspect);
+        let c = clip(&orbit.view_proj(aspect), [0.0; 3]);
+        // 60 points right in a 600 point wide view, 100 points up in a 400 point tall one.
+        assert!((c[0] - 0.2).abs() < 1e-4 && (c[1] - 0.5).abs() < 1e-4, "{c:?}");
+    }
+
+    #[test]
     fn up_stays_up_on_screen() {
-        let vp = Orbit { yaw: 1.0, pitch: 0.4, zoom: 1.0 }.view_proj(1.0);
+        let vp = Orbit { yaw: 1.0, pitch: 0.4, ..Orbit::default() }.view_proj(1.0);
         assert!(clip(&vp, [0.0, 0.5, 0.0])[1] > clip(&vp, [0.0, -0.5, 0.0])[1]);
     }
 
