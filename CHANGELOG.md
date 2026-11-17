@@ -2,6 +2,14 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Model panel: a model whose glTF asks for crisp texels (its texture sampler's
+  `NEAREST` filter) is drawn without smoothing, and one whose material uses
+  `alphaMode: MASK` leaves out its see-through texels instead of showing them
+  gray. Console and pixel-art models, such as a PlayStation character exported
+  with its texture pages, now look on the model as they do on the canvas.
+
 ## 0.72.2 — 2026-11-16
 
 - Model panel: right-click a section to rename it or merge it into another.

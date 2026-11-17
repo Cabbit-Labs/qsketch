@@ -7,6 +7,8 @@ struct Uniforms {
     uv_scale: vec2<f32>,
     selected: i32,
     tint_all: u32,
+    // Texels with less alpha are not drawn; below 0 for a material that is not masked.
+    alpha_cutoff: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -44,6 +46,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         n = -n;
     }
     let tex = textureSample(doc_texture, doc_sampler, in.uv);
+    if tex.a < u.alpha_cutoff {
+        discard;
+    }
     // Premultiplied: transparent pixels show as mid gray.
     var color = tex.rgb + vec3<f32>(0.5) * (1.0 - tex.a);
     if u.tint_all != 0u {

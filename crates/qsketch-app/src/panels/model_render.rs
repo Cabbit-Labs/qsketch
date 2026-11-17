@@ -26,6 +26,9 @@ struct Uniforms {
     /// -1 when no section is selected.
     selected: i32,
     tint_all: u32,
+    /// Texels with less alpha are not drawn; below 0 when the material is not masked.
+    alpha_cutoff: f32,
+    _pad: [u32; 3],
 }
 
 struct GpuMesh {
@@ -51,6 +54,8 @@ pub struct ModelRenderer {
     blit_bgl: wgpu::BindGroupLayout,
     uniform: wgpu::Buffer,
     sampler: wgpu::Sampler,
+    /// For models whose texture asks for crisp texels.
+    nearest_sampler: wgpu::Sampler,
     /// Shown when the panel has no document, or that document's canvas has not been drawn yet.
     blank: wgpu::TextureView,
     mesh: Option<GpuMesh>,
@@ -194,6 +199,12 @@ impl ModelRenderer {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let nearest_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("qsketch model nearest sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
         let blank = device
             .create_texture_with_data(
                 queue,
@@ -211,7 +222,18 @@ impl ModelRenderer {
                 &[150, 150, 150, 255],
             )
             .create_view(&Default::default());
-        Self { pipeline, blit_pipeline, bgl, blit_bgl, uniform, sampler, blank, mesh: None, targets: None }
+        Self {
+            pipeline,
+            blit_pipeline,
+            bgl,
+            blit_bgl,
+            uniform,
+            sampler,
+            nearest_sampler,
+            blank,
+            mesh: None,
+            targets: None,
+        }
     }
 
     fn ensure_mesh(&mut self, device: &wgpu::Device, mesh: &Mesh, generation: u64) {
@@ -299,6 +321,10 @@ pub struct ModelCallback {
     pub size: (u32, u32),
     /// The document's size, for the part of its tile-rounded texture that holds image.
     pub doc_size: (u32, u32),
+    /// Sample the texture without smoothing.
+    pub nearest: bool,
+    /// Leave out texels with less alpha than this.
+    pub alpha_cutoff: Option<f32>,
 }
 
 impl CallbackTrait for ModelCallback {
@@ -326,6 +352,8 @@ impl CallbackTrait for ModelCallback {
             uv_scale,
             selected: self.selected,
             tint_all: u32::from(self.tint_all),
+            alpha_cutoff: self.alpha_cutoff.unwrap_or(-1.0),
+            _pad: [0; 3],
         };
         queue.write_buffer(&r.uniform, 0, bytemuck::bytes_of(&uniforms));
 
@@ -336,7 +364,14 @@ impl CallbackTrait for ModelCallback {
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: r.uniform.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&r.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(if self.nearest {
+                        &r.nearest_sampler
+                    } else {
+                        &r.sampler
+                    }),
+                },
             ],
         });
 

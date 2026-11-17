@@ -42,6 +42,9 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 - **Extract Texture** saves the color texture stored inside the model (PNG, JPEG or WebP) as `name_texture` beside
   it, never overwriting, and opens that as the texture document. The model file itself is not changed.
 - An opened model joins File > Open Recent, and the empty Model panel offers to reopen the last one.
+- The texture is drawn as the file asks: point sampled when its sampler's filter is `NEAREST`, and with see-through texels
+  left out when the material's `alphaMode` is `MASK`. First used for a PlayStation model (Mega Man of *Mega Man Legends*,
+  exported from the user's disc by the decompilation's Control Lab), whose 4-bit texture pages blur under smoothing.
 - Not yet: only GLB with an embedded buffer loads. Draco and
   meshopt compressed models are refused with a message saying so.
 

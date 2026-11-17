@@ -187,6 +187,36 @@ pub fn embedded_texture(glb: &[u8]) -> Option<EmbeddedImage> {
     Some(EmbeddedImage { bytes: bytes.to_vec(), extension })
 }
 
+/// How a model asks for its texture to be drawn, from its first primitive's material.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextureLook {
+    /// The base color texture's sampler magnifies with `NEAREST`: crisp texels, as pixel art and console
+    /// models such as the PlayStation's are drawn.
+    pub nearest: bool,
+    /// The material's `alphaMode` is `MASK`: texels with less alpha than this are not drawn at all.
+    pub alpha_cutoff: Option<f32>,
+}
+
+/// Reads the `TextureLook` of a `.glb`; a file that says nothing gets the defaults (smooth, opaque).
+pub fn texture_look(glb: &[u8]) -> TextureLook {
+    let Some(root) = split_glb(glb).ok().and_then(|(json, _)| serde_json::from_slice::<Value>(json).ok()) else {
+        return TextureLook::default();
+    };
+    let material = root.pointer("/meshes/0/primitives/0/material").and_then(Value::as_u64).unwrap_or(0);
+    let Some(material) = root.pointer(&format!("/materials/{material}")) else { return TextureLook::default() };
+    let sampler = material
+        .pointer("/pbrMetallicRoughness/baseColorTexture/index")
+        .and_then(Value::as_u64)
+        .and_then(|t| root.pointer(&format!("/textures/{t}/sampler")))
+        .and_then(Value::as_u64)
+        .and_then(|s| root.pointer(&format!("/samplers/{s}")));
+    const NEAREST: u64 = 9728;
+    let nearest = sampler.and_then(|s| s.get("magFilter")).and_then(Value::as_u64) == Some(NEAREST);
+    let alpha_cutoff = (material.get("alphaMode").and_then(Value::as_str) == Some("MASK"))
+        .then(|| material.get("alphaCutoff").and_then(Value::as_f64).unwrap_or(0.5) as f32);
+    TextureLook { nearest, alpha_cutoff }
+}
+
 fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
@@ -549,6 +579,29 @@ mod tests {
         assert_eq!(m.vertices[1].position, [1.0, 0.0, 0.0]);
         assert_eq!(m.vertices[1].uv, [1.0, 0.0]);
         assert_eq!(m.vertices[0].normal, [0.0, 0.0, 1.0], "missing normals are computed");
+    }
+
+    #[test]
+    fn reads_the_texture_look_from_the_material_and_its_sampler() {
+        let mut json = triangle_json(json!({"mesh": 0}));
+        assert_eq!(
+            texture_look(&glb(&json, &triangle_bin())),
+            TextureLook::default(),
+            "no material: smooth and opaque"
+        );
+        json["meshes"][0]["primitives"][0]["material"] = json!(0);
+        json["materials"] = json!([{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}, "alphaMode": "MASK"}]);
+        json["textures"] = json!([{"source": 0, "sampler": 0}]);
+        json["samplers"] = json!([{"magFilter": 9728, "minFilter": 9728}]);
+        let look = texture_look(&glb(&json, &triangle_bin()));
+        assert_eq!(
+            look,
+            TextureLook { nearest: true, alpha_cutoff: Some(0.5) },
+            "MASK without a cutoff uses glTF's 0.5"
+        );
+        json["samplers"][0]["magFilter"] = json!(9729);
+        json["materials"][0]["alphaMode"] = json!("BLEND");
+        assert_eq!(texture_look(&glb(&json, &triangle_bin())), TextureLook::default());
     }
 
     #[test]

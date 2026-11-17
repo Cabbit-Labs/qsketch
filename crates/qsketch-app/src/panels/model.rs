@@ -9,7 +9,7 @@ use std::sync::Arc;
 use egui::{epaint::Vertex as ScreenVertex, Color32, RichText, Sense, Ui};
 use qsketch_3d::camera::{model_matrix, mul, pick_triangle, up_in_mesh};
 use qsketch_3d::hidden::{find_hidden, without_triangles};
-use qsketch_3d::mesh::{embedded_texture, EmbeddedImage};
+use qsketch_3d::mesh::{embedded_texture, texture_look, EmbeddedImage, TextureLook};
 use qsketch_3d::unwrap::{rearrange, section_coverage, section_map, Report, Texture, NO_SECTION};
 use qsketch_3d::{find_sections, Mesh, Orbit, Sections};
 use qsketch_core::{Mask, Pt};
@@ -65,6 +65,8 @@ pub struct Model {
     renaming: Option<(u32, String, u64)>,
     /// The color texture stored inside the model file, until it has been extracted.
     embedded: Option<EmbeddedImage>,
+    /// How the model's material asks for its texture to be drawn (crisp texels, see-through cut out).
+    look: TextureLook,
 }
 
 /// A finished Rearrange Texture run, whose files are on disk.
@@ -81,6 +83,7 @@ struct Loaded {
     path: PathBuf,
     mesh: Mesh,
     embedded: Option<EmbeddedImage>,
+    look: TextureLook,
     sections: Option<Sections>,
     turns: u8,
     /// The sections came from the sidecar.
@@ -99,7 +102,8 @@ fn load(path: &Path, find: bool) -> anyhow::Result<Loaded> {
         None if find => Some(find_sections(&mesh, up_in_mesh(0), None)),
         None => None,
     };
-    Ok(Loaded { path: path.to_path_buf(), embedded: embedded_texture(&bytes), mesh, sections, turns, edited })
+    let (embedded, look) = (embedded_texture(&bytes), texture_look(&bytes));
+    Ok(Loaded { path: path.to_path_buf(), embedded, look, mesh, sections, turns, edited })
 }
 
 /// The selected section's highlight for a canvas: one image the size of the texture. Cheap to take each frame.
@@ -171,6 +175,7 @@ impl Model {
     /// Replaces the model on show with a loaded one.
     fn show(&mut self, loaded: Loaded) {
         self.embedded = loaded.embedded;
+        self.look = loaded.look;
         (self.center, self.radius) = loaded.mesh.bounds();
         self.mesh = Some(Arc::new(loaded.mesh));
         self.path = Some(loaded.path);
@@ -510,6 +515,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         doc,
         size,
         doc_size,
+        nearest: model.look.nearest,
+        alpha_cutoff: model.look.alpha_cutoff,
     };
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
 
