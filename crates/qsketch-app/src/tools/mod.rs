@@ -1057,7 +1057,6 @@ pub fn rect_from_drag(start: Pt, cur: Pt, square: bool) -> IRect {
     IRect::from_corners(x0, y0, x1, y1)
 }
 
-/// Selection op from modifiers (Shift = add, Alt = subtract, both = intersect).
 impl ToolOptions {
     /// The amount a Select ▸ Modify command last used.
     pub fn modify_last(&self, kind: select::ModifyKind) -> f32 {
@@ -1083,11 +1082,14 @@ impl ToolOptions {
     }
 }
 
+/// How a new selection combines with the one there, from the modifiers: Shift adds; Alt or Ctrl+Alt
+/// subtracts; Shift+Alt or Ctrl+Shift intersects. Ctrl alone is the quick move, so it keeps `base`.
 pub fn op_from_mods(base: SelectionOp, mods: Modifiers) -> SelectionOp {
-    match (mods.shift, mods.alt) {
-        (true, true) => SelectionOp::Intersect,
-        (true, false) => SelectionOp::Add,
-        (false, true) => SelectionOp::Subtract,
+    let ctrl = mods.command || mods.ctrl || mods.mac_cmd;
+    match (ctrl, mods.shift, mods.alt) {
+        (_, true, true) | (true, true, false) => SelectionOp::Intersect,
+        (_, false, true) => SelectionOp::Subtract,
+        (false, true, false) => SelectionOp::Add,
         _ => base,
     }
 }
@@ -1103,4 +1105,23 @@ pub fn apply_selection(state: &mut AppState, doc_id: DocId, new: Mask, op: Selec
     s.selection = if combined.is_empty() { None } else { Some(Arc::new(combined)) };
     entry.doc.commit(label);
     entry.sel_outline = None;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selection_modifiers_combine_as_documented() {
+        use egui::Modifiers as M;
+        let op = |m: M| op_from_mods(SelectionOp::Replace, m);
+        assert_eq!(op(M::NONE), SelectionOp::Replace);
+        assert_eq!(op(M::SHIFT), SelectionOp::Add);
+        assert_eq!(op(M::ALT), SelectionOp::Subtract);
+        assert_eq!(op(M::SHIFT | M::ALT), SelectionOp::Intersect);
+        assert_eq!(op(M::COMMAND | M::SHIFT), SelectionOp::Intersect);
+        assert_eq!(op(M::COMMAND | M::ALT), SelectionOp::Subtract);
+        // Ctrl alone is the quick move: the tool's own mode stands
+        assert_eq!(op(M::COMMAND), SelectionOp::Replace);
+    }
 }

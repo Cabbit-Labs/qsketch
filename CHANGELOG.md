@@ -4,6 +4,9 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Selection tools: with a selection already there, `Ctrl+Shift` intersects
+  and `Ctrl+Alt` subtracts, beside `Shift+Alt` and `Alt`. `Shift` still adds.
+
 - Model panel: a model made of named parts (glTF nodes) lists them. Parts
   that share a slot (`extras.slot`), such as a character's helmets or the
   weapons on one arm, get one choice per slot, so you see one at a time;

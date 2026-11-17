@@ -1681,10 +1681,10 @@ impl QSketchApp {
                         "Shift+click: straight line (Shift+Ctrl: snap angle) · [ ]: size · Alt or right-click: pick · middle-drag: pan"
                     }
                     ToolKind::RectSelect | ToolKind::EllipseSelect | ToolKind::Lasso => {
-                        "Shift: add · Alt: subtract · click: deselect"
+                        "Shift: add · Alt or Ctrl+Alt: subtract · Ctrl+Shift or Shift+Alt: intersect · click: deselect"
                     }
                     ToolKind::PolyLasso => {
-                        "click: add point · first point / double-click / Enter: close · Backspace: undo point · Esc: cancel · Shift: add · Alt: subtract"
+                        "click: add point · first point / double-click / Enter: close · Backspace: undo point · Esc: cancel · Shift: add · Alt: subtract · Ctrl+Shift: intersect"
                     }
                     _ if self.state.floating.is_some() => {
                         match self.state.floating.as_ref().map(|f| f.mode) {
