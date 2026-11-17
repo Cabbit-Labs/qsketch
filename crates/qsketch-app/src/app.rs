@@ -114,8 +114,7 @@ impl QSketchApp {
         if let Some(rs) = cc.wgpu_render_state.as_ref() {
             let renderer = CanvasRenderer::new(&rs.device, rs.target_format);
             rs.renderer.write().callback_resources.insert(renderer);
-            let model_renderer =
-                crate::panels::model_render::ModelRenderer::new(&rs.device, &rs.queue, rs.target_format);
+            let model_renderer = qsketch_3d_view::ModelRenderer::new(&rs.device, &rs.queue, rs.target_format);
             rs.renderer.write().callback_resources.insert(model_renderer);
             state.render_state = Some(rs.clone());
         } else {

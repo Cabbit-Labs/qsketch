@@ -2585,6 +2585,7 @@ dependencies = [
  "octotablet",
  "parking_lot",
  "qsketch-3d",
+ "qsketch-3d-view",
  "qsketch-core",
  "qsketch-ui",
  "raw-window-handle",
@@ -2612,6 +2613,17 @@ dependencies = [
  "image",
  "rayon",
  "serde_json",
+]
+
+[[package]]
+name = "qsketch-3d-view"
+version = "0.73.0"
+dependencies = [
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "qsketch-3d",
+ "wgpu",
 ]
 
 [[package]]

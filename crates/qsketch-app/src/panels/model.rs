@@ -15,14 +15,12 @@ use qsketch_3d::{find_sections, Mesh, Orbit, Sections};
 use qsketch_core::palette::{Palette, PaletteRegion};
 use qsketch_core::Rgba8;
 
-/// The section id a hidden triangle carries to the GPU, which then leaves it out (`model.wgsl`).
-pub const HIDDEN_SECTION: u32 = u32::MAX - 1;
 use qsketch_core::{Mask, Pt};
 
-use super::model_render::ModelCallback;
 use crate::canvas::render::needs_full_upload;
 use crate::state::{AppState, DocId};
 use crate::ui::widgets::small_button;
+use qsketch_3d_view::ModelCallback;
 
 const SPIN_RADIANS_PER_SECOND: f32 = 0.6;
 const DRAG_RADIANS_PER_POINT: f32 = 0.01;
@@ -798,13 +796,14 @@ fn view(ui: &mut Ui, state: &mut AppState, mesh: Arc<Mesh>) {
         tint_all: model.tint_all,
         view_proj: model.orbit.view_proj(aspect),
         model: matrix,
-        doc,
+        texture: doc,
         size,
-        doc_size,
+        image_size: doc_size,
         nearest: model.look.nearest,
         alpha_cutoff: model.look.alpha_cutoff,
         hidden: model.hidden.clone(),
         hidden_generation: model.hidden_generation,
+        source: std::marker::PhantomData::<fn() -> crate::canvas::render::CanvasRenderer>,
     };
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
 

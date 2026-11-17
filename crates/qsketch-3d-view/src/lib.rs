@@ -1,5 +1,10 @@
-//! wgpu drawing for the Model panel. egui's render pass has no depth buffer or MSAA, so the
-//! mesh is drawn into its own targets during `prepare` and copied into the panel in `paint`.
+//! wgpu drawing of a textured mesh in an egui panel: qSketch's Model panel, and the viewport of its sibling Resin
+//! (`/code/resin`). egui's render pass has no depth buffer or MSAA, so the mesh is drawn into its own targets during
+//! `prepare` and copied into the panel in `paint`.
+//!
+//! Each triangle carries a section number: the selected section is highlighted and the others dimmed, `tint_all`
+//! colors every section, and [`HIDDEN_SECTION`] leaves a triangle out. The texture comes from the app, through the
+//! [`TextureSource`] it keeps in egui's callback resources (qSketch's canvas renderer, whose documents are textures).
 
 use std::sync::Arc;
 
@@ -8,9 +13,17 @@ use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 use qsketch_3d::{Mat4, Mesh, Sections, Vertex};
 use wgpu::util::DeviceExt;
 
-use super::model::HIDDEN_SECTION;
-use crate::canvas::render::CanvasRenderer;
-use crate::state::DocId;
+use std::marker::PhantomData;
+
+/// The section of a triangle that is not drawn (a part the panel hides).
+pub const HIDDEN_SECTION: u32 = u32::MAX - 1;
+
+/// Where the mesh's texture comes from: a resource the app inserts into egui's `CallbackResources`, asked for the
+/// texture of a key (qSketch: a document's id). The answer is the view and the texture's size, which may be larger
+/// than the image in it (qSketch's are rounded up to whole tiles): `ModelCallback::image_size` says how much is image.
+pub trait TextureSource: Send + Sync + 'static {
+    fn texture(&self, key: u64) -> Option<(wgpu::TextureView, u32, u32)>;
+}
 
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -325,7 +338,7 @@ impl ModelRenderer {
     }
 }
 
-pub struct ModelCallback {
+pub struct ModelCallback<S: TextureSource> {
     pub mesh: Arc<Mesh>,
     pub generation: u64,
     pub sections: Option<Arc<Sections>>,
@@ -334,11 +347,12 @@ pub struct ModelCallback {
     pub tint_all: bool,
     pub view_proj: Mat4,
     pub model: Mat4,
-    pub doc: Option<DocId>,
+    /// The texture's key in the app's [`TextureSource`]; `None` draws the mesh plain gray.
+    pub texture: Option<u64>,
     /// Physical pixels.
     pub size: (u32, u32),
-    /// The document's size, for the part of its tile-rounded texture that holds image.
-    pub doc_size: (u32, u32),
+    /// The image's size, for the part of the texture that holds image.
+    pub image_size: (u32, u32),
     /// Sample the texture without smoothing.
     pub nearest: bool,
     /// Leave out texels with less alpha than this.
@@ -346,9 +360,10 @@ pub struct ModelCallback {
     /// The triangles of hidden parts, which are not drawn.
     pub hidden: Option<Arc<Vec<bool>>>,
     pub hidden_generation: u64,
+    pub source: PhantomData<fn() -> S>,
 }
 
-impl CallbackTrait for ModelCallback {
+impl<S: TextureSource> CallbackTrait for ModelCallback<S> {
     fn prepare(
         &self,
         device: &wgpu::Device,
@@ -357,7 +372,7 @@ impl CallbackTrait for ModelCallback {
         encoder: &mut wgpu::CommandEncoder,
         resources: &mut CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
-        let doc = self.doc.and_then(|id| resources.get::<CanvasRenderer>()?.doc_texture(id));
+        let doc = self.texture.and_then(|key| resources.get::<S>()?.texture(key));
         let Some(r) = resources.get_mut::<ModelRenderer>() else { return Vec::new() };
         r.ensure_mesh(device, &self.mesh, self.generation);
         r.ensure_sections(
@@ -369,7 +384,7 @@ impl CallbackTrait for ModelCallback {
         r.ensure_targets(device, self.size);
 
         let uv_scale = match &doc {
-            Some((_, w, h)) => [self.doc_size.0 as f32 / *w as f32, self.doc_size.1 as f32 / *h as f32],
+            Some((_, w, h)) => [self.image_size.0 as f32 / *w as f32, self.image_size.1 as f32 / *h as f32],
             None => [1.0, 1.0],
         };
         let uniforms = Uniforms {

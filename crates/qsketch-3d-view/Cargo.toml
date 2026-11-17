@@ -1,0 +1,15 @@
+[package]
+name = "qsketch-3d-view"
+description = "Drawing of a textured, sectioned mesh in an egui panel through wgpu: qsketch's Model panel and Resin's viewport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+qsketch-3d.workspace = true
+egui.workspace = true
+egui-wgpu.workspace = true
+wgpu.workspace = true
+bytemuck.workspace = true

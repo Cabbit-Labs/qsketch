@@ -207,6 +207,13 @@ impl CanvasRenderer {
     }
 }
 
+/// The Model panel's texture source: a document's texture by its id.
+impl qsketch_3d_view::TextureSource for CanvasRenderer {
+    fn texture(&self, key: u64) -> Option<(wgpu::TextureView, u32, u32)> {
+        self.doc_texture(key)
+    }
+}
+
 /// Per-frame paint callback for one document canvas.
 pub struct CanvasCallback {
     pub doc_id: DocId,
