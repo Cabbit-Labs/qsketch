@@ -555,22 +555,31 @@ pub fn show(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         entry.generation += 1;
     }
     let comp = &entry.doc.composite;
+    // Paint not yet committed shows already snapped to the palette (lock or regions), as the
+    // commit will leave it; the layers keep the stroke's own pixels until then.
+    let upload = |tx: u32, ty: u32| {
+        let mut data = comp.tile(tx, ty).px.to_vec();
+        entry.doc.snap_preview(tx, ty, &mut data);
+        TileUpload { tx, ty, data }
+    };
     let mut tiles = Vec::new();
     let full = entry.needs_full_upload
         || render::needs_full_upload(render_state.as_ref(), doc_id, entry.doc.width(), entry.doc.height());
     if full {
         for ty in 0..comp.tiles_y() {
             for tx in 0..comp.tiles_x() {
-                tiles.push(TileUpload { tx, ty, data: comp.tile(tx, ty).px.to_vec() });
+                tiles.push(upload(tx, ty));
             }
         }
-        entry.needs_full_upload = false;
     } else {
         for (tx, ty) in dirty.iter() {
             if tx < comp.tiles_x() && ty < comp.tiles_y() {
-                tiles.push(TileUpload { tx, ty, data: comp.tile(tx, ty).px.to_vec() });
+                tiles.push(upload(tx, ty));
             }
         }
+    }
+    if full {
+        entry.needs_full_upload = false;
     }
     debug_assert!(tiles.iter().all(|t| t.data.len() == TILE_BYTES));
     let view = &entry.view;

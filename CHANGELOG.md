@@ -42,6 +42,11 @@ All notable changes to qSketch are documented in this file.
   gray. Console and pixel-art models, such as a PlayStation character exported
   with its texture pages, now look on the model as they do on the canvas.
 
+- Paint on a locked palette or in a palette region now shows its final colors
+  while the stroke is still going, so a soft brush's in-between colors no longer
+  appear and then jump at the end of the stroke. Only the display snaps early:
+  the stroke blends exactly as before.
+
 - Model panel: which parts are shown is also kept by name, so a model exported
   again with more parts (a new variant, say) opens with the choices it can
   still name, instead of starting over. A slot whose chosen part is gone shows

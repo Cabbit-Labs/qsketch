@@ -791,15 +791,8 @@ impl Document {
     /// region to that region's colors. Only rasters: masks and the selection
     /// are coverage, not color.
     pub fn enforce_palette(&mut self) {
-        let locked = self.working.palette_lock && !self.working.palette.is_empty();
-        let regions = self.palette_regions.clone().filter(|r| !r.is_empty());
-        if !locked && regions.is_none() {
-            return;
-        }
+        let Some(mut snapper) = Snapper::new(&self.working, &self.palette_regions) else { return };
         let prev = self.history.current();
-        let pal = self.working.palette.clone();
-        let mut cache: std::collections::HashMap<[u8; 3], [u8; 3]> = std::collections::HashMap::new();
-        let mut region_cache: std::collections::HashMap<(usize, [u8; 4]), [u8; 4]> = std::collections::HashMap::new();
         let mut touched = TileSet::for_size(self.working.width, self.working.height);
         for layer in &mut self.working.layers {
             let before = prev.layers.iter().find(|l| l.props.id == layer.props.id);
@@ -812,44 +805,33 @@ impl Document {
                     continue;
                 }
                 let (x, y) = (idx as u32 % tx, idx as u32 / tx);
-                let mut changed = false;
-                let tile = layer.raster.tile_mut(x, y);
-                for (i, px) in tile.px.chunks_exact_mut(4).enumerate() {
-                    // A pixel in a palette region takes that region's colors, alpha included.
-                    let at = (x * TILE as u32 + (i % TILE) as u32, y * TILE as u32 + (i / TILE) as u32);
-                    if let Some((r, region)) =
-                        regions.as_ref().and_then(|rs| rs.iter().enumerate().find(|(_, r)| r.contains(at.0, at.1)))
-                    {
-                        let key = [px[0], px[1], px[2], px[3]];
-                        let out = *region_cache.entry((r, key)).or_insert_with(|| {
-                            let c = region.snap(Rgba8::new(key[0], key[1], key[2], key[3]));
-                            [c.r, c.g, c.b, c.a]
-                        });
-                        if out != key {
-                            px.copy_from_slice(&out);
-                            changed = true;
-                        }
-                        continue;
-                    }
-                    if !locked || px[3] == 0 {
-                        continue;
-                    }
-                    let key = [px[0], px[1], px[2]];
-                    let out = *cache.entry(key).or_insert_with(|| {
-                        let c = pal.snap(Rgba8::new(key[0], key[1], key[2], 255));
-                        [c.r, c.g, c.b]
-                    });
-                    if out != key {
-                        px[..3].copy_from_slice(&out);
-                        changed = true;
-                    }
-                }
-                if changed {
+                if snapper.snap_tile(x, y, &mut layer.raster.tile_mut(x, y).px) {
                     touched.insert_index(idx);
                 }
             }
         }
         self.dirty.union_with(&touched);
+    }
+
+    /// Shows a tile of the composite as the next commit will leave it: while it holds paint not yet
+    /// committed, its pixels are snapped here as `enforce_palette` will snap them, so a soft brush's
+    /// in-between colors never show. Display only: the layers keep the stroke's own pixels, so the
+    /// stroke's later dabs blend as they always do. Returns whether anything changed.
+    pub fn snap_preview(&self, tx: u32, ty: u32, px: &mut [u8]) -> bool {
+        let Some(mut snapper) = Snapper::new(&self.working, &self.palette_regions) else { return false };
+        let prev = self.history.current();
+        let painted = self.working.layers.iter().any(|layer| {
+            let (w, h) = (layer.raster.tiles_x(), layer.raster.tiles_y());
+            if tx >= w || ty >= h {
+                return false;
+            }
+            let idx = (ty * w + tx) as usize;
+            let before = prev.layers.iter().find(|l| l.props.id == layer.props.id);
+            !before.is_some_and(|b| {
+                b.raster.tiles_x() == w && b.raster.tiles_y() == h && b.raster.tile_ptr_eq(&layer.raster, idx)
+            })
+        });
+        painted && snapper.snap_tile(tx, ty, px)
     }
 
     /// Replace the working state with the current history state (e.g. to
@@ -1029,6 +1011,64 @@ impl Document {
         } else {
             self.title.clone()
         }
+    }
+}
+
+/// The palette rules a commit applies to the pixels it changed (`Document::enforce_palette`): a pixel
+/// in a palette region takes that region's colors, alpha included; elsewhere, with the palette locked,
+/// an opaque pixel takes the palette's nearest color. Answers are cached by color.
+struct Snapper {
+    regions: Arc<Vec<crate::palette::PaletteRegion>>,
+    palette: Option<crate::palette::Palette>,
+    cache: std::collections::HashMap<[u8; 3], [u8; 3]>,
+    region_cache: std::collections::HashMap<(usize, [u8; 4]), [u8; 4]>,
+}
+
+impl Snapper {
+    /// `None` when there is nothing to snap to.
+    fn new(state: &DocState, regions: &Option<Arc<Vec<crate::palette::PaletteRegion>>>) -> Option<Self> {
+        let regions = regions.clone().unwrap_or_default();
+        let palette = (state.palette_lock && !state.palette.is_empty()).then(|| state.palette.clone());
+        (palette.is_some() || !regions.is_empty()).then(|| Snapper {
+            regions,
+            palette,
+            cache: Default::default(),
+            region_cache: Default::default(),
+        })
+    }
+
+    /// Snaps the RGBA pixels of the tile at (`tx`, `ty`); returns whether any changed.
+    fn snap_tile(&mut self, tx: u32, ty: u32, px: &mut [u8]) -> bool {
+        let mut changed = false;
+        for (i, px) in px.chunks_exact_mut(4).enumerate() {
+            let at = (tx * TILE as u32 + (i % TILE) as u32, ty * TILE as u32 + (i / TILE) as u32);
+            if let Some((r, region)) = self.regions.iter().enumerate().find(|(_, r)| r.contains(at.0, at.1)) {
+                let key = [px[0], px[1], px[2], px[3]];
+                let out = *self.region_cache.entry((r, key)).or_insert_with(|| {
+                    let c = region.snap(Rgba8::new(key[0], key[1], key[2], key[3]));
+                    [c.r, c.g, c.b, c.a]
+                });
+                if out != key {
+                    px.copy_from_slice(&out);
+                    changed = true;
+                }
+                continue;
+            }
+            let Some(pal) = &self.palette else { continue };
+            if px[3] == 0 {
+                continue;
+            }
+            let key = [px[0], px[1], px[2]];
+            let out = *self.cache.entry(key).or_insert_with(|| {
+                let c = pal.snap(Rgba8::new(key[0], key[1], key[2], 255));
+                [c.r, c.g, c.b]
+            });
+            if out != key {
+                px[..3].copy_from_slice(&out);
+                changed = true;
+            }
+        }
+        changed
     }
 }
 
@@ -1220,6 +1260,37 @@ mod tests {
         assert_eq!(r.get_pixel(2, 2), clear, "under half alpha is the see-through entry");
         assert_eq!(r.get_pixel(3, 3), Rgba8::rgb(200, 0, 0), "over half alpha is opaque");
         assert_eq!(r.get_pixel(10, 10), Rgba8::WHITE, "untouched pixels stay");
+    }
+
+    #[test]
+    fn a_stroke_in_progress_previews_snapped_and_keeps_its_own_pixels() {
+        use crate::palette::PaletteRegion;
+        let mut doc = Document::new(128, 64, Some(Rgba8::WHITE), "t");
+        doc.palette_regions = Some(Arc::new(vec![PaletteRegion {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 64,
+            palette: Palette::new("r", vec![Rgba8::new(0, 0, 0, 0), Rgba8::rgb(200, 0, 0), Rgba8::WHITE]),
+        }]));
+        // committed tiles are shown as they are
+        let mut px = vec![255u8; TILE * TILE * 4];
+        px[0..4].copy_from_slice(&[150, 0, 150, 255]);
+        assert!(!doc.snap_preview(0, 0, &mut px), "nothing painted since the last step");
+        // a soft edge painted and not committed: the preview shows the region's color
+        doc.state_mut().layers[0].raster.set_pixel(1, 0, Rgba8::rgb(230, 120, 120));
+        let mut px = vec![255u8; TILE * TILE * 4];
+        px[4..8].copy_from_slice(&[230, 120, 120, 255]);
+        assert!(doc.snap_preview(0, 0, &mut px));
+        assert_eq!(&px[4..8], &[200, 0, 0, 255]);
+        assert_eq!(
+            doc.state().layers[0].raster.get_pixel(1, 0),
+            Rgba8::rgb(230, 120, 120),
+            "the layer keeps the stroke's own pixel"
+        );
+        // the tile beside it, outside the region and unpainted, is left alone
+        let mut px = vec![9u8; TILE * TILE * 4];
+        assert!(!doc.snap_preview(1, 0, &mut px));
     }
 
     /// Merge Down must look the same as before: flatten, merge, flatten again.
