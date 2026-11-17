@@ -50,6 +50,10 @@ All notable changes to qSketch are documented in this file.
 - A window left full screen (F11) opens full screen again, on the same
   monitor. Only a maximized window used to be remembered, so full screen came
   back as the last windowed size.
+- A window left maximized opens maximized again on Linux (X11). The window
+  manager could ignore the request made while the window was being created,
+  so it came back at its last windowed size, and closing it then forgot that
+  it had been maximized.
 
 ## 0.72.2 — 2026-11-16
 

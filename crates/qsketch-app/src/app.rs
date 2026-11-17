@@ -38,6 +38,10 @@ pub struct QSketchApp {
     trace: crate::startup_trace::StartupTrace,
     /// Frames painted so far (saturating).
     frames: u32,
+    /// Maximize once the window is showing (X11): a maximized flag on the window builder is not
+    /// always honored there (Cinnamon left it at the saved windowed size), so a window closed
+    /// maximized came back at its windowed size and was then saved as not maximized.
+    maximize_when_shown: bool,
     last_settings_save: Instant,
     /// Last plain `Q` press, for the double-tap view reset.
     last_q_press: Option<Instant>,
@@ -125,6 +129,7 @@ impl QSketchApp {
             .and_then(Workspace::from_json)
             .unwrap_or_else(|| Workspace::new(state.settings.ui.layout_preset));
         let cloak = crate::startup_cloak::StartupCloak::install(cc, state.settings.window_maximized);
+        let state_window_maximized = state.settings.window_maximized && !state.settings.window_fullscreen;
         // Full screen comes back after the window is placed at its windowed
         // geometry, so it covers that window's monitor; `enforce_fullscreen`
         // then insists as for F11.
@@ -155,6 +160,7 @@ impl QSketchApp {
             cloak,
             trace,
             frames: 0,
+            maximize_when_shown: !cfg!(windows) && state_window_maximized,
             last_settings_save: Instant::now(),
             last_q_press: None,
             last_title: String::new(),
@@ -3073,6 +3079,12 @@ impl eframe::App for QSketchApp {
             }
         }
 
+        if self.maximize_when_shown && self.frames >= 2 {
+            self.maximize_when_shown = false;
+            if !ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+            }
+        }
         // While cloaked the window may not have its final geometry yet.
         if self.cloak.is_none() {
             self.record_window_geometry(&ctx);
