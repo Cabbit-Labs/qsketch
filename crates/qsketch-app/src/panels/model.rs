@@ -9,9 +9,11 @@ use std::sync::Arc;
 use egui::{epaint::Vertex as ScreenVertex, Color32, RichText, Sense, Ui};
 use qsketch_3d::camera::{model_matrix, mul, pick_triangle, up_in_mesh};
 use qsketch_3d::hidden::{find_hidden, without_triangles};
-use qsketch_3d::mesh::{embedded_texture, texture_look, EmbeddedImage, TextureLook};
+use qsketch_3d::mesh::{embedded_texture, palette_regions, texture_look, EmbeddedImage, TextureLook};
 use qsketch_3d::unwrap::{rearrange, section_coverage, section_map, Report, Texture, NO_SECTION};
 use qsketch_3d::{find_sections, Mesh, Orbit, Sections};
+use qsketch_core::palette::{Palette, PaletteRegion};
+use qsketch_core::Rgba8;
 
 /// The section id a hidden triangle carries to the GPU, which then leaves it out (`model.wgsl`).
 pub const HIDDEN_SECTION: u32 = u32::MAX - 1;
@@ -80,6 +82,33 @@ pub struct Model {
     hidden_generation: u64,
     /// Darken the texels on the canvas that no shown part uses.
     dim_unused: bool,
+    /// The texture's palette regions from the model file, and the image size they were written for.
+    palettes: Option<([u32; 2], Arc<Vec<PaletteRegion>>)>,
+    /// Paint freely instead of snapping to the texture's palettes.
+    ignore_palettes: bool,
+    /// The document the palette regions are set on, so they can be taken off it again.
+    regions_doc: Option<DocId>,
+    /// The palette region the pointer was last over on that document's canvas, whose colors the panel offers.
+    color_region: Option<usize>,
+}
+
+/// The model file's palette regions as the document's kind.
+fn read_palettes(glb: &[u8]) -> Option<([u32; 2], Arc<Vec<PaletteRegion>>)> {
+    let (size, regions) = palette_regions(glb)?;
+    let regions = regions
+        .into_iter()
+        .map(|r| PaletteRegion {
+            x: r.rect[0],
+            y: r.rect[1],
+            width: r.rect[2],
+            height: r.rect[3],
+            palette: Palette::new(
+                r.name.unwrap_or_default(),
+                r.colors.iter().map(|c| Rgba8::new(c[0], c[1], c[2], c[3])).collect(),
+            ),
+        })
+        .collect();
+    Some((size, Arc::new(regions)))
 }
 
 /// A finished Rearrange Texture run, whose files are on disk.
@@ -103,6 +132,7 @@ struct Loaded {
     edited: bool,
     /// Which named parts were shown when the sidecar was written, one entry per part.
     shown: Option<Vec<bool>>,
+    palettes: Option<([u32; 2], Arc<Vec<PaletteRegion>>)>,
 }
 
 /// Reads a model and its sidecar. Without a sidecar the sections are found here when `find` is set.
@@ -124,7 +154,8 @@ fn load(path: &Path, find: bool) -> anyhow::Result<Loaded> {
         None => None,
     };
     let (embedded, look) = (embedded_texture(&bytes), texture_look(&bytes));
-    Ok(Loaded { path: path.to_path_buf(), embedded, look, mesh, sections, turns, edited, shown })
+    let palettes = read_palettes(&bytes);
+    Ok(Loaded { path: path.to_path_buf(), embedded, look, mesh, sections, turns, edited, shown, palettes })
 }
 
 /// The selected section's highlight for a canvas: one image the size of the texture. Cheap to take each frame.
@@ -198,6 +229,7 @@ impl Model {
     fn show(&mut self, loaded: Loaded) {
         self.embedded = loaded.embedded;
         self.look = loaded.look;
+        self.palettes = loaded.palettes;
         (self.center, self.radius) = loaded.mesh.bounds();
         self.mesh = Some(Arc::new(loaded.mesh));
         self.path = Some(loaded.path);
@@ -395,6 +427,39 @@ fn free_base(model: &Path, suffix: &str, extensions: &[&str]) -> PathBuf {
         .expect("an unused file name")
 }
 
+/// Puts the model's palette regions on the document it wears, so every stroke there snaps to the colors its
+/// region can hold, and takes them off a document it no longer wears. Only an explicitly worn document of the size
+/// the regions were written for takes them: an unrelated active document, or a resized one, would be snapped wrongly.
+fn sync_palette_regions(state: &mut AppState) {
+    let model = &state.model;
+    let want = match (&model.palettes, model.texture, model.ignore_palettes) {
+        (Some((size, regions)), Some(doc), false) => {
+            state.doc(doc).filter(|d| [d.doc.width(), d.doc.height()] == *size).map(|_| (doc, regions.clone()))
+        }
+        _ => None,
+    };
+    if let Some(old) = state.model.regions_doc.filter(|old| want.as_ref().map(|w| w.0) != Some(*old)) {
+        if let Some(entry) = state.doc_mut(old) {
+            entry.doc.palette_regions = None;
+        }
+    }
+    state.model.regions_doc = want.as_ref().map(|w| w.0);
+    let Some((doc, regions)) = want else { return };
+    let Some(entry) = state.doc_mut(doc) else { return };
+    if entry.doc.palette_regions.as_ref().is_some_and(|r| Arc::ptr_eq(r, &regions)) {
+        return;
+    }
+    // The regions' colors, row by row, become the document's palette when it has none, so the exact colors can be
+    // picked; set on every history state, as the palette lock is, so it is not an undo step of its own.
+    if entry.doc.state().palette.is_empty() {
+        let colors = regions.iter().flat_map(|r| r.palette.colors.iter().copied()).collect();
+        let palette = Palette::new("Texture palettes", colors);
+        entry.doc.history.for_each_state_mut(|s| s.palette = palette.clone());
+        entry.doc.state_mut().palette = palette;
+    }
+    entry.doc.palette_regions = Some(regions);
+}
+
 /// Where Extract Texture first saves a model's texture: `name_texture.ext` beside the model.
 fn extracted_path(model: &Path, image: &EmbeddedImage) -> PathBuf {
     model.with_file_name(format!(
@@ -531,21 +596,12 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         state.settings.push_recent(path);
         wear_own_texture(state);
     }
+    sync_palette_regions(state);
     if state.model.unsaved && ui.memory(|m| m.focused().is_none()) {
         state.model.save_sections();
     }
-    toolbar(ui, state);
-    if let Some(error) = &state.model.error {
-        ui.colored_label(ui.visuals().error_fg_color, error);
-    }
-    if let Some((path, _)) = &state.model.loading {
-        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-        ui.horizontal(|ui| {
-            ui.spinner();
-            ui.label(format!("Opening {name}…"));
-        });
-    }
     let Some(mesh) = state.model.mesh.clone() else {
+        status_rows(ui, state);
         // The model worked on last, from the recent files, is one click away.
         let last = state.settings.general.recent_files.iter().find(|p| is_model(p) && p.is_file()).cloned();
         ui.add_space(ui.available_height() * 0.35);
@@ -562,8 +618,107 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         return;
     };
 
+    // A wide, short panel (a window tiled to half a screen) puts the controls in a scrolling column beside the view;
+    // stacked above it they would leave the view a strip.
+    let (width, height) = (ui.available_width(), ui.available_height());
+    if width > height * 1.4 && width > 400.0 {
+        let column = (width * 0.5).clamp(240.0, 480.0);
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(egui::vec2(column, height), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                egui::ScrollArea::vertical().id_salt("model_controls").auto_shrink([false, false]).show(ui, |ui| {
+                    controls(ui, state);
+                });
+            });
+            view(ui, state, mesh);
+        });
+    } else {
+        controls(ui, state);
+        view(ui, state, mesh);
+    }
+}
+
+/// The toolbar, then any error and the loading spinner.
+fn status_rows(ui: &mut Ui, state: &mut AppState) {
+    toolbar(ui, state);
+    if let Some(error) = &state.model.error {
+        ui.colored_label(ui.visuals().error_fg_color, error);
+    }
+    if let Some((path, _)) = &state.model.loading {
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label(format!("Opening {name}…"));
+        });
+    }
+}
+
+/// Everything above (or beside) the 3D view.
+fn controls(ui: &mut Ui, state: &mut AppState) {
+    status_rows(ui, state);
     parts_row(ui, state);
+    colors_here(ui, state);
     section_row(ui, state);
+}
+
+/// The colors of the texture region the pointer was last over on the canvas, as swatches that pick the brush
+/// color, and a warning when the brush color is not one of them: a stroke there takes the nearest one it holds.
+fn colors_here(ui: &mut Ui, state: &mut AppState) {
+    let model = &mut state.model;
+    let (Some((_, regions)), Some(doc)) = (&model.palettes, model.regions_doc) else { return };
+    if state.active_doc == Some(doc) {
+        if let Some(p) = state.hover_doc_pos.filter(|p| p.x >= 0.0 && p.y >= 0.0) {
+            if let Some(i) = regions.iter().position(|r| r.contains(p.x as u32, p.y as u32)) {
+                model.color_region = Some(i);
+            }
+        }
+    }
+    let Some(region) = model.color_region.and_then(|i| regions.get(i)) else {
+        ui.label(RichText::new("Point at the texture to see the colors its region can hold").weak());
+        return;
+    };
+    let name = if region.palette.name.is_empty() { "this region" } else { region.palette.name.as_str() };
+    ui.label(format!("Colors in {name}"));
+    let fg = state.fg;
+    let mut picked = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(3.0, 3.0);
+        for &c in &region.palette.colors {
+            let (rect, response) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), Sense::click());
+            let painter = ui.painter();
+            let weak = ui.visuals().weak_text_color();
+            if c.a == 0 {
+                // The see-through entry: an empty square, crossed.
+                painter.rect_stroke(rect.shrink(1.0), 2.0, (1.0, weak), egui::StrokeKind::Inside);
+                painter.line_segment([rect.left_bottom(), rect.right_top()], (1.0, weak));
+            } else {
+                painter.rect_filled(rect, 2.0, Color32::from_rgb(c.r, c.g, c.b));
+            }
+            if c == fg {
+                let strong = ui.visuals().strong_text_color();
+                painter.rect_stroke(rect.expand(1.5), 3.0, (2.0, strong), egui::StrokeKind::Outside);
+            }
+            let tip = if c.a == 0 {
+                "See-through".to_string()
+            } else {
+                format!("#{:02X}{:02X}{:02X}: click to paint with it", c.r, c.g, c.b)
+            };
+            if response.on_hover_text(tip).clicked() && c.a > 0 {
+                picked = Some(c);
+            }
+        }
+    });
+    if let Some(c) = picked {
+        state.fg = c;
+    } else if fg.a > 0 && !region.palette.colors.contains(&fg.with_alpha(255)) {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            "The brush color is not one of these: paint here takes the nearest one",
+        );
+    }
+}
+
+/// The 3D view: orbiting, picking, and the drawing callback.
+fn view(ui: &mut Ui, state: &mut AppState, mesh: Arc<Mesh>) {
     let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
     if rect.width() < 2.0 || rect.height() < 2.0 {
         return;
@@ -754,6 +909,20 @@ fn section_row(ui: &mut Ui, state: &mut AppState) {
         ui.checkbox(&mut model.dim_unused, "Dim Unused Texels").on_hover_text(
             "Darken the texture where no shown part of the model reads it, so the canvas shows what painting there would change",
         );
+        if model.palettes.is_some() {
+            let mut keep = !model.ignore_palettes;
+            if ui
+                .checkbox(&mut keep, "Keep to Texture Palettes")
+                .on_hover_text(
+                    "Every stroke snaps to the colors its part of the texture can hold (a PlayStation texture page has 16), \
+                     with soft edges made solid or see-through, so the texture stays one the console can draw. \
+                     The colors are in the Palette panel.",
+                )
+                .changed()
+            {
+                model.ignore_palettes = !keep;
+            }
+        }
         if ui
             .add_enabled(model.selected.is_some(), egui::Button::new("Select on Canvas").small())
             .on_hover_text("Make this section the canvas selection, so brushes and fills stay inside it")

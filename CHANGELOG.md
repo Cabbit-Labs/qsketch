@@ -21,6 +21,17 @@ All notable changes to qSketch are documented in this file.
   earlier Extract Texture saved beside it, with your paint, or the texture
   inside the file, extracted then. It used to wear whatever document
   happened to be active.
+- Palette regions, for console textures: a model whose texture says which
+  rectangle may use which colors (`extras.palette_regions` on its glTF
+  image, as a PlayStation texture page and its 16-color table) keeps every
+  stroke there to that region's colors, soft edges made solid or
+  see-through, while Keep to Texture Palettes is on. The Model panel shows
+  the colors of the region under the pointer to pick from, and says when
+  the brush color is not one of them; the brush color always comes from
+  the regions' colors.
+- In a wide, short Model panel (a window tiled to half a screen) the
+  controls sit in a scrolling column beside the 3D view instead of leaving
+  it a strip.
 - The Model panel opens docked beside the canvas instead of floating over it,
   so the paint and the model can be watched together. Long part and section
   names are cut at the panel's edge instead of widening it past its border.

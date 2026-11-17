@@ -191,19 +191,74 @@ pub struct EmbeddedImage {
     pub extension: &'static str,
 }
 
+/// The base color image's index: the first material's, or failing that the first image in the file.
+fn base_color_image(root: &Value) -> usize {
+    let index = |v: &Value, path: &str| v.pointer(path).and_then(Value::as_u64);
+    let from_material = || {
+        let material = index(root, "/meshes/0/primitives/0/material").unwrap_or(0);
+        let texture = index(root, &format!("/materials/{material}/pbrMetallicRoughness/baseColorTexture/index"))?;
+        let texture = root.pointer(&format!("/textures/{texture}"))?;
+        index(texture, "/source").or_else(|| index(texture, "/extensions/EXT_texture_webp/source"))
+    };
+    from_material().unwrap_or(0) as usize
+}
+
+/// A rectangle of the texture whose pixels may take only its own colors (a console texture page and its color
+/// table); a color with alpha 0 is see-through.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaletteRegion {
+    pub rect: [u32; 4],
+    pub colors: Vec<[u8; 4]>,
+    /// What the region is, for the panel (`"name"`, optional).
+    pub name: Option<String>,
+}
+
+/// The palette regions of the base color image, from its `extras.palette_regions`: `{"size": [w, h], "regions":
+/// [{"rect": [x, y, w, h], "colors": [[r, g, b, a], ...], "name": "..."}]}` (the name optional), and the image
+/// size they were written for. Empty
+/// when the file has none or they are malformed.
+pub fn palette_regions(glb: &[u8]) -> Option<([u32; 2], Vec<PaletteRegion>)> {
+    let (json, _) = split_glb(glb).ok()?;
+    let root: Value = serde_json::from_slice(json).ok()?;
+    let extras = root.pointer(&format!("/images/{}/extras/palette_regions", base_color_image(&root)))?;
+    let numbers = |v: &Value| -> Option<Vec<u32>> {
+        v.as_array()?.iter().map(|n| n.as_u64().and_then(|n| u32::try_from(n).ok())).collect()
+    };
+    let size = numbers(extras.get("size")?)?;
+    let regions = extras
+        .get("regions")?
+        .as_array()?
+        .iter()
+        .map(|r| {
+            let rect = numbers(r.get("rect")?)?;
+            let colors = r
+                .get("colors")?
+                .as_array()?
+                .iter()
+                .map(|c| {
+                    let c = numbers(c)?;
+                    (c.len() == 4 && c.iter().all(|&v| v < 256))
+                        .then(|| [c[0] as u8, c[1] as u8, c[2] as u8, c[3] as u8])
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let name = r.get("name").and_then(Value::as_str).map(str::to_string);
+            (rect.len() == 4 && !colors.is_empty()).then(|| PaletteRegion {
+                rect: [rect[0], rect[1], rect[2], rect[3]],
+                colors,
+                name,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (size.len() == 2 && !regions.is_empty()).then(|| ([size[0], size[1]], regions))
+}
+
 /// The color texture stored inside a `.glb`, if it has one: the first material's base color image, or failing
 /// that the first image in the file.
 pub fn embedded_texture(glb: &[u8]) -> Option<EmbeddedImage> {
     let (json, bin) = split_glb(glb).ok()?;
     let root: Value = serde_json::from_slice(json).ok()?;
     let index = |v: &Value, path: &str| v.pointer(path).and_then(Value::as_u64);
-    let from_material = || {
-        let material = index(&root, "/meshes/0/primitives/0/material").unwrap_or(0);
-        let texture = index(&root, &format!("/materials/{material}/pbrMetallicRoughness/baseColorTexture/index"))?;
-        let texture = root.pointer(&format!("/textures/{texture}"))?;
-        index(texture, "/source").or_else(|| index(texture, "/extensions/EXT_texture_webp/source"))
-    };
-    let image = root.pointer(&format!("/images/{}", from_material().unwrap_or(0)))?;
+    let image = root.pointer(&format!("/images/{}", base_color_image(&root)))?;
     let view = root.pointer(&format!("/bufferViews/{}", index(image, "/bufferView")?))?;
     if index(view, "/buffer").unwrap_or(0) != 0 {
         return None;
@@ -669,6 +724,27 @@ mod tests {
         assert_eq!((m.parts[2].name.as_str(), m.parts[2].slot.as_deref(), m.parts[2].visible), ("Part 3", None, true));
         let single = Mesh::from_glb(&glb(&triangle_json(json!({"mesh": 0, "name": "Only"})), &triangle_bin())).unwrap();
         assert!(single.parts.is_empty(), "one part is the whole model, not a choice");
+    }
+
+    #[test]
+    fn reads_the_base_color_images_palette_regions() {
+        let mut json = triangle_json(json!({"mesh": 0}));
+        assert_eq!(palette_regions(&glb(&json, &triangle_bin())), None);
+        json["images"] = json!([{"extras": {"palette_regions": {"size": [64, 32], "regions": [
+            {"rect": [0, 0, 32, 32], "colors": [[0, 0, 0, 0], [255, 0, 0, 255]], "name": "left"},
+            {"rect": [32, 0, 32, 32], "colors": [[0, 0, 255, 255]]}
+        ]}}}]);
+        let (size, regions) = palette_regions(&glb(&json, &triangle_bin())).unwrap();
+        assert_eq!(size, [64, 32]);
+        let left = PaletteRegion {
+            rect: [0, 0, 32, 32],
+            colors: vec![[0, 0, 0, 0], [255, 0, 0, 255]],
+            name: Some("left".into()),
+        };
+        assert_eq!(regions[0], left);
+        assert_eq!((regions[1].colors.clone(), regions[1].name.clone()), (vec![[0, 0, 255, 255]], None));
+        json["images"][0]["extras"]["palette_regions"]["regions"][1]["colors"] = json!([[0, 0, 300, 255]]);
+        assert_eq!(palette_regions(&glb(&json, &triangle_bin())), None, "a color out of range is refused, not wrapped");
     }
 
     #[test]

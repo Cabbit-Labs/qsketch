@@ -2963,10 +2963,21 @@ impl eframe::App for QSketchApp {
         self.process_requests(&ctx);
         crate::share::tick(&mut self.state, &ctx);
         // Indexed-color workflow: the current colors always come from the
-        // palette while it is locked, wherever they were picked.
-        if let Some(s) = self.state.active().map(|e| e.doc.state()) {
-            if s.palette_lock && !s.palette.is_empty() {
-                let (fg, bg) = (s.palette.snap(self.state.fg), s.palette.snap(self.state.bg));
+        // palette while it is locked, wherever they were picked; with palette
+        // regions (a model's console texture), from the regions' colors, so
+        // the stroke on screen is the one the commit keeps.
+        if let Some(entry) = self.state.active() {
+            let s = entry.doc.state();
+            let palette = if s.palette_lock && !s.palette.is_empty() {
+                Some(s.palette.clone())
+            } else {
+                entry.doc.palette_regions.as_ref().map(|regions| {
+                    let colors = regions.iter().flat_map(|r| r.palette.colors.iter().copied()).collect();
+                    qsketch_core::palette::Palette::new("", colors)
+                })
+            };
+            if let Some(palette) = palette {
+                let (fg, bg) = (palette.snap(self.state.fg), palette.snap(self.state.bg));
                 self.state.fg = fg;
                 self.state.bg = bg;
             }

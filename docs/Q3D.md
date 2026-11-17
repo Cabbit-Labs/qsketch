@@ -24,6 +24,7 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 |---|------|--------|
 | 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | Done |
 | 1b | Parts and variants: show and hide named parts, one per slot | Done |
+| 1c | Palette regions: keep paint to a console texture's per-page colors | Done |
 | 2 | Sections: find them, list, pick on the model or the canvas, highlight in both views, rename and merge | Done; splitting a section by hand is not built |
 | 2b | Rearrange Texture: one continuous island per section, with the paint baked across | Done; a few pieces still fold |
 | 3 | Overlays: island outlines, tints, labels, mapped pixels only | Mapped pixels done (Dim Unused Texels); the rest planned |
@@ -64,6 +65,19 @@ hidden variant or to nothing. First used for Mega Man of *Mega Man Legends* with
 slots), exported by the decompilation's Control Lab. Which parts are shown is kept in the sidecar (`shown`) and comes back
 with the model. The parts list folds away under its header, the section list leaves out sections whose triangles are all
 hidden, and a model opens framed on the parts shown rather than on every variant.
+
+### 1c. Palette regions (console textures)
+
+A console texture is indexed: a PlayStation texture page holds 4-bit texels and is drawn through one 16-color table,
+so a texel can only be one of those colors or see-through. A model can say so: its base color image's
+`extras.palette_regions` is `{"size": [w, h], "regions": [{"rect": [x, y, w, h], "colors": [[r, g, b, a], ...],
+"name": "..."}]}`. While the model wears a document of that size and **Keep to Texture Palettes** is on, every
+committed stroke snaps each changed pixel to its region's nearest color (`qsketch_core::palette::PaletteRegion`):
+under half alpha to the region's see-through entry, otherwise fully opaque. The brush color is kept to the regions'
+colors, the document palette (when empty) shows them all, and the panel shows the 16 of the region under the pointer
+to pick from, with a warning when the brush color is not one of them, since a stroke there would take its nearest.
+First used on Mega Man of *Mega Man Legends* (three regions: his body page, the same page through a second table, and
+his face page); after painting, every texel of the saved PNG was still one of its region's colors.
 
 ### 2. Sections
 

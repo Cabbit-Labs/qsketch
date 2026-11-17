@@ -19,6 +19,38 @@ pub struct Palette {
     pub colors: Vec<Rgba8>,
 }
 
+/// A rectangle of an image whose pixels may take only its own colors, as a game console's texture page drawn
+/// through one color table can. A color with alpha 0 is the region's see-through entry.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaletteRegion {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub palette: Palette,
+}
+
+impl PaletteRegion {
+    pub fn contains(&self, x: u32, y: u32) -> bool {
+        x >= self.x && y >= self.y && x - self.x < self.width && y - self.y < self.height
+    }
+
+    /// The region's color for `c`. Alpha snaps too, since an indexed texel is either an entry or see-through:
+    /// under half alpha it becomes the see-through entry when the region has one, and otherwise the nearest
+    /// opaque color, fully opaque.
+    pub fn snap(&self, c: Rgba8) -> Rgba8 {
+        if c.a < 128 {
+            if let Some(clear) = self.palette.colors.iter().find(|p| p.a == 0) {
+                return *clear;
+            }
+        }
+        match self.palette.nearest(c.with_alpha(255)) {
+            Some(i) => self.palette.colors[i],
+            None => c,
+        }
+    }
+}
+
 /// Hard cap: every format here tops out at 256, and the app's shading and
 /// indexed workflows assume a `u8` index fits.
 pub const MAX_COLORS: usize = 256;

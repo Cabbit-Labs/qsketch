@@ -12,7 +12,7 @@ use crate::history::History;
 use crate::layer::{Layer, LayerId};
 use crate::mask::Mask;
 use crate::palette::Palette;
-use crate::raster::Raster;
+use crate::raster::{Raster, TILE};
 
 /// An immutable-by-convention snapshot of everything undoable.
 #[derive(Clone)]
@@ -594,6 +594,10 @@ pub struct Document {
     /// Bumped by view-only changes (layer visibility) that the onion cache
     /// must notice without a history step.
     view_rev: u64,
+    /// Rectangles whose changed pixels snap to their own colors on every commit (see
+    /// [`crate::palette::PaletteRegion`]): set while a 3D model whose texture regions each have a palette is
+    /// wearing this document. Never saved.
+    pub palette_regions: Option<Arc<Vec<crate::palette::PaletteRegion>>>,
 }
 
 struct OnionEntry {
@@ -632,6 +636,7 @@ impl Document {
             onion_cache: Default::default(),
             pose_preview: None,
             view_rev: 0,
+            palette_regions: None,
         };
         doc.update_composite();
         doc
@@ -782,15 +787,19 @@ impl Document {
     }
 
     /// Snap the tiles that differ from the current history state to the
-    /// document palette (indexed-color workflow). Only rasters: masks and
-    /// the selection are coverage, not color.
+    /// document palette (indexed-color workflow), and pixels inside a palette
+    /// region to that region's colors. Only rasters: masks and the selection
+    /// are coverage, not color.
     pub fn enforce_palette(&mut self) {
-        if !self.working.palette_lock || self.working.palette.is_empty() {
+        let locked = self.working.palette_lock && !self.working.palette.is_empty();
+        let regions = self.palette_regions.clone().filter(|r| !r.is_empty());
+        if !locked && regions.is_none() {
             return;
         }
         let prev = self.history.current();
         let pal = self.working.palette.clone();
         let mut cache: std::collections::HashMap<[u8; 3], [u8; 3]> = std::collections::HashMap::new();
+        let mut region_cache: std::collections::HashMap<(usize, [u8; 4]), [u8; 4]> = std::collections::HashMap::new();
         let mut touched = TileSet::for_size(self.working.width, self.working.height);
         for layer in &mut self.working.layers {
             let before = prev.layers.iter().find(|l| l.props.id == layer.props.id);
@@ -805,8 +814,24 @@ impl Document {
                 let (x, y) = (idx as u32 % tx, idx as u32 / tx);
                 let mut changed = false;
                 let tile = layer.raster.tile_mut(x, y);
-                for px in tile.px.chunks_exact_mut(4) {
-                    if px[3] == 0 {
+                for (i, px) in tile.px.chunks_exact_mut(4).enumerate() {
+                    // A pixel in a palette region takes that region's colors, alpha included.
+                    let at = (x * TILE as u32 + (i % TILE) as u32, y * TILE as u32 + (i / TILE) as u32);
+                    if let Some((r, region)) =
+                        regions.as_ref().and_then(|rs| rs.iter().enumerate().find(|(_, r)| r.contains(at.0, at.1)))
+                    {
+                        let key = [px[0], px[1], px[2], px[3]];
+                        let out = *region_cache.entry((r, key)).or_insert_with(|| {
+                            let c = region.snap(Rgba8::new(key[0], key[1], key[2], key[3]));
+                            [c.r, c.g, c.b, c.a]
+                        });
+                        if out != key {
+                            px.copy_from_slice(&out);
+                            changed = true;
+                        }
+                        continue;
+                    }
+                    if !locked || px[3] == 0 {
                         continue;
                     }
                     let key = [px[0], px[1], px[2]];
@@ -1170,6 +1195,31 @@ mod tests {
         doc.state_mut().layers[0].raster.set_pixel(4, 4, Rgba8::rgb(40, 40, 40));
         doc.commit("paint");
         assert_eq!(doc.state().layers[0].raster.get_pixel(4, 4), Rgba8::rgb(40, 40, 40));
+    }
+
+    #[test]
+    fn palette_regions_snap_changed_pixels_to_their_own_colors() {
+        use crate::palette::PaletteRegion;
+        let clear = Rgba8::new(0, 0, 0, 0);
+        let region = |x, colors| PaletteRegion { x, y: 0, width: 64, height: 64, palette: Palette::new("r", colors) };
+        let mut doc = Document::new(128, 64, Some(Rgba8::WHITE), "t");
+        doc.palette_regions = Some(Arc::new(vec![
+            region(0, vec![clear, Rgba8::rgb(200, 0, 0), Rgba8::WHITE]),
+            region(64, vec![clear, Rgba8::rgb(0, 0, 200), Rgba8::WHITE]),
+        ]));
+        let r = &mut doc.state_mut().layers[0].raster;
+        r.set_pixel(1, 1, Rgba8::rgb(150, 0, 150));
+        r.set_pixel(70, 1, Rgba8::rgb(150, 0, 150));
+        r.set_pixel(2, 2, Rgba8::new(190, 10, 10, 100));
+        r.set_pixel(3, 3, Rgba8::new(190, 10, 10, 200));
+        doc.commit("paint");
+        let r = &doc.state().layers[0].raster;
+        // the same purple lands on each region's own nearest color
+        assert_eq!(r.get_pixel(1, 1), Rgba8::rgb(200, 0, 0));
+        assert_eq!(r.get_pixel(70, 1), Rgba8::rgb(0, 0, 200));
+        assert_eq!(r.get_pixel(2, 2), clear, "under half alpha is the see-through entry");
+        assert_eq!(r.get_pixel(3, 3), Rgba8::rgb(200, 0, 0), "over half alpha is opaque");
+        assert_eq!(r.get_pixel(10, 10), Rgba8::WHITE, "untouched pixels stay");
     }
 
     /// Merge Down must look the same as before: flatten, merge, flatten again.
