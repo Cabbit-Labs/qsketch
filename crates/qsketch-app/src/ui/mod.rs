@@ -3,9 +3,9 @@
 pub mod chrome;
 pub mod iconset;
 pub mod menus;
-pub mod phosphor;
+pub use qsketch_ui::icons as phosphor;
 pub mod splash;
-pub mod theme;
+pub use qsketch_ui::theme;
 pub mod toasts;
 pub mod widgets;
 

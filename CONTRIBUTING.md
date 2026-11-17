@@ -35,6 +35,9 @@ The workspace has these main crates:
   engine and file formats. No GUI dependencies; keep it that way.
 - `crates/qsketch-3d` — headless mesh loading and camera math for the Model
   panel. No GUI or GPU code.
+- `crates/qsketch-ui` — the look shared with qSketch's sibling apps: themes,
+  palettes, the egui and dock styles, fonts and the Phosphor icon codepoints.
+  No app state.
 - `crates/qsketch-app` — the `egui`/`eframe`/`wgpu` desktop application.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how they fit together.

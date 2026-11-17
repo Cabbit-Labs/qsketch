@@ -1,0 +1,13 @@
+[package]
+name = "qsketch-ui"
+description = "qsketch's look, shared with its sibling apps: themes, palettes, the dock style, the fonts and the Phosphor icon codepoints"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+egui.workspace = true
+egui_dock.workspace = true
+serde.workspace = true

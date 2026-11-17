@@ -13,45 +13,7 @@ use serde::{Deserialize, Serialize};
 /// lowercases it anyway).
 pub const CONFIG_DIR_NAME: &str = "qSketch";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum Theme {
-    /// Indigo + pink, derived from the app icon.
-    #[default]
-    Ink,
-    /// Neutral dark gray with a teal accent (the pre-0.6 look).
-    /// "Midnight" (removed in 0.9.3) folds into this one.
-    #[serde(alias = "Dark", alias = "Midnight")]
-    Graphite,
-    Light,
-    /// Warm paper tones.
-    Sepia,
-    /// User-configured colors (`UiSettings::custom_palette`).
-    Custom,
-}
-
-impl Theme {
-    pub const ALL: [Theme; 5] = [Theme::Ink, Theme::Graphite, Theme::Light, Theme::Sepia, Theme::Custom];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Theme::Ink => "Ink",
-            Theme::Graphite => "Graphite",
-            Theme::Light => "Light",
-            Theme::Sepia => "Sepia",
-            Theme::Custom => "Custom",
-        }
-    }
-
-    pub fn description(self) -> &'static str {
-        match self {
-            Theme::Ink => "Indigo and pink, matching the app icon",
-            Theme::Graphite => "Neutral dark gray with a teal accent",
-            Theme::Light => "Cool light gray",
-            Theme::Sepia => "Warm paper tones",
-            Theme::Custom => "Your own colors",
-        }
-    }
-}
+pub use qsketch_ui::theme::{Theme, UiShape};
 
 /// Colors of the Custom theme: a primary (chrome) color and a secondary
 /// (accent) color, stored as sRGB triples so the TOML stays hand-editable.
@@ -259,27 +221,6 @@ fn mix_to(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
     let t = t.clamp(0.0, 1.0);
     let f = |i: usize| (a[i] as f32 + (b[i] as f32 - a[i] as f32) * t).round() as u8;
     [f(0), f(1), f(2)]
-}
-
-/// Overall shape language of the chrome.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum UiShape {
-    /// Soft corners, roomy spacing (the original look).
-    #[default]
-    Rounded,
-    /// Square corners with small chamfers, flat 1 px outlines, tighter
-    /// spacing: a technical, angular look.
-    Angular,
-}
-
-impl UiShape {
-    pub const ALL: [UiShape; 2] = [UiShape::Rounded, UiShape::Angular];
-    pub fn label(self) -> &'static str {
-        match self {
-            UiShape::Rounded => "Rounded",
-            UiShape::Angular => "Angular",
-        }
-    }
 }
 
 /// Which arrangement of panels the workspace starts from (and Reset

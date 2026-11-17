@@ -7,7 +7,68 @@
 
 use egui::{Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Stroke, Style, Visuals};
 
-use crate::settings::{Theme, UiShape};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Theme {
+    /// Indigo + pink, derived from the app icon.
+    #[default]
+    Ink,
+    /// Neutral dark gray with a teal accent (the pre-0.6 look).
+    /// "Midnight" (removed in 0.9.3) folds into this one.
+    #[serde(alias = "Dark", alias = "Midnight")]
+    Graphite,
+    Light,
+    /// Warm paper tones.
+    Sepia,
+    /// User-configured colors (`UiSettings::custom_palette`).
+    Custom,
+}
+
+impl Theme {
+    pub const ALL: [Theme; 5] = [Theme::Ink, Theme::Graphite, Theme::Light, Theme::Sepia, Theme::Custom];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Theme::Ink => "Ink",
+            Theme::Graphite => "Graphite",
+            Theme::Light => "Light",
+            Theme::Sepia => "Sepia",
+            Theme::Custom => "Custom",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Theme::Ink => "Indigo and pink, matching the app icon",
+            Theme::Graphite => "Neutral dark gray with a teal accent",
+            Theme::Light => "Cool light gray",
+            Theme::Sepia => "Warm paper tones",
+            Theme::Custom => "Your own colors",
+        }
+    }
+}
+
+/// Overall shape language of the chrome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum UiShape {
+    /// Soft corners, roomy spacing (the original look).
+    #[default]
+    Rounded,
+    /// Square corners with small chamfers, flat 1 px outlines, tighter
+    /// spacing: a technical, angular look.
+    Angular,
+}
+
+impl UiShape {
+    pub const ALL: [UiShape; 2] = [UiShape::Rounded, UiShape::Angular];
+    pub fn label(self) -> &'static str {
+        match self {
+            UiShape::Rounded => "Rounded",
+            UiShape::Angular => "Angular",
+        }
+    }
+}
 
 /// The shape language currently applied, for painters that draw their own
 /// boxes (rows, chips) and need to match the widgets without every caller
@@ -179,11 +240,11 @@ pub fn install_fonts(ctx: &egui::Context, filled: bool) {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
         ICON_FONT.into(),
-        std::sync::Arc::new(FontData::from_static(include_bytes!("../../../../assets/fonts/Phosphor.ttf"))),
+        std::sync::Arc::new(FontData::from_static(include_bytes!("../../../assets/fonts/Phosphor.ttf"))),
     );
     fonts.font_data.insert(
         ICON_FONT_FILL.into(),
-        std::sync::Arc::new(FontData::from_static(include_bytes!("../../../../assets/fonts/Phosphor-Fill.ttf"))),
+        std::sync::Arc::new(FontData::from_static(include_bytes!("../../../assets/fonts/Phosphor-Fill.ttf"))),
     );
     // Icons as a fallback in the proportional family so labels can mix text and glyphs.
     let order: [&str; 2] = if filled { [ICON_FONT_FILL, ICON_FONT] } else { [ICON_FONT, ICON_FONT_FILL] };

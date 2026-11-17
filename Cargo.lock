@@ -2586,6 +2586,7 @@ dependencies = [
  "parking_lot",
  "qsketch-3d",
  "qsketch-core",
+ "qsketch-ui",
  "raw-window-handle",
  "rfd",
  "ron",
@@ -2643,6 +2644,15 @@ dependencies = [
  "windows-core 0.62.2",
  "windows-registry",
  "zip",
+]
+
+[[package]]
+name = "qsketch-ui"
+version = "0.73.0"
+dependencies = [
+ "egui",
+ "egui_dock",
+ "serde",
 ]
 
 [[package]]
