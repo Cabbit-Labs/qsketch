@@ -8,5 +8,5 @@ pub mod sections;
 pub mod unwrap;
 
 pub use camera::{Mat4, Orbit};
-pub use mesh::{Mesh, Part, Vertex};
+pub use mesh::{shown_by_name, Mesh, Part, Vertex};
 pub use sections::{find_sections, Section, Sections};

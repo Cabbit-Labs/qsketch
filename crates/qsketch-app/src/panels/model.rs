@@ -141,11 +141,31 @@ fn load(path: &Path, find: bool) -> anyhow::Result<Loaded> {
     let mesh = Mesh::from_glb(&bytes)?;
     let text = std::fs::read_to_string(sidecar(path)).ok();
     let saved = text.as_deref().and_then(|t| Sections::from_json(t, mesh.triangle_count()));
-    // The parts on show, kept beside the sections; ignored if the model's parts have changed.
-    let shown = saved.as_ref().and(text.as_deref()).and_then(|t| {
+    // The parts on show, kept beside the sections, one entry per part and by name. When the model's
+    // parts have changed (a new export with more variants), the choices that still name a part come back.
+    let shown = text.as_deref().filter(|_| !mesh.parts.is_empty()).and_then(|t| {
         let root: serde_json::Value = serde_json::from_str(t).ok()?;
-        let shown: Vec<bool> = root.get("shown")?.as_array()?.iter().map(|v| v.as_bool()).collect::<Option<_>>()?;
-        (shown.len() == mesh.parts.len()).then_some(shown)
+        let by_index: Option<Vec<bool>> =
+            root.get("shown").and_then(|v| v.as_array()).and_then(|a| a.iter().map(|v| v.as_bool()).collect());
+        if let Some(shown) = by_index.as_ref().filter(|s| saved.is_some() && s.len() == mesh.parts.len()) {
+            return Some(shown.clone());
+        }
+        let by_name: serde_json::Map<String, serde_json::Value> = match root
+            .get("shown_parts")
+            .and_then(|v| v.as_object())
+        {
+            Some(map) => map.clone(),
+            // Written before `shown_parts`: a model's first sections are its parts, in order and named
+            // after them, so a section name that is still a part's name carries that part's choice.
+            None => {
+                let names = root.get("names")?.as_array()?;
+                let shown = by_index?;
+                (names.len() == shown.len()).then(|| {
+                    names.iter().zip(shown).filter_map(|(n, on)| Some((n.as_str()?.to_string(), on.into()))).collect()
+                })?
+            }
+        };
+        Some(qsketch_3d::shown_by_name(&mesh.parts, |name| by_name.get(name).and_then(|v| v.as_bool())))
     });
     let (edited, turns) = (saved.is_some(), saved.as_ref().map_or(0, |(_, turns)| *turns));
     let sections = match saved {
@@ -293,6 +313,11 @@ impl Model {
         if !self.shown.is_empty() {
             if let Ok(mut root) = serde_json::from_str::<serde_json::Value>(&text) {
                 root["shown"] = serde_json::json!(self.shown);
+                if let Some(mesh) = &self.mesh {
+                    let by_name: serde_json::Map<String, serde_json::Value> =
+                        mesh.parts.iter().zip(&self.shown).map(|(p, &on)| (p.name.clone(), on.into())).collect();
+                    root["shown_parts"] = serde_json::Value::Object(by_name);
+                }
                 text = root.to_string();
             }
         }

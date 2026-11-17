@@ -38,6 +38,31 @@ pub struct Part {
     pub triangles: std::ops::Range<u32>,
 }
 
+/// Which parts to show, from choices saved by part name (`saved` answers a name with its choice, or
+/// `None` for a part it never saw). A part it never saw takes the file's own visibility. A slot keeps
+/// one part shown: the first one saved as shown, else the first the file shows, else its first.
+pub fn shown_by_name(parts: &[Part], saved: impl Fn(&str) -> Option<bool>) -> Vec<bool> {
+    let mut shown: Vec<bool> = parts.iter().map(|p| saved(&p.name).unwrap_or(p.visible)).collect();
+    let mut done: Vec<&str> = Vec::new();
+    for slot in parts.iter().filter_map(|p| p.slot.as_deref()) {
+        if done.contains(&slot) {
+            continue;
+        }
+        done.push(slot);
+        let members: Vec<usize> = (0..parts.len()).filter(|&i| parts[i].slot.as_deref() == Some(slot)).collect();
+        let keep = members
+            .iter()
+            .copied()
+            .find(|&i| shown[i])
+            .or_else(|| members.iter().copied().find(|&i| parts[i].visible))
+            .or_else(|| members.first().copied());
+        for &i in &members {
+            shown[i] = Some(i) == keep;
+        }
+    }
+    shown
+}
+
 impl Mesh {
     pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
@@ -616,6 +641,35 @@ fn node_matrix(node: &Value) -> Mat4 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn choices_saved_by_name_survive_new_parts() {
+        let part = |name: &str, slot: Option<&str>, visible: bool| Part {
+            name: name.into(),
+            slot: slot.map(Into::into),
+            visible,
+            triangles: 0..0,
+        };
+        // a new export: the head slot gained a variant, and a new part in no slot appeared
+        let parts = [
+            part("Head: helmet", Some("Head"), true),
+            part("Head: no helmet", Some("Head"), false),
+            part("Head: no helmet, face 07", Some("Head"), false),
+            part("Arm: hand", Some("Arm"), true),
+            part("Arm: buster", Some("Arm"), false),
+            part("Prop", None, true),
+        ];
+        let saved = |n: &str| match n {
+            "Head: helmet" => Some(false),
+            "Head: no helmet" => Some(true),
+            // saved shown, but its part is gone: the slot falls back to the file's own
+            "Arm: drill" => Some(true),
+            "Arm: hand" => Some(false),
+            "Arm: buster" => Some(false),
+            _ => None,
+        };
+        assert_eq!(shown_by_name(&parts, saved), [false, true, false, true, false, true]);
+    }
     use serde_json::json;
 
     /// One triangle in the XY plane, facing +Z, with u16 indices.
