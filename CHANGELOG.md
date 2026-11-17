@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.73.0 — 2026-11-17
 
 - Closing a picture that had been changed and then undone back to its saved
   state no longer leaves a recovery snapshot behind. The next launch used to
