@@ -43,6 +43,21 @@ impl Mesh {
         self.indices.len() / 3
     }
 
+    /// Like [`Mesh::bounds`], over the triangles not flagged in `hidden`: frames the parts on show rather
+    /// than every variant a model carries. Falls back to the whole mesh when nothing would be left.
+    pub fn bounds_without(&self, hidden: &[bool]) -> ([f32; 3], f32) {
+        let mut shown = Mesh::default();
+        for (t, tri) in self.indices.chunks_exact(3).enumerate() {
+            if !hidden.get(t).copied().unwrap_or(false) {
+                shown.vertices.extend(tri.iter().map(|&i| self.vertices[i as usize]));
+            }
+        }
+        if shown.vertices.is_empty() {
+            return self.bounds();
+        }
+        shown.bounds()
+    }
+
     /// Center of the bounding box, and the radius of the sphere around it that holds the mesh.
     pub fn bounds(&self) -> ([f32; 3], f32) {
         let mut min = [f32::INFINITY; 3];

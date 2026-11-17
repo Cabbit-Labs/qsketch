@@ -101,14 +101,22 @@ struct Loaded {
     turns: u8,
     /// The sections came from the sidecar.
     edited: bool,
+    /// Which named parts were shown when the sidecar was written, one entry per part.
+    shown: Option<Vec<bool>>,
 }
 
 /// Reads a model and its sidecar. Without a sidecar the sections are found here when `find` is set.
 fn load(path: &Path, find: bool) -> anyhow::Result<Loaded> {
     let bytes = std::fs::read(path)?;
     let mesh = Mesh::from_glb(&bytes)?;
-    let saved =
-        std::fs::read_to_string(sidecar(path)).ok().and_then(|t| Sections::from_json(&t, mesh.triangle_count()));
+    let text = std::fs::read_to_string(sidecar(path)).ok();
+    let saved = text.as_deref().and_then(|t| Sections::from_json(t, mesh.triangle_count()));
+    // The parts on show, kept beside the sections; ignored if the model's parts have changed.
+    let shown = saved.as_ref().and(text.as_deref()).and_then(|t| {
+        let root: serde_json::Value = serde_json::from_str(t).ok()?;
+        let shown: Vec<bool> = root.get("shown")?.as_array()?.iter().map(|v| v.as_bool()).collect::<Option<_>>()?;
+        (shown.len() == mesh.parts.len()).then_some(shown)
+    });
     let (edited, turns) = (saved.is_some(), saved.as_ref().map_or(0, |(_, turns)| *turns));
     let sections = match saved {
         Some((sections, _)) => Some(sections),
@@ -116,7 +124,7 @@ fn load(path: &Path, find: bool) -> anyhow::Result<Loaded> {
         None => None,
     };
     let (embedded, look) = (embedded_texture(&bytes), texture_look(&bytes));
-    Ok(Loaded { path: path.to_path_buf(), embedded, look, mesh, sections, turns, edited })
+    Ok(Loaded { path: path.to_path_buf(), embedded, look, mesh, sections, turns, edited, shown })
 }
 
 /// The selected section's highlight for a canvas: one image the size of the texture. Cheap to take each frame.
@@ -202,8 +210,13 @@ impl Model {
         self.selected = None;
         self.show_on_canvas = true;
         (self.edited, self.unsaved, self.renaming) = (loaded.edited, false, None);
-        self.shown = self.mesh.as_ref().map_or_else(Vec::new, |m| m.parts.iter().map(|p| p.visible).collect());
+        let defaults = self.mesh.as_ref().map_or_else(Vec::new, |m| m.parts.iter().map(|p| p.visible).collect());
+        self.shown = loaded.shown.unwrap_or(defaults);
         self.update_hidden();
+        // Frame what is on show, not every variant the file carries; switching parts later keeps the view still.
+        if let (Some(mesh), Some(hidden)) = (&self.mesh, &self.hidden) {
+            (self.center, self.radius) = mesh.bounds_without(hidden);
+        }
     }
 
     /// Works out which triangles the hidden parts leave out, after `shown` changed.
@@ -243,7 +256,15 @@ impl Model {
         self.unsaved = false;
         let (Some(sections), Some(path)) = (&self.sections, &self.path) else { return };
         let file = sidecar(path);
-        if let Err(e) = std::fs::write(&file, sections.to_json(self.turns)) {
+        let mut text = sections.to_json(self.turns);
+        // A model with named parts also keeps which of them are on show.
+        if !self.shown.is_empty() {
+            if let Ok(mut root) = serde_json::from_str::<serde_json::Value>(&text) {
+                root["shown"] = serde_json::json!(self.shown);
+                text = root.to_string();
+            }
+        }
+        if let Err(e) = std::fs::write(&file, text) {
             self.error = Some(format!("Couldn't save {}: {e}", file.display()));
         }
     }
@@ -374,15 +395,36 @@ fn free_base(model: &Path, suffix: &str, extensions: &[&str]) -> PathBuf {
         .expect("an unused file name")
 }
 
+/// Where Extract Texture first saves a model's texture: `name_texture.ext` beside the model.
+fn extracted_path(model: &Path, image: &EmbeddedImage) -> PathBuf {
+    model.with_file_name(format!(
+        "{}_texture.{}",
+        model.file_stem().unwrap_or_default().to_string_lossy(),
+        image.extension
+    ))
+}
+
+/// A model that carries its own texture opens wearing it: the image an earlier Extract Texture saved beside it,
+/// with whatever was painted on it since, or else the texture inside the file, extracted now. Without this the
+/// model wears whichever unrelated document happens to be active.
+fn wear_own_texture(state: &mut AppState) {
+    let (Some(image), Some(path)) = (state.model.embedded.clone(), state.model.path.clone()) else { return };
+    let saved = extracted_path(&path, &image);
+    if saved.is_file() {
+        if let Some(doc) = crate::files::open_path(state, &saved) {
+            state.model.texture = Some(doc);
+            state.model.embedded = None;
+        }
+    } else {
+        extract_texture(state);
+    }
+}
+
 /// Saves the texture stored inside the model as an image beside it, and opens that to paint on.
 fn extract_texture(state: &mut AppState) {
     let (Some(image), Some(path)) = (state.model.embedded.clone(), state.model.path.clone()) else { return };
     // An earlier extraction that is still untouched is opened again, not copied.
-    let first = path.with_file_name(format!(
-        "{}_texture.{}",
-        path.file_stem().unwrap_or_default().to_string_lossy(),
-        image.extension
-    ));
+    let first = extracted_path(&path, &image);
     let already = std::fs::read(&first).is_ok_and(|bytes| bytes == image.bytes);
     let file =
         if already { first } else { free_base(&path, "texture", &[image.extension]).with_extension(image.extension) };
@@ -487,6 +529,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     finish_rearrange(ui, state);
     if let Some(path) = state.model.finish_loading(ui.ctx()) {
         state.settings.push_recent(path);
+        wear_own_texture(state);
     }
     if state.model.unsaved && ui.memory(|m| m.focused().is_none()) {
         state.model.save_sections();
@@ -642,45 +685,54 @@ fn parts_row(ui: &mut Ui, state: &mut AppState) {
         }
     }
     let mut changed = false;
-    // Two slots to a row, each its name and its choice; parts in no slot are checkboxes below.
-    egui::Grid::new("model_parts").num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
-        for (n, slot) in slots.iter().enumerate() {
-            let members: Vec<usize> = (0..parts.len()).filter(|&i| parts[i].slot.as_deref() == Some(*slot)).collect();
-            let current = members.iter().copied().find(|&i| model.shown[i]);
-            // A part named "Slot: name" reads as "name" under its slot.
-            let label =
-                |i: usize| parts[i].name.strip_prefix(&format!("{slot}: ")).unwrap_or(&parts[i].name).to_string();
-            let text = current.map_or_else(|| "None".to_string(), label);
-            let mut choice = current;
-            ui.label(*slot);
-            egui::ComboBox::from_id_salt(("model_slot", *slot)).selected_text(text).show_ui(ui, |ui| {
-                for &i in &members {
-                    ui.selectable_value(&mut choice, Some(i), label(i))
-                        .on_hover_text(format!("{} triangles", parts[i].triangles.len()));
+    // Collapsible, so the view gets the room back once the parts are chosen.
+    egui::CollapsingHeader::new("Parts").id_salt("model_parts_header").default_open(true).show(ui, |ui| {
+        // A slot a row: its name, then its choice, cut to the panel's width so a docked panel never grows past its edge.
+        let combo_width = (ui.available_width() - 110.0).max(80.0);
+        egui::Grid::new("model_parts").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            for slot in &slots {
+                let members: Vec<usize> =
+                    (0..parts.len()).filter(|&i| parts[i].slot.as_deref() == Some(*slot)).collect();
+                let current = members.iter().copied().find(|&i| model.shown[i]);
+                // A part named "Slot: name" reads as "name" under its slot.
+                let label =
+                    |i: usize| parts[i].name.strip_prefix(&format!("{slot}: ")).unwrap_or(&parts[i].name).to_string();
+                let text = current.map_or_else(|| "None".to_string(), label);
+                let mut choice = current;
+                ui.label(*slot);
+                egui::ComboBox::from_id_salt(("model_slot", *slot))
+                    .selected_text(text)
+                    .width(combo_width)
+                    .truncate()
+                    .show_ui(ui, |ui| {
+                        for &i in &members {
+                            ui.selectable_value(&mut choice, Some(i), label(i))
+                                .on_hover_text(format!("{} triangles", parts[i].triangles.len()));
+                        }
+                        ui.selectable_value(&mut choice, None, "None");
+                    });
+                if choice != current {
+                    for &i in &members {
+                        model.shown[i] = Some(i) == choice;
+                    }
+                    changed = true;
                 }
-                ui.selectable_value(&mut choice, None, "None");
-            });
-            if choice != current {
-                for &i in &members {
-                    model.shown[i] = Some(i) == choice;
-                }
-                changed = true;
-            }
-            if n % 2 == 1 {
                 ui.end_row();
             }
+        });
+        let loose: Vec<usize> = (0..parts.len()).filter(|&i| parts[i].slot.is_none()).collect();
+        if !loose.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                for i in loose {
+                    changed |= ui.checkbox(&mut model.shown[i], &parts[i].name).changed();
+                }
+            });
         }
     });
-    let loose: Vec<usize> = (0..parts.len()).filter(|&i| parts[i].slot.is_none()).collect();
-    if !loose.is_empty() {
-        ui.horizontal_wrapped(|ui| {
-            for i in loose {
-                changed |= ui.checkbox(&mut model.shown[i], &parts[i].name).changed();
-            }
-        });
-    }
     if changed {
         model.update_hidden();
+        // Kept in the sidecar, so the model reopens as it was left.
+        (model.edited, model.unsaved) = (true, true);
     }
 }
 
@@ -716,13 +768,29 @@ fn section_row(ui: &mut Ui, state: &mut AppState) {
     let model = &mut state.model;
     // A model with many sections scrolls its list, so the view below keeps its room.
     let mut change = None;
+    // A section whose triangles are all in hidden parts is neither on the model nor on the canvas, so it is not listed.
+    let on_show: Option<Vec<bool>> = model.hidden.as_ref().map(|hidden| {
+        let mut any = vec![false; sections.list.len()];
+        for (&s, _) in sections.of_triangle.iter().zip(hidden.iter()).filter(|(_, h)| !**h) {
+            if let Some(a) = any.get_mut(s as usize) {
+                *a = true;
+            }
+        }
+        any
+    });
     egui::ScrollArea::vertical().id_salt("model_sections").max_height(SECTION_LIST_HEIGHT).show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
+            // A long name is cut at the panel's edge rather than widening the panel; the tooltip has it whole.
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
             for (i, section) in sections.list.iter().enumerate() {
+                if on_show.as_ref().is_some_and(|shown| !shown[i]) {
+                    continue;
+                }
                 let i = i as u32;
-                let button = ui
-                    .selectable_label(model.selected == Some(i), &section.name)
-                    .on_hover_text(format!("{} triangles. Right-click to rename or merge.", section.triangles));
+                let button = ui.selectable_label(model.selected == Some(i), &section.name).on_hover_text(format!(
+                    "{}\n{} triangles. Right-click to rename or merge.",
+                    section.name, section.triangles
+                ));
                 if button.clicked() {
                     model.selected = if model.selected == Some(i) { None } else { Some(i) };
                 }
@@ -850,7 +918,7 @@ fn toolbar(ui: &mut Ui, state: &mut AppState) {
     if state.model.mesh.is_none() {
         return;
     }
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label("Texture");
         let chosen = state.model.texture.filter(|id| state.doc(*id).is_some());
         let name =

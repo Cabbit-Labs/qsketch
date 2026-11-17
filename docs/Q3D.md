@@ -33,7 +33,8 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 
 ### 1. Model panel
 
-- Ways in: the **Model** panel (Window menu), `qsketch model.glb`, dropping a `.glb` on the window, or File > Open.
+- Ways in: the **Model** panel (Window menu), `qsketch model.glb`, dropping a `.glb` on the window, or File > Open. The
+  panel opens docked beside the canvas, so the paint and the model can be watched together.
 - The panel samples the GPU texture the canvas already keeps for each document, so strokes appear on the model as
   they are made, with no save. The document's canvas must be visible, since only visible documents upload tiles.
 - The 3D view renders off screen with its own depth buffer and MSAA, because egui's render pass has neither, and is
@@ -41,7 +42,9 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 - Controls: drag to orbit, scroll to zoom, middle or right-drag to slide the model, spin, texture document (the
   active one or a fixed one), and rotate 90 degrees, since generated models often come in with the wrong axis up.
 - **Extract Texture** saves the color texture stored inside the model (PNG, JPEG or WebP) as `name_texture` beside
-  it, never overwriting, and opens that as the texture document. The model file itself is not changed.
+  it, never overwriting, and opens that as the texture document. The model file itself is not changed. A model with a
+  texture of its own opens wearing it: `name_texture` if an earlier extraction left it (with any paint since), or the
+  texture extracted then.
 - An opened model joins File > Open Recent, and the empty Model panel offers to reopen the last one.
 - The texture is drawn as the file asks: point sampled when its sampler's filter is `NEAREST`, and with see-through texels
   left out when the material's `alphaMode` is `MASK`. First used for a PlayStation model (Mega Man of *Mega Man Legends*,
@@ -58,7 +61,9 @@ part is not drawn, cannot be clicked, and claims no texels, so a canvas pick or 
 starts with its parts as its sections rather than the sectioner's guess. **Dim Unused Texels** darkens the canvas wherever no
 shown part reads the texture, so it is plain which pixels painting would change on the model as shown, and which belong to a
 hidden variant or to nothing. First used for Mega Man of *Mega Man Legends* with his heads, shoes and weapon arms (19 parts in 5
-slots), exported by the decompilation's Control Lab. Not yet: the choices are not kept between sessions.
+slots), exported by the decompilation's Control Lab. Which parts are shown is kept in the sidecar (`shown`) and comes back
+with the model. The parts list folds away under its header, the section list leaves out sections whose triangles are all
+hidden, and a model opens framed on the parts shown rather than on every variant.
 
 ### 2. Sections
 

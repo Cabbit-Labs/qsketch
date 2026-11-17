@@ -14,6 +14,16 @@ All notable changes to qSketch are documented in this file.
   automatic sectioner, so Select on Canvas limits painting to a named part.
 - Dim Unused Texels darkens the texture wherever no shown part reads it, so
   you can see which pixels painting would change on the model as it is shown.
+- Which parts are shown is kept beside the model and comes back when it is
+  opened again. The parts list folds away under its own header, the section
+  list leaves out hidden parts, and a model opens framed on the parts shown.
+- A model that carries its own texture opens wearing it: the image an
+  earlier Extract Texture saved beside it, with your paint, or the texture
+  inside the file, extracted then. It used to wear whatever document
+  happened to be active.
+- The Model panel opens docked beside the canvas instead of floating over it,
+  so the paint and the model can be watched together. Long part and section
+  names are cut at the panel's edge instead of widening it past its border.
 
 - Model panel: a model whose glTF asks for crisp texels (its texture sampler's
   `NEAREST` filter) is drawn without smoothing, and one whose material uses

@@ -419,6 +419,21 @@ impl Workspace {
                 return;
             }
         }
+        // The Model panel sits beside the canvas: its point is seeing paint land on the model while painting, which a
+        // floating window over the canvas hides.
+        if kind == PanelKind::Model {
+            let anchor = self
+                .dock
+                .iter_all_tabs()
+                .find(|(_, t)| matches!(t, PanelKind::Document(_)))
+                .or_else(|| self.dock.iter_all_tabs().find(|(_, t)| **t == PanelKind::Home))
+                .map(|(p, _)| NodePath { surface: p.surface, node: p.node });
+            if let Some(np) = anchor {
+                let [_, right] = self.dock[np.surface].split_right(np.node, 0.5, vec![kind]);
+                self.dock.set_focused_node_and_surface(NodePath { surface: np.surface, node: right });
+                return;
+            }
+        }
         // The Timeline and Rig panels run under the canvas, Aseprite style.
         if kind == PanelKind::Timeline || kind == PanelKind::Rig {
             let anchor = self
