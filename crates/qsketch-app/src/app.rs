@@ -125,6 +125,13 @@ impl QSketchApp {
             .and_then(Workspace::from_json)
             .unwrap_or_else(|| Workspace::new(state.settings.ui.layout_preset));
         let cloak = crate::startup_cloak::StartupCloak::install(cc, state.settings.window_maximized);
+        // Full screen comes back after the window is placed at its windowed
+        // geometry, so it covers that window's monitor; `enforce_fullscreen`
+        // then insists as for F11.
+        if state.settings.window_fullscreen {
+            state.fullscreen = true;
+            cc.egui_ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        }
         crate::win_pointer::install(cc);
         let wintab = if state.settings.tablet.use_wintab { crate::wintab::WinTab::new(cc) } else { None };
         let tablet = if wintab.is_none() && state.settings.tablet.use_octotablet {
@@ -314,6 +321,8 @@ impl QSketchApp {
         });
         // Only our own flag: the viewport's `fullscreen` reads true for a
         // plainly windowed window on some platforms (see ToggleFullscreen).
+        // The windowed geometry stays what it was, for leaving full screen.
+        self.state.settings.window_fullscreen = self.state.fullscreen;
         if self.state.fullscreen {
             return;
         }

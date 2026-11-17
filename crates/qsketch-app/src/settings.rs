@@ -1254,6 +1254,9 @@ pub struct Settings {
     /// its final size and place without a visible resize.
     pub window_rect: Option<[f32; 4]>,
     pub window_maximized: bool,
+    /// Full screen (F11) when the app last closed; reopened that way, over
+    /// the monitor `window_rect` is on.
+    pub window_fullscreen: bool,
     /// Bumped when a default changes in a way that has to reach settings files
     /// written by an older version (see `migrate`). 0 = before any migration.
     pub schema: u32,

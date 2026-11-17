@@ -42,6 +42,10 @@ All notable changes to qSketch are documented in this file.
   gray. Console and pixel-art models, such as a PlayStation character exported
   with its texture pages, now look on the model as they do on the canvas.
 
+- A window left full screen (F11) opens full screen again, on the same
+  monitor. Only a maximized window used to be remembered, so full screen came
+  back as the last windowed size.
+
 ## 0.72.2 — 2026-11-16
 
 - Model panel: right-click a section to rename it or merge it into another.
