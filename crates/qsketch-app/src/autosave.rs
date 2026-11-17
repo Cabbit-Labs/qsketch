@@ -266,6 +266,11 @@ impl Autosave {
             let verify_disk =
                 for_exit && !modified && e.doc.path.as_deref().is_some_and(|p| io::is_native(p) || !p.exists());
             if !modified && !verify_disk {
+                // Back at its saved state (an undo, say) since a snapshot was written, and the tick that would
+                // drop that snapshot has not come round yet: drop it now, or the next launch offers it.
+                if self.snapshotted.remove(&e.id).is_some() {
+                    remove(e.id);
+                }
                 continue;
             }
             let Some((qsk, json)) = paths_for(e.id) else { continue };

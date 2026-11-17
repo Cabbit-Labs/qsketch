@@ -4,6 +4,10 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Closing a picture that had been changed and then undone back to its saved
+  state no longer leaves a recovery snapshot behind. The next launch used to
+  offer it under "Recover Unsaved Work" although nothing was lost.
+
 - Selection tools: with a selection already there, `Ctrl+Shift` intersects
   and `Ctrl+Alt` subtracts, beside `Shift+Alt` and `Alt`. `Shift` still adds.
 - The rectangle and ellipse marquees keep to a square or circle only while
