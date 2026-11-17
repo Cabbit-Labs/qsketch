@@ -3,7 +3,7 @@
 use qsketch_core::mask::SelectionOp;
 use qsketch_core::{Mask, Pt, Rgba8};
 
-use super::{apply_selection, op_from_mods, rect_from_drag, CanvasEvent, ToolKind, ToolSession};
+use super::{apply_selection, marquee_square, op_from_mods, rect_from_drag, CanvasEvent, ToolKind, ToolSession};
 use crate::state::{AppState, DocId};
 use crate::ui::toasts::Level;
 
@@ -36,8 +36,7 @@ pub fn handle_marquee(state: &mut AppState, doc_id: DocId, tool: ToolKind, ev: C
             let has_sel = entry.doc.state().selection.is_some();
             let op =
                 if has_sel { op_from_mods(state.tool_opts.selection_op, mods) } else { state.tool_opts.selection_op };
-            // Shift constrains to a square unless it means "add to selection".
-            let square = mods.shift && (!has_sel || mods.alt);
+            let square = marquee_square(mods, has_sel);
             let r = rect_from_drag(start, cur, square);
             // A click (no drag) deselects, like Photoshop. Measured on screen,
             // so a tablet's jitter or a zoomed-out view can't turn it into a

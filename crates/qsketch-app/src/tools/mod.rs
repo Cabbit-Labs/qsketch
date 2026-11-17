@@ -785,10 +785,9 @@ pub fn draw_overlay(state: &AppState, doc_id: DocId, painter: &egui::Painter) {
     if state.session_doc == Some(doc_id) {
         match &state.session {
             Some(ToolSession::DragRect { start, cur, mods }) => {
-                // Same square rule as the release (Shift constrains unless it
-                // means "add to selection"), so the preview is what you get.
+                // Same square rule as the release (`marquee_square`), so the preview is what you get.
                 let has_sel = entry.doc.state().selection.is_some();
-                let square = mods.shift && (!has_sel || mods.alt);
+                let square = marquee_square(*mods, has_sel);
                 let r = rect_from_drag(*start, *cur, square);
                 if state.effective_tool() == ToolKind::EllipseSelect {
                     // The ellipse the marquee will actually select, pixel
@@ -1084,6 +1083,14 @@ impl ToolOptions {
 
 /// How a new selection combines with the one there, from the modifiers: Shift adds; Alt or Ctrl+Alt
 /// subtracts; Shift+Alt or Ctrl+Shift intersects. Ctrl alone is the quick move, so it keeps `base`.
+/// Whether a marquee drag is held to a square (or a circle): Shift alone, with no selection there. With a
+/// selection Shift means "add", and Shift with Ctrl or Alt picks how the new selection combines, so neither
+/// squares the shape.
+pub fn marquee_square(mods: Modifiers, has_sel: bool) -> bool {
+    let ctrl = mods.command || mods.ctrl || mods.mac_cmd;
+    mods.shift && !ctrl && !mods.alt && !has_sel
+}
+
 pub fn op_from_mods(base: SelectionOp, mods: Modifiers) -> SelectionOp {
     let ctrl = mods.command || mods.ctrl || mods.mac_cmd;
     match (ctrl, mods.shift, mods.alt) {
@@ -1123,5 +1130,17 @@ mod tests {
         assert_eq!(op(M::COMMAND | M::ALT), SelectionOp::Subtract);
         // Ctrl alone is the quick move: the tool's own mode stands
         assert_eq!(op(M::COMMAND), SelectionOp::Replace);
+    }
+
+    #[test]
+    fn only_shift_alone_squares_a_marquee() {
+        use egui::Modifiers as M;
+        assert!(marquee_square(M::SHIFT, false));
+        assert!(!marquee_square(M::SHIFT, true), "Shift adds to a selection");
+        for with_other in [M::SHIFT | M::ALT, M::SHIFT | M::COMMAND, M::SHIFT | M::CTRL] {
+            assert!(!marquee_square(with_other, false));
+            assert!(!marquee_square(with_other, true));
+        }
+        assert!(!marquee_square(M::NONE, false));
     }
 }

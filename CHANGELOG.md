@@ -6,6 +6,9 @@ All notable changes to qSketch are documented in this file.
 
 - Selection tools: with a selection already there, `Ctrl+Shift` intersects
   and `Ctrl+Alt` subtracts, beside `Shift+Alt` and `Alt`. `Shift` still adds.
+- The rectangle and ellipse marquees keep to a square or circle only while
+  `Shift` is held alone with nothing selected. `Shift` with `Ctrl` or `Alt`
+  picks how the new selection combines and no longer squares it.
 
 - Model panel: a model made of named parts (glTF nodes) lists them. Parts
   that share a slot (`extras.slot`), such as a character's helmets or the

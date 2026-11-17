@@ -174,7 +174,9 @@ A selection carries eight handles. With the Move tool or any selection tool:
 `Shift` and `Alt` with a selection tool still add to and subtract from the
 selection, so they never grab the box. With a selection already there, `Shift`
 adds, `Alt` or `Ctrl+Alt` subtracts, and `Ctrl+Shift` or `Shift+Alt` keeps only
-where the old and new selections overlap (intersect). Pressing well clear of the box with a
+where the old and new selections overlap (intersect). The rectangle and ellipse
+marquees are held to a square or circle only by `Shift` alone with nothing
+selected; with `Ctrl` or `Alt` too, the shape follows the drag. Pressing well clear of the box with a
 selection tool applies it and starts a new selection there.
 
 ## View
