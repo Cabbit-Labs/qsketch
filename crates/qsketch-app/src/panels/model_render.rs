@@ -8,6 +8,7 @@ use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 use qsketch_3d::{Mat4, Mesh, Sections, Vertex};
 use wgpu::util::DeviceExt;
 
+use super::model::HIDDEN_SECTION;
 use crate::canvas::render::CanvasRenderer;
 use crate::state::DocId;
 
@@ -36,7 +37,8 @@ struct GpuMesh {
     vertices: wgpu::Buffer,
     vertex_count: u32,
     sections: Option<wgpu::Buffer>,
-    sections_generation: u64,
+    /// The sections' and the hidden parts' generations the section buffer was made from.
+    sections_generation: (u64, u64),
 }
 
 struct Targets {
@@ -252,19 +254,31 @@ impl ModelRenderer {
             vertices,
             vertex_count: expanded.len() as u32,
             sections: None,
-            sections_generation: u64::MAX,
+            sections_generation: (u64::MAX, u64::MAX),
         });
     }
 
-    fn ensure_sections(&mut self, device: &wgpu::Device, sections: Option<&Sections>, generation: u64) {
+    /// Uploads each vertex's section, or `HIDDEN_SECTION` for a triangle of a hidden part.
+    fn ensure_sections(
+        &mut self,
+        device: &wgpu::Device,
+        sections: Option<&Sections>,
+        hidden: Option<&[bool]>,
+        generation: (u64, u64),
+    ) {
         let Some(mesh) = &mut self.mesh else { return };
         if mesh.sections.is_some() && mesh.sections_generation == generation {
             return;
         }
-        let ids: Vec<u32> = match sections {
-            Some(s) => s.of_triangle.iter().flat_map(|&id| [id, id, id]).collect(),
-            None => vec![0; mesh.vertex_count as usize],
-        };
+        let triangles = mesh.vertex_count as usize / 3;
+        let ids: Vec<u32> = (0..triangles)
+            .map(|t| match (hidden.and_then(|h| h.get(t)), sections.and_then(|s| s.of_triangle.get(t))) {
+                (Some(true), _) => HIDDEN_SECTION,
+                (_, Some(&id)) => id,
+                _ => 0,
+            })
+            .flat_map(|id| [id, id, id])
+            .collect();
         mesh.sections = Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("qsketch model sections"),
             contents: bytemuck::cast_slice(&ids),
@@ -325,6 +339,9 @@ pub struct ModelCallback {
     pub nearest: bool,
     /// Leave out texels with less alpha than this.
     pub alpha_cutoff: Option<f32>,
+    /// The triangles of hidden parts, which are not drawn.
+    pub hidden: Option<Arc<Vec<bool>>>,
+    pub hidden_generation: u64,
 }
 
 impl CallbackTrait for ModelCallback {
@@ -339,7 +356,12 @@ impl CallbackTrait for ModelCallback {
         let doc = self.doc.and_then(|id| resources.get::<CanvasRenderer>()?.doc_texture(id));
         let Some(r) = resources.get_mut::<ModelRenderer>() else { return Vec::new() };
         r.ensure_mesh(device, &self.mesh, self.generation);
-        r.ensure_sections(device, self.sections.as_deref(), self.sections_generation);
+        r.ensure_sections(
+            device,
+            self.sections.as_deref(),
+            self.hidden.as_deref().map(Vec::as_slice),
+            (self.sections_generation, self.hidden_generation),
+        );
         r.ensure_targets(device, self.size);
 
         let uv_scale = match &doc {

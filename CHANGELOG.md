@@ -4,6 +4,17 @@ All notable changes to qSketch are documented in this file.
 
 ## Unreleased
 
+- Model panel: a model made of named parts (glTF nodes) lists them. Parts
+  that share a slot (`extras.slot`), such as a character's helmets or the
+  weapons on one arm, get one choice per slot, so you see one at a time;
+  other parts get a checkbox. Parts the file marks hidden
+  (`KHR_node_visibility`) start hidden. A hidden part is not drawn, cannot be
+  clicked, and claims no texels on the canvas.
+- Such a model starts with its parts as its sections, instead of the
+  automatic sectioner, so Select on Canvas limits painting to a named part.
+- Dim Unused Texels darkens the texture wherever no shown part reads it, so
+  you can see which pixels painting would change on the model as it is shown.
+
 - Model panel: a model whose glTF asks for crisp texels (its texture sampler's
   `NEAREST` filter) is drawn without smoothing, and one whose material uses
   `alphaMode: MASK` leaves out its see-through texels instead of showing them

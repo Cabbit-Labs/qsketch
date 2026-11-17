@@ -57,7 +57,8 @@ pub fn up_in_mesh(turns: u8) -> [f32; 3] {
 }
 
 /// The nearest triangle under a point in normalized device coordinates, for clicking on a model.
-pub fn pick_triangle(mesh: &crate::mesh::Mesh, matrix: &Mat4, ndc: [f32; 2]) -> Option<usize> {
+/// Triangles flagged in `hidden` are not drawn, so they are passed through.
+pub fn pick_triangle(mesh: &crate::mesh::Mesh, matrix: &Mat4, ndc: [f32; 2], hidden: Option<&[bool]>) -> Option<usize> {
     let project = |p: [f32; 3]| {
         let at = |r: usize| matrix[r] * p[0] + matrix[4 + r] * p[1] + matrix[8 + r] * p[2] + matrix[12 + r];
         let w = at(3);
@@ -66,6 +67,9 @@ pub fn pick_triangle(mesh: &crate::mesh::Mesh, matrix: &Mat4, ndc: [f32; 2]) -> 
     let projected: Vec<Option<[f32; 3]>> = mesh.vertices.iter().map(|v| project(v.position)).collect();
     let mut best: Option<(usize, f32)> = None;
     for (t, tri) in mesh.indices.chunks_exact(3).enumerate() {
+        if hidden.is_some_and(|h| h.get(t).copied().unwrap_or(false)) {
+            continue;
+        }
         let (Some(a), Some(b), Some(c)) =
             (projected[tri[0] as usize], projected[tri[1] as usize], projected[tri[2] as usize])
         else {
@@ -210,8 +214,13 @@ mod tests {
             mesh.indices.extend([base, base + 1, base + 2]);
         }
         let vp = Orbit { yaw: 0.0, pitch: 0.0, ..Orbit::default() }.view_proj(1.0);
-        assert_eq!(pick_triangle(&mesh, &vp, [0.0, 0.0]), Some(1), "the camera is on the +Z side");
-        assert_eq!(pick_triangle(&mesh, &vp, [0.95, 0.95]), None);
+        assert_eq!(pick_triangle(&mesh, &vp, [0.0, 0.0], None), Some(1), "the camera is on the +Z side");
+        assert_eq!(pick_triangle(&mesh, &vp, [0.95, 0.95], None), None);
+        assert_eq!(
+            pick_triangle(&mesh, &vp, [0.0, 0.0], Some(&[false, true])),
+            Some(0),
+            "a hidden triangle lets the click through"
+        );
     }
 
     #[test]

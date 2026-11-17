@@ -689,6 +689,11 @@ pub fn section_map(mesh: &Mesh, sections: &Sections, width: u32, height: u32) ->
     let (w, h) = (width as usize, height as usize);
     let mut owner = vec![NO_SECTION; w * h];
     for (t, tri) in mesh.indices.chunks_exact(3).enumerate() {
+        // A triangle in no section (one the panel hides) claims no pixels.
+        let section = sections.of_triangle[t];
+        if section == NO_SECTION {
+            continue;
+        }
         let p = [0, 1, 2].map(|k| {
             let uv = mesh.vertices[tri[k] as usize].uv;
             [f64::from(uv[0]) * f64::from(width), f64::from(uv[1]) * f64::from(height)]
@@ -709,7 +714,7 @@ pub fn section_map(mesh: &Mesh, sections: &Sections, width: u32, height: u32) ->
                     ((b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0])) / double_area
                 };
                 if edge(p[0], p[1]) >= 0.0 && edge(p[1], p[2]) >= 0.0 && edge(p[2], p[0]) >= 0.0 {
-                    owner[y * w + x] = sections.of_triangle[t];
+                    owner[y * w + x] = section;
                 }
             }
         }
@@ -786,7 +791,7 @@ pub fn rearrange(mesh: &Mesh, sections: &Sections, source: &Texture, size: u32) 
     let places = pack_rows(&sizes, scale, pad).unwrap_or_else(|| vec![[pad, pad]; sizes.len()]);
 
     // New vertices, one per chart vertex, and triangles back in their original order.
-    let mut out = Mesh { vertices: Vec::new(), indices: vec![0; mesh.indices.len()] };
+    let mut out = Mesh { vertices: Vec::new(), indices: vec![0; mesh.indices.len()], parts: Vec::new() };
     let mut flipped = 0usize;
     let mut stretches = Vec::with_capacity(mesh.triangle_count());
     for (place, &c) in places.iter().zip(&order) {
@@ -996,6 +1001,7 @@ mod tests {
                 v(1.0, 0.75, 0.75),
             ],
             indices: vec![0, 1, 2, 0, 2, 3, 1, 4, 5, 1, 5, 2],
+            parts: Vec::new(),
         };
         let list = vec![Section { name: "L".into(), triangles: 2 }, Section { name: "R".into(), triangles: 2 }];
         (mesh, Sections { of_triangle: vec![0, 0, 1, 1], list })

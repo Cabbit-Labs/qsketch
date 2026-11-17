@@ -47,6 +47,31 @@ pub struct Sections {
 }
 
 impl Sections {
+    /// One section per named part of the model, in the file's order, for models whose author already
+    /// split them into meaningful pieces (a character's head, arms and their variants). Triangles in
+    /// no part make one more section. `None` for a model without parts.
+    pub fn from_parts(mesh: &Mesh) -> Option<Self> {
+        if mesh.parts.is_empty() {
+            return None;
+        }
+        let rest = mesh.parts.len() as u32;
+        let mut of_triangle = vec![rest; mesh.triangle_count()];
+        let mut list: Vec<Section> = Vec::new();
+        for (i, part) in mesh.parts.iter().enumerate() {
+            for t in part.triangles.clone() {
+                if let Some(s) = of_triangle.get_mut(t as usize) {
+                    *s = i as u32;
+                }
+            }
+            list.push(Section { name: part.name.clone(), triangles: part.triangles.len() as u32 });
+        }
+        let others = of_triangle.iter().filter(|&&s| s == rest).count() as u32;
+        if others > 0 {
+            list.push(Section { name: "Other".into(), triangles: others });
+        }
+        Some(Sections { of_triangle, list })
+    }
+
     /// Renames a section. An empty name is ignored.
     pub fn rename(&mut self, index: u32, name: &str) {
         let name = name.trim();

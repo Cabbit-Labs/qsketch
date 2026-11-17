@@ -23,9 +23,10 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 | # | Step | Status |
 |---|------|--------|
 | 1 | Model panel: open a GLB, orbit it, wear a document as a live texture | Done |
+| 1b | Parts and variants: show and hide named parts, one per slot | Done |
 | 2 | Sections: find them, list, pick on the model or the canvas, highlight in both views, rename and merge | Done; splitting a section by hand is not built |
 | 2b | Rearrange Texture: one continuous island per section, with the paint baked across | Done; a few pieces still fold |
-| 3 | Overlays: island outlines, tints, labels, mapped pixels only | Planned |
+| 3 | Overlays: island outlines, tints, labels, mapped pixels only | Mapped pixels done (Dim Unused Texels); the rest planned |
 | 4 | Paint limits: paint only inside a section, through the selection system | Done: Select on Canvas |
 | 5 | Paint directly on the 3D model | Later |
 | 6 | Simplifier: reduce a heavy mesh and bake its texture across | Later |
@@ -47,6 +48,17 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
   exported from the user's disc by the decompilation's Control Lab), whose 4-bit texture pages blur under smoothing.
 - Not yet: only GLB with an embedded buffer loads. Draco and
   meshopt compressed models are refused with a message saying so.
+
+### 1b. Parts and variants
+
+A model whose file names its pieces (one glTF node each) lists them above the sections. Parts that share a slot (the node's
+`extras.slot`) replace one another, as a game character's helmets or the weapons on one arm do: each slot is one choice, so
+one is shown at a time. Other parts are checkboxes. A node with `KHR_node_visibility` `visible: false` starts hidden. A hidden
+part is not drawn, cannot be clicked, and claims no texels, so a canvas pick or highlight finds what is shown. Such a model
+starts with its parts as its sections rather than the sectioner's guess. **Dim Unused Texels** darkens the canvas wherever no
+shown part reads the texture, so it is plain which pixels painting would change on the model as shown, and which belong to a
+hidden variant or to nothing. First used for Mega Man of *Mega Man Legends* with his heads, shoes and weapon arms (19 parts in 5
+slots), exported by the decompilation's Control Lab. Not yet: the choices are not kept between sessions.
 
 ### 2. Sections
 

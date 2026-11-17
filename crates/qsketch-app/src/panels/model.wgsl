@@ -28,10 +28,16 @@ fn palette(id: u32) -> vec3<f32> {
     return vec3<f32>(0.5) + vec3<f32>(0.5) * cos(6.28318 * (vec3<f32>(hue) + vec3<f32>(0.0, 0.33, 0.67)));
 }
 
+// A triangle of a part the panel hides (`HIDDEN_SECTION` in model.rs) is moved out of view.
+const HIDDEN: u32 = 0xFFFFFFFEu;
+
 @vertex
 fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) section: u32) -> VsOut {
     var out: VsOut;
     out.clip = u.view_proj * u.model * vec4<f32>(position, 1.0);
+    if section == HIDDEN {
+        out.clip = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+    }
     out.normal = (u.model * vec4<f32>(normal, 0.0)).xyz;
     out.uv = uv * u.uv_scale;
     out.section = section;

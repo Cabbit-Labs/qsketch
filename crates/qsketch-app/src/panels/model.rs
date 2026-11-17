@@ -12,6 +12,9 @@ use qsketch_3d::hidden::{find_hidden, without_triangles};
 use qsketch_3d::mesh::{embedded_texture, texture_look, EmbeddedImage, TextureLook};
 use qsketch_3d::unwrap::{rearrange, section_coverage, section_map, Report, Texture, NO_SECTION};
 use qsketch_3d::{find_sections, Mesh, Orbit, Sections};
+
+/// The section id a hidden triangle carries to the GPU, which then leaves it out (`model.wgsl`).
+pub const HIDDEN_SECTION: u32 = u32::MAX - 1;
 use qsketch_core::{Mask, Pt};
 
 use super::model_render::ModelCallback;
@@ -28,6 +31,8 @@ const SECTION_LIST_HEIGHT: f32 = 66.0;
 /// The section map is made no larger than this on its longer side.
 const MAX_MAP_SIDE: u32 = 2048;
 const CANVAS_HIGHLIGHT: Color32 = Color32::from_rgba_premultiplied(0, 90, 115, 120);
+/// Laid over texels that no shown part of the model uses, with Dim Unused Texels.
+const CANVAS_UNUSED: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 175);
 
 #[derive(Default)]
 pub struct Model {
@@ -67,6 +72,14 @@ pub struct Model {
     embedded: Option<EmbeddedImage>,
     /// How the model's material asks for its texture to be drawn (crisp texels, see-through cut out).
     look: TextureLook,
+    /// Which of the model's named parts are shown, one entry per part.
+    shown: Vec<bool>,
+    /// The triangles of hidden parts, or `None` when every part is shown.
+    hidden: Option<Arc<Vec<bool>>>,
+    /// Bumped whenever `hidden` changes, so the GPU copy and the section map follow.
+    hidden_generation: u64,
+    /// Darken the texels on the canvas that no shown part uses.
+    dim_unused: bool,
 }
 
 /// A finished Rearrange Texture run, whose files are on disk.
@@ -99,7 +112,7 @@ fn load(path: &Path, find: bool) -> anyhow::Result<Loaded> {
     let (edited, turns) = (saved.is_some(), saved.as_ref().map_or(0, |(_, turns)| *turns));
     let sections = match saved {
         Some((sections, _)) => Some(sections),
-        None if find => Some(find_sections(&mesh, up_in_mesh(0), None)),
+        None if find => Some(initial_sections(&mesh, 0)),
         None => None,
     };
     let (embedded, look) = (embedded_texture(&bytes), texture_look(&bytes));
@@ -127,11 +140,12 @@ impl CanvasOverlay {
 /// Which section owns each pixel of the texture, kept until the model, its sections or the size change.
 struct SectionMap {
     /// Model generation, sections generation, and the document's size.
-    key: (u64, u64, u32, u32),
+    /// Model, sections and hidden-part generations, and the document's size.
+    key: (u64, u64, u64, u32, u32),
     size: (u32, u32),
     owner: Vec<u32>,
-    /// The highlight image, and the section it was made for.
-    image: Option<(u32, egui::TextureHandle)>,
+    /// The overlay image, and the highlighted section and dimming it was made for.
+    image: Option<((Option<u32>, bool), egui::TextureHandle)>,
 }
 
 impl Model {
@@ -188,11 +202,29 @@ impl Model {
         self.selected = None;
         self.show_on_canvas = true;
         (self.edited, self.unsaved, self.renaming) = (loaded.edited, false, None);
+        self.shown = self.mesh.as_ref().map_or_else(Vec::new, |m| m.parts.iter().map(|p| p.visible).collect());
+        self.update_hidden();
+    }
+
+    /// Works out which triangles the hidden parts leave out, after `shown` changed.
+    fn update_hidden(&mut self) {
+        self.hidden = self.mesh.as_ref().and_then(|mesh| {
+            let mut hidden = vec![false; mesh.triangle_count()];
+            for (part, _) in mesh.parts.iter().zip(&self.shown).filter(|(_, shown)| !**shown) {
+                for t in part.triangles.clone() {
+                    if let Some(h) = hidden.get_mut(t as usize) {
+                        *h = true;
+                    }
+                }
+            }
+            hidden.contains(&true).then(|| Arc::new(hidden))
+        });
+        self.hidden_generation += 1;
     }
 
     fn find_sections(&mut self) {
         let Some(mesh) = &self.mesh else { return };
-        self.sections = Some(Arc::new(find_sections(mesh, up_in_mesh(self.turns), None)));
+        self.sections = Some(Arc::new(initial_sections(mesh, self.turns)));
         self.sections_generation += 1;
         self.selected = None;
         self.edited = false;
@@ -233,12 +265,22 @@ impl Model {
     /// The map of sections over a `width` by `height` document, made on first use.
     fn section_map(&mut self, width: u32, height: u32) -> Option<&mut SectionMap> {
         let (mesh, sections) = (self.mesh.as_ref()?, self.sections.as_ref()?);
-        let key = (self.generation, self.sections_generation, width, height);
+        let key = (self.generation, self.sections_generation, self.hidden_generation, width, height);
         if self.map.as_ref().is_none_or(|m| m.key != key) {
             // A huge texture is mapped at reduced size: the highlight does not need every pixel.
             let scale = (MAX_MAP_SIDE as f32 / width.max(height).max(1) as f32).min(1.0);
             let size = (((width as f32 * scale) as u32).max(1), ((height as f32 * scale) as u32).max(1));
-            let owner = section_map(mesh, sections, size.0, size.1);
+            // Hidden parts claim no texels, so the canvas shows and picks only what is on the model.
+            let owner = match &self.hidden {
+                Some(hidden) => {
+                    let mut shown = (**sections).clone();
+                    for (s, _) in shown.of_triangle.iter_mut().zip(hidden.iter()).filter(|(_, h)| **h) {
+                        *s = NO_SECTION;
+                    }
+                    section_map(mesh, &shown, size.0, size.1)
+                }
+                None => section_map(mesh, sections, size.0, size.1),
+            };
             self.map = Some(SectionMap { key, size, owner, image: None });
         }
         self.map.as_mut()
@@ -252,19 +294,28 @@ impl Model {
         active: Option<DocId>,
         size: (u32, u32),
     ) -> Option<CanvasOverlay> {
-        if !self.show_on_canvas || !self.wears(doc, active) {
+        if !self.wears(doc, active) {
             return None;
         }
-        let selected = self.selected?;
+        let highlight = self.selected.filter(|_| self.show_on_canvas);
+        let dim = self.dim_unused;
+        if highlight.is_none() && !dim {
+            return None;
+        }
         let map = self.section_map(size.0, size.1)?;
-        if map.image.as_ref().is_none_or(|(section, _)| *section != selected) {
+        let made_for = (highlight, dim);
+        if map.image.as_ref().is_none_or(|(made, _)| *made != made_for) {
             let pixels = map
                 .owner
                 .iter()
-                .map(|&o| if o == selected { CANVAS_HIGHLIGHT } else { Color32::TRANSPARENT })
+                .map(|&o| match o {
+                    _ if Some(o) == highlight => CANVAS_HIGHLIGHT,
+                    NO_SECTION if dim => CANVAS_UNUSED,
+                    _ => Color32::TRANSPARENT,
+                })
                 .collect();
             let image = egui::ColorImage::new([map.size.0 as usize, map.size.1 as usize], pixels);
-            map.image = Some((selected, ctx.load_texture("model_section", image, egui::TextureOptions::NEAREST)));
+            map.image = Some((made_for, ctx.load_texture("model_section", image, egui::TextureOptions::NEAREST)));
         }
         map.image.as_ref().map(|(_, image)| CanvasOverlay { image: image.clone() })
     }
@@ -290,6 +341,11 @@ impl Model {
     pub fn picks_on_canvas(&self, doc: DocId, active: Option<DocId>) -> bool {
         self.sections.is_some() && self.wears(doc, active)
     }
+}
+
+/// A model's first sections: its named parts when the file has them, else what the sectioner finds.
+fn initial_sections(mesh: &Mesh, turns: u8) -> Sections {
+    Sections::from_parts(mesh).unwrap_or_else(|| find_sections(mesh, up_in_mesh(turns), None))
 }
 
 pub fn is_model(path: &Path) -> bool {
@@ -463,6 +519,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         return;
     };
 
+    parts_row(ui, state);
     section_row(ui, state);
     let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
     if rect.width() < 2.0 || rect.height() < 2.0 {
@@ -492,7 +549,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     if response.clicked() {
         if let (Some(p), Some(sections)) = (response.interact_pointer_pos(), &model.sections) {
             let ndc = [(p.x - rect.left()) / rect.width() * 2.0 - 1.0, 1.0 - (p.y - rect.top()) / rect.height() * 2.0];
-            let hit = pick_triangle(&mesh, &mul(&model.orbit.view_proj(aspect), &matrix), ndc);
+            let hidden = model.hidden.as_deref().map(Vec::as_slice);
+            let hit = pick_triangle(&mesh, &mul(&model.orbit.view_proj(aspect), &matrix), ndc, hidden);
             let picked = hit.map(|t| sections.of_triangle[t]);
             model.selected = if picked == model.selected { None } else { picked };
         }
@@ -517,6 +575,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         doc_size,
         nearest: model.look.nearest,
         alpha_cutoff: model.look.alpha_cutoff,
+        hidden: model.hidden.clone(),
+        hidden_generation: model.hidden_generation,
     };
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
 
@@ -566,6 +626,64 @@ fn select_section_on_canvas(state: &mut AppState) {
     state.model.selected = None;
 }
 
+/// The model's named parts: a choice for each slot (variants that replace one another, at most one shown)
+/// and a checkbox for each part in no slot.
+fn parts_row(ui: &mut Ui, state: &mut AppState) {
+    let model = &mut state.model;
+    let Some(mesh) = model.mesh.clone() else { return };
+    let parts = &mesh.parts;
+    if parts.is_empty() || model.shown.len() != parts.len() {
+        return;
+    }
+    let mut slots: Vec<&str> = Vec::new();
+    for slot in parts.iter().filter_map(|p| p.slot.as_deref()) {
+        if !slots.contains(&slot) {
+            slots.push(slot);
+        }
+    }
+    let mut changed = false;
+    // Two slots to a row, each its name and its choice; parts in no slot are checkboxes below.
+    egui::Grid::new("model_parts").num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
+        for (n, slot) in slots.iter().enumerate() {
+            let members: Vec<usize> = (0..parts.len()).filter(|&i| parts[i].slot.as_deref() == Some(*slot)).collect();
+            let current = members.iter().copied().find(|&i| model.shown[i]);
+            // A part named "Slot: name" reads as "name" under its slot.
+            let label =
+                |i: usize| parts[i].name.strip_prefix(&format!("{slot}: ")).unwrap_or(&parts[i].name).to_string();
+            let text = current.map_or_else(|| "None".to_string(), label);
+            let mut choice = current;
+            ui.label(*slot);
+            egui::ComboBox::from_id_salt(("model_slot", *slot)).selected_text(text).show_ui(ui, |ui| {
+                for &i in &members {
+                    ui.selectable_value(&mut choice, Some(i), label(i))
+                        .on_hover_text(format!("{} triangles", parts[i].triangles.len()));
+                }
+                ui.selectable_value(&mut choice, None, "None");
+            });
+            if choice != current {
+                for &i in &members {
+                    model.shown[i] = Some(i) == choice;
+                }
+                changed = true;
+            }
+            if n % 2 == 1 {
+                ui.end_row();
+            }
+        }
+    });
+    let loose: Vec<usize> = (0..parts.len()).filter(|&i| parts[i].slot.is_none()).collect();
+    if !loose.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            for i in loose {
+                changed |= ui.checkbox(&mut model.shown[i], &parts[i].name).changed();
+            }
+        });
+    }
+    if changed {
+        model.update_hidden();
+    }
+}
+
 /// One button per section; clicking it selects the section, and clicking again clears it.
 fn section_row(ui: &mut Ui, state: &mut AppState) {
     let model = &mut state.model;
@@ -580,6 +698,9 @@ fn section_row(ui: &mut Ui, state: &mut AppState) {
         ui.checkbox(&mut model.tint_all, "Tint All");
         ui.checkbox(&mut model.show_on_canvas, "Show on Canvas").on_hover_text(
             "Tint the selected section on the texture. Ctrl+Alt+right-click the canvas to select the section painted there.",
+        );
+        ui.checkbox(&mut model.dim_unused, "Dim Unused Texels").on_hover_text(
+            "Darken the texture where no shown part of the model reads it, so the canvas shows what painting there would change",
         );
         if ui
             .add_enabled(model.selected.is_some(), egui::Button::new("Select on Canvas").small())

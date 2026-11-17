@@ -21,6 +21,21 @@ pub struct Vertex {
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
+    /// The file's named pieces, one per node with a mesh; empty when it has fewer than two, and in
+    /// meshes made by qsketch's own tools.
+    pub parts: Vec<Part>,
+}
+
+/// A named piece of a model, one glTF node's triangles, which the Model panel can show or hide.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Part {
+    pub name: String,
+    /// Parts in the same slot replace one another, as a character's helmets or the weapons on one arm
+    /// do, so the panel shows one at a time. From the node's `extras.slot`.
+    pub slot: Option<String>,
+    /// Shown when the model opens: false when the node carries `KHR_node_visibility` with `visible: false`.
+    pub visible: bool,
+    pub triangles: std::ops::Range<u32>,
 }
 
 impl Mesh {
@@ -145,6 +160,9 @@ impl Mesh {
         }
         if mesh.indices.is_empty() {
             bail!("the file has no triangles");
+        }
+        if mesh.parts.len() < 2 {
+            mesh.parts.clear();
         }
         Ok(mesh)
     }
@@ -293,8 +311,23 @@ impl Doc<'_> {
             let path = format!("/meshes/{mesh}/primitives");
             let prims =
                 self.root.pointer(&path).and_then(Value::as_array).ok_or_else(|| anyhow!("missing mesh {mesh}"))?;
+            let first = out.triangle_count() as u32;
             for prim in prims {
                 self.add_primitive(prim, &world, out)?;
+            }
+            let end = out.triangle_count() as u32;
+            if end > first {
+                let text = |v: Option<&Value>| v.and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string);
+                let name = text(node.get("name"))
+                    .or_else(|| text(self.root.pointer(&format!("/meshes/{mesh}/name"))))
+                    .unwrap_or_else(|| format!("Part {}", out.parts.len() + 1));
+                let visible = node.pointer("/extensions/KHR_node_visibility/visible").and_then(Value::as_bool);
+                out.parts.push(Part {
+                    name,
+                    slot: text(node.pointer("/extras/slot")),
+                    visible: visible.unwrap_or(true),
+                    triangles: first..end,
+                });
             }
         }
         if let Some(children) = node.get("children").and_then(Value::as_array) {
@@ -602,6 +635,25 @@ mod tests {
         json["samplers"][0]["magFilter"] = json!(9729);
         json["materials"][0]["alphaMode"] = json!("BLEND");
         assert_eq!(texture_look(&glb(&json, &triangle_bin())), TextureLook::default());
+    }
+
+    #[test]
+    fn reads_named_nodes_as_parts_with_their_slots_and_visibility() {
+        let mut json = triangle_json(json!({"mesh": 0, "name": "Helmet", "extras": {"slot": "Head"}}));
+        json["nodes"].as_array_mut().unwrap().push(json!({
+            "mesh": 0, "name": "Hair", "extras": {"slot": "Head"},
+            "extensions": {"KHR_node_visibility": {"visible": false}}
+        }));
+        json["nodes"].as_array_mut().unwrap().push(json!({"mesh": 0}));
+        json["scenes"][0]["nodes"] = json!([0, 1, 2]);
+        let m = Mesh::from_glb(&glb(&json, &triangle_bin())).unwrap();
+        let head = Some("Head".to_string());
+        assert_eq!(m.parts.len(), 3);
+        assert_eq!(m.parts[0], Part { name: "Helmet".into(), slot: head.clone(), visible: true, triangles: 0..1 });
+        assert_eq!(m.parts[1], Part { name: "Hair".into(), slot: head, visible: false, triangles: 1..2 });
+        assert_eq!((m.parts[2].name.as_str(), m.parts[2].slot.as_deref(), m.parts[2].visible), ("Part 3", None, true));
+        let single = Mesh::from_glb(&glb(&triangle_json(json!({"mesh": 0, "name": "Only"})), &triangle_bin())).unwrap();
+        assert!(single.parts.is_empty(), "one part is the whole model, not a choice");
     }
 
     #[test]
