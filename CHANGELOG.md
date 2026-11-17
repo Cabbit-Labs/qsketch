@@ -47,6 +47,11 @@ All notable changes to qSketch are documented in this file.
   appear and then jump at the end of the stroke. Only the display snaps early:
   the stroke blends exactly as before.
 
+- Model panel: its 3D view never asks the GPU for a picture bigger than the
+  screen or the GPU's texture limit. A newly docked panel could be laid out
+  far past the screen for its first frame, which took a large allocation and,
+  where the GPU's limit is low (software Vulkan), stopped qSketch.
+
 - Model panel: which parts are shown is also kept by name, so a model exported
   again with more parts (a new variant, say) opens with the choices it can
   still name, instead of starting over. A slot whose chosen part is gone shows

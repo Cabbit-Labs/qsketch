@@ -288,6 +288,10 @@ impl ModelRenderer {
     }
 
     fn ensure_targets(&mut self, device: &wgpu::Device, size: (u32, u32)) {
+        // Never past the GPU's texture limit (8,192 on software Vulkan): scaled down evenly instead.
+        let max = device.limits().max_texture_dimension_2d;
+        let fit = (max as f32 / size.0.max(size.1) as f32).min(1.0);
+        let size = (((size.0 as f32 * fit) as u32).clamp(1, max), ((size.1 as f32 * fit) as u32).clamp(1, max));
         if self.targets.as_ref().is_some_and(|t| t.size == size) {
             return;
         }

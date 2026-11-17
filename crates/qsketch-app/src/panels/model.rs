@@ -782,7 +782,12 @@ fn view(ui: &mut Ui, state: &mut AppState, mesh: Arc<Mesh>) {
     let doc = model.texture.or(state.active_doc);
     let doc_size = doc.and_then(|id| state.doc(id)).map_or((1, 1), |d| (d.doc.width(), d.doc.height()));
     let ppp = ui.ctx().pixels_per_point();
-    let size = ((rect.width() * ppp).round().max(1.0) as u32, (rect.height() * ppp).round().max(1.0) as u32);
+    // A view laid out past the screen (the first frame of a newly docked panel can be: 4,648 by 11,690 seen)
+    // renders no bigger than the screen, scaled down evenly; it is drawn stretched into its rect anyway.
+    let screen = ui.ctx().content_rect().size() * ppp;
+    let fit = (screen.x.max(screen.y) / (rect.width().max(rect.height()) * ppp)).min(1.0);
+    let size =
+        ((rect.width() * ppp * fit).round().max(1.0) as u32, (rect.height() * ppp * fit).round().max(1.0) as u32);
     let model = &state.model;
     let callback = ModelCallback {
         mesh,
