@@ -791,7 +791,7 @@ pub fn rearrange(mesh: &Mesh, sections: &Sections, source: &Texture, size: u32) 
     let places = pack_rows(&sizes, scale, pad).unwrap_or_else(|| vec![[pad, pad]; sizes.len()]);
 
     // New vertices, one per chart vertex, and triangles back in their original order.
-    let mut out = Mesh { vertices: Vec::new(), indices: vec![0; mesh.indices.len()], parts: Vec::new() };
+    let mut out = Mesh { vertices: Vec::new(), indices: vec![0; mesh.indices.len()], ..Default::default() };
     let mut flipped = 0usize;
     let mut stretches = Vec::with_capacity(mesh.triangle_count());
     for (place, &c) in places.iter().zip(&order) {
@@ -1001,7 +1001,7 @@ mod tests {
                 v(1.0, 0.75, 0.75),
             ],
             indices: vec![0, 1, 2, 0, 2, 3, 1, 4, 5, 1, 5, 2],
-            parts: Vec::new(),
+            ..Default::default()
         };
         let list = vec![Section { name: "L".into(), triangles: 2 }, Section { name: "R".into(), triangles: 2 }];
         (mesh, Sections { of_triangle: vec![0, 0, 1, 1], list })

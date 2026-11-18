@@ -15,6 +15,9 @@ a separate viewer, because selecting and highlighting need the canvas and the 3D
 - **The document stays an ordinary image.** Guides, tints and labels are drawn over the canvas and are never saved
   into it, so they cannot end up flattened into a PNG.
 - **The model file is not modified.** Sections live in a small sidecar file next to it.
+- **Animations are read, not shown.** `qsketch-3d` keeps a file's nodes, which node each piece of the mesh hangs on, and its node
+  animations (`anim.rs`: translation, rotation and scale keys; rigid, no skins), and `Mesh::posed` moves the pieces to a moment of
+  one. The Model panel paints on the rest pose; Resin (`/code/resin`), which shares the crate, plays them.
 - **The core is headless.** `crates/qsketch-3d` (mesh loading, UV analysis, sectioning) has no GUI or GPU code and
   is unit tested. Drawing and panels live in `qsketch-app`.
 

@@ -24,6 +24,18 @@ pub struct Mesh {
     /// The file's named pieces, one per node with a mesh; empty when it has fewer than two, and in
     /// meshes made by qsketch's own tools.
     pub parts: Vec<Part>,
+    /// The triangles of each node with a mesh, kept even when `parts` is not: what `posed` moves with its node.
+    pub pieces: Vec<Piece>,
+    /// The file's nodes and its animations (`anim`); empty for a mesh made by qsketch's own tools.
+    pub nodes: Vec<crate::anim::Node>,
+    pub animations: Vec<crate::anim::Animation>,
+}
+
+/// One node's triangles, which move with it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Piece {
+    pub node: usize,
+    pub triangles: std::ops::Range<u32>,
 }
 
 /// A named piece of a model, one glTF node's triangles, which the Model panel can show or hide.
@@ -66,6 +78,40 @@ pub fn shown_by_name(parts: &[Part], saved: impl Fn(&str) -> Option<bool>) -> Ve
 impl Mesh {
     pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
+    }
+
+    /// The mesh at `time` seconds into animation `animation`: each piece moved from where its node stands at rest to where it stands then
+    /// (rigid: skins are not read). The mesh as it is when there is no such animation.
+    pub fn posed(&self, animation: usize, time: f32) -> Mesh {
+        let Some(a) = self.animations.get(animation) else { return self.clone() };
+        let rest = crate::anim::world(&self.nodes, None);
+        let now = crate::anim::world(&self.nodes, Some((a, time)));
+        let mut out = self.clone();
+        let mut moved = vec![false; self.vertices.len()];
+        for piece in &self.pieces {
+            let (Some(r), Some(n)) = (rest.get(piece.node), now.get(piece.node)) else { continue };
+            let Some(back) = invert_affine(r) else { continue };
+            let m = mul(n, &back);
+            let (x, y, z) = ([m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]);
+            let (cx, cy, cz) = (cross(y, z), cross(z, x), cross(x, y));
+            for t in piece.triangles.clone() {
+                for &i in &self.indices[t as usize * 3..t as usize * 3 + 3] {
+                    let i = i as usize;
+                    if std::mem::replace(&mut moved[i], true) {
+                        continue;
+                    }
+                    let v = self.vertices[i];
+                    let nrm = v.normal;
+                    out.vertices[i].position = transform_point(&m, v.position);
+                    out.vertices[i].normal = normalized([
+                        cx[0] * nrm[0] + cy[0] * nrm[1] + cz[0] * nrm[2],
+                        cx[1] * nrm[0] + cy[1] * nrm[1] + cz[1] * nrm[2],
+                        cx[2] * nrm[0] + cy[2] * nrm[1] + cz[2] * nrm[2],
+                    ]);
+                }
+            }
+        }
+        out
     }
 
     /// Like [`Mesh::bounds`], over the triangles not flagged in `hidden`: frames the parts on show rather
@@ -201,6 +247,8 @@ impl Mesh {
         if mesh.indices.is_empty() {
             bail!("the file has no triangles");
         }
+        mesh.nodes = crate::anim::nodes(&root);
+        mesh.animations = crate::anim::animations(&root, |a, c| doc.floats(a, c))?;
         if mesh.parts.len() < 2 {
             mesh.parts.clear();
         }
@@ -412,6 +460,7 @@ impl Doc<'_> {
             }
             let end = out.triangle_count() as u32;
             if end > first {
+                out.pieces.push(Piece { node: index, triangles: first..end });
                 let text = |v: Option<&Value>| v.and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string);
                 let name = text(node.get("name"))
                     .or_else(|| text(self.root.pointer(&format!("/meshes/{mesh}/name"))))
@@ -617,25 +666,29 @@ fn smooth_normals(vertices: &mut [Vertex], indices: &[u32]) {
 
 /// A node's local transform, from `matrix` or from its translation, rotation and scale.
 fn node_matrix(node: &Value) -> Mat4 {
-    let floats = |key: &str, n: usize| -> Option<Vec<f32>> {
-        let a = node.get(key)?.as_array()?;
-        (a.len() == n).then(|| a.iter().map(|v| v.as_f64().unwrap_or(0.0) as f32).collect())
-    };
-    if let Some(m) = floats("matrix", 16) {
-        return m.try_into().unwrap_or(IDENTITY);
+    crate::anim::local_of(node).matrix()
+}
+
+/// The inverse of an affine matrix (its last row 0, 0, 0, 1), or `None` when it flattens space.
+fn invert_affine(m: &Mat4) -> Option<Mat4> {
+    let (x, y, z) = ([m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]);
+    let det = dot(x, cross(y, z));
+    if det.abs() < 1e-12 {
+        return None;
     }
-    let t = floats("translation", 3).unwrap_or_else(|| vec![0.0; 3]);
-    let r = floats("rotation", 4).unwrap_or_else(|| vec![0.0, 0.0, 0.0, 1.0]);
-    let s = floats("scale", 3).unwrap_or_else(|| vec![1.0; 3]);
-    let (x, y, z, w) = (r[0], r[1], r[2], r[3]);
+    // the rows of the inverse of the 3 by 3 are the cofactor columns over the determinant
+    let (r0, r1, r2) = (cross(y, z), cross(z, x), cross(x, y));
+    let inv = |r: [f32; 3]| [r[0] / det, r[1] / det, r[2] / det];
+    let (r0, r1, r2) = (inv(r0), inv(r1), inv(r2));
+    let t = [m[12], m[13], m[14]];
     #[rustfmt::skip]
-    let m = [
-        (1.0 - 2.0 * (y * y + z * z)) * s[0], 2.0 * (x * y + z * w) * s[0], 2.0 * (x * z - y * w) * s[0], 0.0,
-        2.0 * (x * y - z * w) * s[1], (1.0 - 2.0 * (x * x + z * z)) * s[1], 2.0 * (y * z + x * w) * s[1], 0.0,
-        2.0 * (x * z + y * w) * s[2], 2.0 * (y * z - x * w) * s[2], (1.0 - 2.0 * (x * x + y * y)) * s[2], 0.0,
-        t[0], t[1], t[2], 1.0,
+    let out = [
+        r0[0], r1[0], r2[0], 0.0,
+        r0[1], r1[1], r2[1], 0.0,
+        r0[2], r1[2], r2[2], 0.0,
+        -dot(r0, t), -dot(r1, t), -dot(r2, t), 1.0,
     ];
-    m
+    Some(out)
 }
 
 #[cfg(test)]
@@ -727,6 +780,48 @@ mod tests {
         out.extend(0x004E4942u32.to_le_bytes());
         out.extend(&bin);
         out
+    }
+
+    #[test]
+    fn an_animation_moves_its_nodes_pieces() {
+        // the triangle, then the times (0 and 1 s) and two translations for node 1
+        let mut bin = triangle_bin();
+        while bin.len() % 4 != 0 {
+            bin.push(0);
+        }
+        let times = bin.len();
+        for f in [0.0f32, 1.0] {
+            bin.extend(f.to_le_bytes());
+        }
+        let moves = bin.len();
+        for f in [2.0f32, 0.0, 0.0, 2.0, 0.0, 4.0] {
+            bin.extend(f.to_le_bytes());
+        }
+        let mut json = triangle_json(json!({"mesh": 0, "name": "still"}));
+        json["nodes"].as_array_mut().unwrap().push(json!({"mesh": 0, "name": "moved", "translation": [2.0, 0.0, 0.0]}));
+        json["scenes"][0]["nodes"] = json!([0, 1]);
+        json["accessors"].as_array_mut().unwrap().extend([
+            json!({"bufferView": 3, "componentType": 5126, "count": 2, "type": "SCALAR", "min": [0.0], "max": [1.0]}),
+            json!({"bufferView": 4, "componentType": 5126, "count": 2, "type": "VEC3"}),
+        ]);
+        json["bufferViews"].as_array_mut().unwrap().extend([
+            json!({"buffer": 0, "byteOffset": times, "byteLength": 8}),
+            json!({"buffer": 0, "byteOffset": moves, "byteLength": 24}),
+        ]);
+        json["animations"] = json!([{"name": "slide", "extras": {"note": 1},
+            "samplers": [{"input": 3, "output": 4, "interpolation": "LINEAR"}],
+            "channels": [{"sampler": 0, "target": {"node": 1, "path": "translation"}}]}]);
+        let m = Mesh::from_glb(&glb(&json, &bin)).unwrap();
+        assert_eq!(m.nodes.len(), 2);
+        assert_eq!(m.pieces, [Piece { node: 0, triangles: 0..1 }, Piece { node: 1, triangles: 1..2 }]);
+        let a = &m.animations[0];
+        assert_eq!((a.name.as_str(), a.duration, a.extras.clone()), ("slide", 1.0, Some(json!({"note": 1}))));
+        // at rest the moved node's triangle stands 2 m along x; halfway through, 2 m further along z too
+        assert_eq!(m.vertices[3].position, [2.0, 0.0, 0.0]);
+        let p = m.posed(0, 0.5);
+        assert_eq!(p.vertices[3].position, [2.0, 0.0, 2.0]);
+        assert_eq!(p.vertices[0].position, m.vertices[0].position, "the still node's triangle stays");
+        assert_eq!(m.posed(7, 0.5).vertices[3].position, [2.0, 0.0, 0.0], "no such animation: the rest pose");
     }
 
     #[test]
