@@ -117,11 +117,13 @@ fn toolbar(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
         // Duration of the selected frames; applied when the drag / edit ends.
         let id = ui.id().with("duration_edit");
         let mut ms: u32 = ui.data(|m| m.get_temp(id)).unwrap_or(cur_ms);
-        let r = ui.add(egui::DragValue::new(&mut ms).range(1..=65_535).suffix(" ms")).on_hover_text(if sel.len() > 1 {
-            format!("Duration of the {} selected frames", sel.len())
-        } else {
-            "Frame duration".into()
-        });
+        let r =
+            crate::ui::fields::number_as(ui, "88888 ms", egui::DragValue::new(&mut ms).range(1..=65_535).suffix(" ms"))
+                .on_hover_text(if sel.len() > 1 {
+                    format!("Duration of the {} selected frames", sel.len())
+                } else {
+                    "Frame duration".into()
+                });
         if r.dragged() || r.has_focus() {
             ui.data_mut(|m| m.insert_temp(id, ms));
         } else {
@@ -158,20 +160,24 @@ fn onion_settings(ui: &mut Ui, o: &mut qsketch_core::OnionSettings) {
     ui.label(egui::RichText::new("Onion skin").strong());
     egui::Grid::new("onion_grid").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         ui.label("Frames before");
-        ui.add(egui::DragValue::new(&mut o.prev).range(0..=10));
+        crate::ui::fields::number_as(ui, "88", egui::DragValue::new(&mut o.prev).range(0..=10));
         ui.end_row();
         ui.label("Frames after");
-        ui.add(egui::DragValue::new(&mut o.next).range(0..=10));
+        crate::ui::fields::number_as(ui, "88", egui::DragValue::new(&mut o.next).range(0..=10));
         ui.end_row();
         ui.label("Opacity");
         let mut pct = o.opacity * 100.0;
-        if ui.add(egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%")).changed() {
+        if crate::ui::fields::slider_as(ui, "888.8%", "", egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%"))
+            .changed()
+        {
             o.opacity = pct / 100.0;
         }
         ui.end_row();
         ui.label("Fade per step");
         let mut pct = o.falloff * 100.0;
-        if ui.add(egui::Slider::new(&mut pct, 10.0..=100.0).suffix("%")).changed() {
+        if crate::ui::fields::slider_as(ui, "888.8%", "", egui::Slider::new(&mut pct, 10.0..=100.0).suffix("%"))
+            .changed()
+        {
             o.falloff = pct / 100.0;
         }
         ui.end_row();
@@ -192,7 +198,10 @@ fn onion_settings(ui: &mut Ui, o: &mut qsketch_core::OnionSettings) {
         ui.end_row();
         ui.label("Tint strength");
         let mut pct = o.tint_amount * 100.0;
-        if ui.add_enabled(o.tint, egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%")).changed() {
+        let r = ui.add_enabled_ui(o.tint, |ui| {
+            crate::ui::fields::slider_as(ui, "888.8%", "", egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%"))
+        });
+        if r.inner.changed() {
             o.tint_amount = pct / 100.0;
         }
         ui.end_row();
@@ -744,13 +753,15 @@ fn grid(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                 let inside = t.contains(cur);
                 hp.rect_filled(bar, 3.0, c.gamma_multiply(if inside { 1.0 } else { 0.7 }));
                 let tp = hp.with_clip_rect(bar.intersect(vis));
-                tp.text(
-                    Pos2::new(bar.left() + 4.0, bar.center().y),
-                    egui::Align2::LEFT_CENTER,
+                // a tag's name cut with an ellipsis at its bar's end
+                let g = crate::ui::fields::elide(
+                    ui,
                     &t.name,
                     egui::FontId::proportional(10.0),
                     text_on(c),
+                    bar.width() - 6.0,
                 );
+                tp.galley(Pos2::new(bar.left() + 4.0, bar.center().y - g.size().y / 2.0), g, text_on(c));
             }
 
             // Left column (frozen at the left).
@@ -807,13 +818,10 @@ fn grid(ui: &mut Ui, state: &mut AppState, doc_id: DocId) {
                     Rect::from_min_max(Pos2::new(x, y), Pos2::new(frozen_left + LEFT_W - 18.0, y + ROW_H))
                         .intersect(vis),
                 );
-                np.text(
-                    Pos2::new(x, y + ROW_H / 2.0),
-                    egui::Align2::LEFT_CENTER,
-                    label,
-                    egui::FontId::proportional(12.0),
-                    name_color,
-                );
+                // cut with an ellipsis at the column's edge (clipped bare, a long name just stopped mid-letter)
+                let room = frozen_left + LEFT_W - 18.0 - x;
+                let g = crate::ui::fields::elide(ui, &label, egui::FontId::proportional(12.0), name_color, room);
+                np.galley(Pos2::new(x, y + ROW_H / 2.0 - g.size().y / 2.0), g, name_color);
                 if *continuous {
                     lp.text(
                         Pos2::new(frozen_left + LEFT_W - 10.0, y + ROW_H / 2.0),

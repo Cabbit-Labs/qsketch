@@ -1324,7 +1324,7 @@ impl QSketchApp {
                         menus::indent(ui);
                         let custom = ![4, 8, 16, 32, 64].contains(&c.grid_size);
                         let _ = ui.radio(custom, "Custom");
-                        if ui.add(egui::DragValue::new(&mut c.grid_size).range(1..=4096).suffix(" px")).changed() {
+                        if crate::ui::fields::number_as(ui, "8888 px", egui::DragValue::new(&mut c.grid_size).range(1..=4096).suffix(" px")).changed() {
                             c.show_grid = true;
                         }
                     });
@@ -1406,7 +1406,7 @@ impl QSketchApp {
                         menus::indent(ui);
                         ui.label("Radial copies");
                         let mut n = self.state.symmetry.radial.max(1);
-                        if ui.add(egui::DragValue::new(&mut n).range(1..=64)).changed() {
+                        if crate::ui::fields::number_as(ui, "88", egui::DragValue::new(&mut n).range(1..=64)).changed() {
                             self.state.symmetry.radial = if n <= 1 { 0 } else { n };
                         }
                     });

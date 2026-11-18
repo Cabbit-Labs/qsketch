@@ -37,11 +37,14 @@ struct Rename {
     /// The layer that was active when the edit started. The edit ends as soon
     /// as the active layer moves off it.
     anchor: LayerId,
+    /// The field has had the keyboard: it is given it once, as the edit starts. Asked for every frame, it took the keyboard back
+    /// from Enter and from a click elsewhere, so a rename never ended.
+    focused: bool,
 }
 
 impl Rename {
     fn start(doc: DocId, layer: LayerId, name: &str, active: Option<LayerId>) -> Self {
-        Self { doc, layer, text: name.to_string(), anchor: active.unwrap_or(layer) }
+        Self { doc, layer, text: name.to_string(), anchor: active.unwrap_or(layer), focused: false }
     }
 }
 
@@ -119,20 +122,19 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         let slider_w = (total - combo_w - 110.0).max(40.0);
         ui.spacing_mut().slider_width = slider_w;
         let is_group = layer.is_group();
-        let combo =
-            egui::ComboBox::from_id_salt("blend_mode").selected_text(blend.label()).width(combo_w).show_ui(ui, |ui| {
-                if is_group {
-                    ui.selectable_value(&mut blend, BlendMode::PassThrough, BlendMode::PassThrough.label())
-                        .on_hover_text(BlendMode::PassThrough.describe());
+        let combo = crate::ui::fields::combo(ui, "blend_mode", combo_w, blend.label(), |ui| {
+            if is_group {
+                ui.selectable_value(&mut blend, BlendMode::PassThrough, BlendMode::PassThrough.label())
+                    .on_hover_text(BlendMode::PassThrough.describe());
+                ui.separator();
+            }
+            for m in BlendMode::ALL {
+                if m.starts_group() {
                     ui.separator();
                 }
-                for m in BlendMode::ALL {
-                    if m.starts_group() {
-                        ui.separator();
-                    }
-                    ui.selectable_value(&mut blend, m, m.label()).on_hover_text(m.describe());
-                }
-            });
+                ui.selectable_value(&mut blend, m, m.label()).on_hover_text(m.describe());
+            }
+        });
         combo.response.clone().on_hover_text(format!(
             "Blend mode: how this layer's colors mix with the layers below.\n{}: {}\nUp / Down step through the modes.",
             blend.label(),
@@ -559,9 +561,12 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 egui::vec2((row_rect.width() - x - 26.0).max(20.0), row_h),
             );
             if renaming.as_ref().is_some_and(|r| r.layer == layer_id) {
-                let text = &mut renaming.as_mut().unwrap().text;
-                let te = ui.put(name_rect.shrink2(egui::vec2(0.0, 9.0)), egui::TextEdit::singleline(text));
-                te.request_focus();
+                let r = renaming.as_mut().unwrap();
+                let te = ui.put(name_rect.shrink2(egui::vec2(0.0, 9.0)), egui::TextEdit::singleline(&mut r.text));
+                if !std::mem::replace(&mut r.focused, true) {
+                    te.request_focus();
+                }
+                let text = &r.text;
                 let done = te.lost_focus() || ui.input(|inp| inp.key_pressed(egui::Key::Enter));
                 let cancel = ui.input(|inp| inp.key_pressed(egui::Key::Escape));
                 if cancel {
@@ -571,14 +576,24 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     renaming = None;
                 }
             } else {
-                ui.painter().text(
-                    name_rect.left_center(),
-                    egui::Align2::LEFT_CENTER,
-                    &s.layers[i].props.name,
-                    egui::FontId::proportional(13.0),
-                    if dim { crate::ui::theme::dim_text(ui.visuals()) } else { ui.visuals().text_color() },
-                );
                 let p = &s.layers[i].props;
+                // the name cut with an ellipsis where the row's toggles begin (the lock marks, ½ and fx, laid out below): drawn
+                // whole, a long name ran under them
+                let marks = 14.0 * (p.locked as u8 + p.alpha_locked as u8 + p.clipped as u8) as f32;
+                let toggles = 6.0
+                    + if marks > 0.0 { marks + 4.0 } else { 0.0 }
+                    + 22.0
+                    + if p.style.is_off() { 0.0 } else { 18.0 };
+                let room = (row_rect.right() - toggles - 4.0 - name_rect.left()).max(8.0);
+                let ink = if dim { crate::ui::theme::dim_text(ui.visuals()) } else { ui.visuals().text_color() };
+                let name = crate::ui::fields::elide(ui, &p.name, egui::FontId::proportional(13.0), ink, room);
+                let at = name_rect.left_center() - egui::vec2(0.0, name.size().y / 2.0);
+                ui.painter().galley(at, name, ink);
+                if crate::ui::fields::text_width(ui, &p.name, egui::TextStyle::Body) > room {
+                    // the whole name on hover, when it was cut (hover only: the row's own clicks are untouched)
+                    let r = egui::Rect::from_min_size(name_rect.min, egui::vec2(room, name_rect.height()));
+                    ui.interact(r, ui.id().with(("layer_name", layer_id)), Sense::hover()).on_hover_text(&p.name);
+                }
                 let mut right = row_rect.right() - 6.0;
                 if p.locked || p.alpha_locked || p.clipped {
                     right -= 14.0 * (p.locked as u8 + p.alpha_locked as u8 + p.clipped as u8) as f32 + 4.0;

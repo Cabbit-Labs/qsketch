@@ -275,25 +275,55 @@ fn bones_section(ui: &mut Ui, d: &mut RigDialog) {
     if let Some(b) = d.base.rig.bone_mut(id) {
         egui::Grid::new("rig_bone_grid").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
             ui.label("Name");
-            ui.text_edit_singleline(&mut b.name);
+            crate::ui::fields::text_default(ui, &mut b.name);
             ui.end_row();
             ui.label("Position");
             ui.horizontal(|ui| {
-                changed |= ui.add(egui::DragValue::new(&mut b.x).speed(0.5).prefix("x ")).changed();
-                changed |= ui.add(egui::DragValue::new(&mut b.y).speed(0.5).prefix("y ")).changed();
+                changed |= crate::ui::fields::number_as(
+                    ui,
+                    "x -88888.888",
+                    egui::DragValue::new(&mut b.x).speed(0.5).prefix("x "),
+                )
+                .changed();
+                changed |= crate::ui::fields::number_as(
+                    ui,
+                    "y -88888.888",
+                    egui::DragValue::new(&mut b.y).speed(0.5).prefix("y "),
+                )
+                .changed();
             });
             ui.end_row();
             ui.label("Rotation");
-            changed |= ui.add(egui::DragValue::new(&mut b.rotation).speed(0.5).suffix("°")).changed();
+            changed |= crate::ui::fields::number_as(
+                ui,
+                "-88888.888°",
+                egui::DragValue::new(&mut b.rotation).speed(0.5).suffix("°"),
+            )
+            .changed();
             ui.end_row();
             ui.label("Scale");
             ui.horizontal(|ui| {
-                changed |= ui.add(egui::DragValue::new(&mut b.scale[0]).speed(0.01).prefix("x ")).changed();
-                changed |= ui.add(egui::DragValue::new(&mut b.scale[1]).speed(0.01).prefix("y ")).changed();
+                changed |= crate::ui::fields::number_as(
+                    ui,
+                    "x -88888.8888",
+                    egui::DragValue::new(&mut b.scale[0]).speed(0.01).prefix("x "),
+                )
+                .changed();
+                changed |= crate::ui::fields::number_as(
+                    ui,
+                    "y -88888.8888",
+                    egui::DragValue::new(&mut b.scale[1]).speed(0.01).prefix("y "),
+                )
+                .changed();
             });
             ui.end_row();
             ui.label("Length");
-            changed |= ui.add(egui::DragValue::new(&mut b.length).speed(0.5).range(0.0..=10_000.0)).changed();
+            changed |= crate::ui::fields::number_as(
+                ui,
+                "88888.8",
+                egui::DragValue::new(&mut b.length).speed(0.5).range(0.0..=10_000.0),
+            )
+            .changed();
             ui.end_row();
         });
     }
@@ -318,7 +348,7 @@ fn layers_section(ui: &mut Ui, d: &mut RigDialog) {
                 let cur = d.base.rig.attached_bone(*lid);
                 let text =
                     cur.and_then(|b| bones.iter().find(|(id, _)| *id == b)).map_or("(none)", |(_, n)| n.as_str());
-                egui::ComboBox::from_id_salt(("rig_attach", *lid)).selected_text(text).width(130.0).show_ui(ui, |ui| {
+                crate::ui::fields::combo(ui, ("rig_attach", *lid), 130.0, text, |ui| {
                     if ui.selectable_label(cur.is_none(), "(none)").clicked() {
                         d.base.rig.detach(*lid);
                         d.stale = true;
@@ -372,7 +402,7 @@ fn animation_section(ui: &mut Ui, d: &mut RigDialog) {
     ui.horizontal(|ui| {
         let names: Vec<String> = d.base.rig.animations.iter().map(|a| a.name.clone()).collect();
         let cur = d.anim.and_then(|i| names.get(i).cloned()).unwrap_or_else(|| "(setup pose)".into());
-        egui::ComboBox::from_id_salt("rig_anim").selected_text(cur).width(150.0).show_ui(ui, |ui| {
+        crate::ui::fields::combo(ui, "rig_anim", 150.0, cur, |ui| {
             if ui.selectable_label(d.anim.is_none(), "(setup pose)").clicked() {
                 d.anim = None;
             }
@@ -399,8 +429,13 @@ fn animation_section(ui: &mut Ui, d: &mut RigDialog) {
     if let Some(a) = d.anim.and_then(|i| d.base.rig.animations.get_mut(i)) {
         let mut dur_changed = false;
         ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut a.name);
-            dur_changed = ui.add(egui::DragValue::new(&mut a.duration_ms).range(1..=600_000).suffix(" ms")).changed();
+            crate::ui::fields::text_default(ui, &mut a.name);
+            dur_changed = crate::ui::fields::number_as(
+                ui,
+                "888888 ms",
+                egui::DragValue::new(&mut a.duration_ms).range(1..=600_000).suffix(" ms"),
+            )
+            .changed();
             ui.checkbox(&mut a.looped, "Loop");
         });
         if dur_changed {
@@ -411,7 +446,10 @@ fn animation_section(ui: &mut Ui, d: &mut RigDialog) {
     ui.horizontal(|ui| {
         ui.label("Time");
         ui.spacing_mut().slider_width = 330.0;
-        ui.add_enabled(d.anim.is_some(), egui::Slider::new(&mut d.time_ms, 0..=dur).suffix(" ms"));
+        let w = crate::ui::fields::range_width(ui, 0.0, f64::from(dur), 0, "", " ms");
+        ui.add_enabled_ui(d.anim.is_some(), |ui| {
+            crate::ui::fields::slider(ui, w, egui::Slider::new(&mut d.time_ms, 0..=dur).suffix(" ms"))
+        });
     });
 }
 
@@ -430,23 +468,39 @@ fn keys_section(ui: &mut Ui, d: &mut RigDialog) {
     egui::Grid::new("rig_keys_grid").num_columns(3).spacing([8.0, 4.0]).show(ui, |ui| {
         ui.label("Move");
         ui.horizontal(|ui| {
-            ui.add(egui::DragValue::new(&mut d.tr[0]).speed(0.5).prefix("x "));
-            ui.add(egui::DragValue::new(&mut d.tr[1]).speed(0.5).prefix("y "));
+            crate::ui::fields::number_as(
+                ui,
+                "x -88888.888",
+                egui::DragValue::new(&mut d.tr[0]).speed(0.5).prefix("x "),
+            );
+            crate::ui::fields::number_as(
+                ui,
+                "y -88888.888",
+                egui::DragValue::new(&mut d.tr[1]).speed(0.5).prefix("y "),
+            );
         });
         if ui.button("Key").clicked() {
             key = Some(KeyValue::Translate(d.tr));
         }
         ui.end_row();
         ui.label("Rotate");
-        ui.add(egui::DragValue::new(&mut d.rot).speed(0.5).suffix("°"));
+        crate::ui::fields::number_as(ui, "-88888.888°", egui::DragValue::new(&mut d.rot).speed(0.5).suffix("°"));
         if ui.button("Key").clicked() {
             key = Some(KeyValue::Rotate(d.rot));
         }
         ui.end_row();
         ui.label("Scale");
         ui.horizontal(|ui| {
-            ui.add(egui::DragValue::new(&mut d.sc[0]).speed(0.01).prefix("x "));
-            ui.add(egui::DragValue::new(&mut d.sc[1]).speed(0.01).prefix("y "));
+            crate::ui::fields::number_as(
+                ui,
+                "x -88888.8888",
+                egui::DragValue::new(&mut d.sc[0]).speed(0.01).prefix("x "),
+            );
+            crate::ui::fields::number_as(
+                ui,
+                "y -88888.8888",
+                egui::DragValue::new(&mut d.sc[1]).speed(0.01).prefix("y "),
+            );
         });
         if ui.button("Key").clicked() {
             key = Some(KeyValue::Scale(d.sc));
@@ -459,7 +513,7 @@ fn keys_section(ui: &mut Ui, d: &mut RigDialog) {
     }
     ui.horizontal(|ui| {
         ui.label("Easing for new keys");
-        egui::ComboBox::from_id_salt("rig_easing").selected_text(d.easing.label()).show_ui(ui, |ui| {
+        crate::ui::fields::combo_default(ui, "rig_easing", d.easing.label(), |ui| {
             for e in Easing::ALL {
                 ui.selectable_value(&mut d.easing, e, e.label());
             }
@@ -490,7 +544,7 @@ fn bake_section(ui: &mut Ui, d: &mut RigDialog) -> bool {
     ui.separator();
     ui.horizontal(|ui| {
         ui.label("Bake at");
-        ui.add(egui::DragValue::new(&mut d.fps).range(1..=120).suffix(" fps"));
+        crate::ui::fields::number_as(ui, "888 fps", egui::DragValue::new(&mut d.fps).range(1..=120).suffix(" fps"));
         if ui.checkbox(&mut d.nearest, "Pixel art (no smoothing)").changed() {
             d.stale = true;
         }

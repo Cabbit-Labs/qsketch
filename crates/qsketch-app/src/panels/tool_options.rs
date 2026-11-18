@@ -176,7 +176,7 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                                     });
                                 }
                                 let mut w = sh.stroke_width.max(1);
-                                let r = ui.add(egui::DragValue::new(&mut w).range(1..=64).suffix(" px"));
+                                let r = crate::ui::fields::number_as(ui, "88 px", egui::DragValue::new(&mut w).range(1..=64).suffix(" px"));
                                 if r.changed() && w != sh.stroke_width {
                                     crate::tools::vector::edit_shape(state, doc_id, "Outline Width", |s| s.stroke_width = w);
                                 }
@@ -198,7 +198,7 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                             ui.checkbox(&mut o.shape_fill, "Fill").on_hover_text("Fill with the foreground color");
                             ui.checkbox(&mut o.shape_stroke, "Outline").on_hover_text("Outline in the background color");
                             if o.shape_stroke {
-                                ui.add(egui::DragValue::new(&mut o.shape_stroke_width).range(1..=64).suffix(" px"));
+                                crate::ui::fields::number_as(ui, "88 px", egui::DragValue::new(&mut o.shape_stroke_width).range(1..=64).suffix(" px"));
                             }
                             ui.checkbox(&mut o.shape_closed, "Closed");
                         });
@@ -242,9 +242,7 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                     let o = &mut state.tool_opts;
                     let mut scope = if o.eyedropper_sample_merged { 2 } else if o.eyedropper_sample_below { 1 } else { 0 };
                     ui.label("Sample");
-                    egui::ComboBox::from_id_salt("eyedropper_scope")
-                        .selected_text(["Current layer", "Current & below", "All layers"][scope])
-                        .show_ui(ui, |ui| {
+                    crate::ui::fields::combo_default(ui, "eyedropper_scope", ["Current layer", "Current & below", "All layers"][scope], |ui| {
                             ui.selectable_value(&mut scope, 0, "Current layer");
                             ui.selectable_value(&mut scope, 1, "Current & below")
                                 .on_hover_text("The layers up to the active one: picks the gray under index-painting adjustments");
@@ -295,7 +293,7 @@ fn bar(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                 group(ui, &theme, Section::View, |ui| {
                     if let Some(entry) = state.active_mut() {
                         let mut deg = entry.view.rotation_degrees();
-                        if ui.add(egui::DragValue::new(&mut deg).prefix("Angle ").suffix("°").speed(0.5)).changed() {
+                        if crate::ui::fields::number_as(ui, "Angle -88888.888°", egui::DragValue::new(&mut deg).prefix("Angle ").suffix("°").speed(0.5)).changed() {
                             entry.view.set_rotation(deg.to_radians());
                         }
                         if ui.button("Reset").clicked() {
@@ -342,7 +340,7 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
     if let Some(f) = state.floating.as_mut() {
         chip(ui, p.section(Section::Tools), p.section_tint(Section::Tools), |ui| {
             let mut mode = f.mode;
-            egui::ComboBox::from_id_salt("float_mode").selected_text(mode.label()).width(80.0).show_ui(ui, |ui| {
+            crate::ui::fields::combo(ui, "float_mode", 80.0, mode.label(), |ui| {
                 for m in Mode::ALL {
                     ui.selectable_value(&mut mode, m, m.label());
                 }
@@ -356,9 +354,17 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
                     let c = f.pivot_pos();
                     let (mut cx, mut cy) = (c.x, c.y);
                     ui.label("X");
-                    let rx = ui.add(egui::DragValue::new(&mut cx).speed(1.0).fixed_decimals(0));
+                    let rx = crate::ui::fields::number_as(
+                        ui,
+                        "-88888",
+                        egui::DragValue::new(&mut cx).speed(1.0).fixed_decimals(0),
+                    );
                     ui.label("Y");
-                    let ry = ui.add(egui::DragValue::new(&mut cy).speed(1.0).fixed_decimals(0));
+                    let ry = crate::ui::fields::number_as(
+                        ui,
+                        "-88888",
+                        egui::DragValue::new(&mut cy).speed(1.0).fixed_decimals(0),
+                    );
                     if rx.changed() || ry.changed() {
                         f.set_anchor(qsketch_core::Pt::new(cx, cy));
                     }
@@ -376,10 +382,11 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
                             .range(0.1..=MAX_SCALE_PCT)
                             .clamp_existing_to_range(false)
                     }
+                    let pw = crate::ui::fields::range_width(ui, 0.1, f64::from(MAX_SCALE_PCT), 1, "", "%");
                     ui.label("W");
-                    let rw = ui.add(pct(&mut w));
+                    let rw = crate::ui::fields::number(ui, pw, pct(&mut w));
                     ui.label("H");
-                    let rh = ui.add(pct(&mut h));
+                    let rh = crate::ui::fields::number(ui, pw, pct(&mut h));
                     // A handle drag owns the box while it lasts.
                     if (rw.changed() || rh.changed()) && f.drag.is_none() {
                         if f.keep_aspect {
@@ -394,7 +401,13 @@ fn floating_options(ui: &mut Ui, state: &mut AppState) {
                     }
                     let mut deg = f.angle.to_degrees();
                     ui.label(icon(icons::ARROWS_CLOCKWISE, 13.0)).on_hover_text("Rotation");
-                    if ui.add(egui::DragValue::new(&mut deg).speed(0.5).suffix("°").fixed_decimals(1)).changed() {
+                    if crate::ui::fields::number_as(
+                        ui,
+                        "-88888.8°",
+                        egui::DragValue::new(&mut deg).speed(0.5).suffix("°").fixed_decimals(1),
+                    )
+                    .changed()
+                    {
                         f.set_angle(deg);
                     }
                     ui.checkbox(&mut f.keep_aspect, "Keep aspect")
@@ -450,7 +463,9 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
         group(ui, &theme, Section::Tools, |ui| {
             ui.checkbox(&mut state.tool_opts.shape_filled, "Filled");
             if !state.tool_opts.shape_filled {
-                let mut r = ui.add(
+                let mut r = crate::ui::fields::number_as(
+                    ui,
+                    "Thickness 88",
                     egui::DragValue::new(&mut state.tool_opts.shape_thickness)
                         .range(1..=64)
                         .speed(0.2)
@@ -612,7 +627,14 @@ fn brush_options(ui: &mut Ui, state: &mut AppState, tool: ToolKind) {
                 let mut sp = b.spacing * 100.0;
                 ui.horizontal(|ui| {
                     ui.label("Spacing");
-                    if ui.add(egui::Slider::new(&mut sp, 1.0..=200.0).suffix("%").fixed_decimals(0)).changed() {
+                    if crate::ui::fields::slider_as(
+                        ui,
+                        "888%",
+                        "",
+                        egui::Slider::new(&mut sp, 1.0..=200.0).suffix("%").fixed_decimals(0),
+                    )
+                    .changed()
+                    {
                         b.spacing = sp / 100.0;
                     }
                 });
@@ -652,7 +674,7 @@ fn stabilizer_options(ui: &mut Ui, b: &mut qsketch_core::BrushSettings) {
         StabilizerMode::Rope => "Rope",
         StabilizerMode::Average => "Average",
     };
-    egui::ComboBox::from_id_salt("stabilizer_mode").selected_text(label).width(78.0).show_ui(ui, |ui| {
+    crate::ui::fields::combo(ui, "stabilizer_mode", 78.0, label, |ui| {
         ui.selectable_value(&mut b.stabilizer, StabilizerMode::Off, "Off");
         ui.selectable_value(&mut b.stabilizer, StabilizerMode::Rope, "Rope")
             .on_hover_text("Lazy brush: the stroke follows the pointer on a rope, ignoring small jitter");
@@ -681,7 +703,8 @@ fn symmetry_options(ui: &mut Ui, state: &mut AppState) {
     }
     if sym.radial >= 2 {
         let mut n = sym.radial as f32;
-        let mut r = ui.add(egui::DragValue::new(&mut n).range(2..=64).suffix("×")).on_hover_text("Radial copies");
+        let mut r = crate::ui::fields::number_as(ui, "88×", egui::DragValue::new(&mut n).range(2..=64).suffix("×"))
+            .on_hover_text("Radial copies");
         crate::ui::widgets::wheel_adjust(ui, &mut r, &mut n, 1.0, 2.0..=64.0);
         if r.changed() {
             sym.radial = (n.round() as u32).max(2);
@@ -729,9 +752,13 @@ fn text_options(ui: &mut Ui, state: &mut AppState) {
     let current = state.tool_opts.text_family.clone();
     let filter_id = ui.id().with("font_filter");
     chip(ui, col, tint, |ui| {
-        egui::ComboBox::from_id_salt("text_family").selected_text(&current).width(150.0).show_ui(ui, |ui| {
+        crate::ui::fields::combo(ui, "text_family", 150.0, &current, |ui| {
             let mut filter: String = ui.data_mut(|d| d.get_temp(filter_id).unwrap_or_default());
-            let r = ui.add(egui::TextEdit::singleline(&mut filter).hint_text("Filter…").desired_width(150.0));
+            let r = crate::ui::fields::text_edit(
+                ui,
+                150.0,
+                egui::TextEdit::singleline(&mut filter).hint_text("Filter…").desired_width(150.0),
+            );
             if r.changed() {
                 ui.data_mut(|d| d.insert_temp(filter_id, filter.clone()));
             }
@@ -765,7 +792,9 @@ fn text_options(ui: &mut Ui, state: &mut AppState) {
             state.fonts.reload();
         }
         let t = &mut state.tool_opts.text;
-        let mut r = ui.add(
+        let mut r = crate::ui::fields::number_as(
+            ui,
+            "Size 8888 px",
             egui::DragValue::new(&mut t.size)
                 .range(1.0..=2000.0)
                 .speed(1.0)
@@ -801,26 +830,24 @@ fn text_options(ui: &mut Ui, state: &mut AppState) {
             t.antialias = !t.antialias;
         }
         if !compact {
-            let mut r = ui
-                .add(
-                    egui::DragValue::new(&mut t.line_height)
-                        .prefix("Line ")
-                        .range(0.5..=4.0)
-                        .speed(0.01)
-                        .fixed_decimals(2),
-                )
-                .on_hover_text("Line height");
+            let mut r = crate::ui::fields::number_as(
+                ui,
+                "Line 8.88",
+                egui::DragValue::new(&mut t.line_height).prefix("Line ").range(0.5..=4.0).speed(0.01).fixed_decimals(2),
+            )
+            .on_hover_text("Line height");
             crate::ui::widgets::wheel_adjust(ui, &mut r, &mut t.line_height, 0.05, 0.5..=4.0);
-            let mut r = ui
-                .add(
-                    egui::DragValue::new(&mut t.letter_spacing)
-                        .prefix("Track ")
-                        .range(-50.0..=200.0)
-                        .speed(0.1)
-                        .suffix(" px")
-                        .fixed_decimals(1),
-                )
-                .on_hover_text("Letter spacing");
+            let mut r = crate::ui::fields::number_as(
+                ui,
+                "Track -88.8 px",
+                egui::DragValue::new(&mut t.letter_spacing)
+                    .prefix("Track ")
+                    .range(-50.0..=200.0)
+                    .speed(0.1)
+                    .suffix(" px")
+                    .fixed_decimals(1),
+            )
+            .on_hover_text("Letter spacing");
             crate::ui::widgets::wheel_adjust(ui, &mut r, &mut t.letter_spacing, 0.5, -50.0..=200.0);
         }
         t.clamp();
@@ -892,14 +919,11 @@ pub fn dither_label(d: qsketch_core::filter::DitherPattern) -> &'static str {
 /// blending, so softness and opacity turn into dither density.
 pub fn dither_combo(ui: &mut egui::Ui, b: &mut qsketch_core::BrushSettings) {
     use qsketch_core::filter::DitherPattern as D;
-    egui::ComboBox::from_id_salt("dither_ink")
-        .selected_text(format!("Dither {}", dither_label(b.dither)))
-        .width(92.0)
-        .show_ui(ui, |ui| {
-            for d in [D::None, D::Bayer2, D::Bayer4, D::Bayer8, D::Noise] {
-                ui.selectable_value(&mut b.dither, d, dither_label(d));
-            }
-        })
+    crate::ui::fields::combo(ui, "dither_ink", 92.0, format!("Dither {}", dither_label(b.dither)), |ui| {
+        for d in [D::None, D::Bayer2, D::Bayer4, D::Bayer8, D::Noise] {
+            ui.selectable_value(&mut b.dither, d, dither_label(d));
+        }
+    })
         .response
         .on_hover_text(
             "Dither ink: whole pixels in an ordered pattern instead of blending. A soft edge or a lower opacity paints a sparser pattern (50% = checkerboard).",

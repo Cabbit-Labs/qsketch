@@ -149,7 +149,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                         let mut rgb_changed = false;
                         for (label, ch) in [("R", &mut rgb.r), ("G", &mut rgb.g), ("B", &mut rgb.b)] {
                             ui.label(label);
-                            if ui.add(egui::Slider::new(ch, 0..=255)).changed() {
+                            if crate::ui::fields::slider_as(ui, "888", "", egui::Slider::new(ch, 0..=255)).changed() {
                                 rgb_changed = true;
                             }
                             ui.end_row();
@@ -161,7 +161,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     }
                 }
                 ui.label("Hex");
-                let te = ui.add(egui::TextEdit::singleline(&mut hex).id(hex_id).desired_width(slider_w.min(110.0)));
+                let te = crate::ui::fields::text_edit(
+                    ui,
+                    slider_w.min(110.0),
+                    egui::TextEdit::singleline(&mut hex).id(hex_id).desired_width(slider_w.min(110.0)),
+                );
                 if te.changed() {
                     if let Some(c) = Rgba8::from_hex(&hex) {
                         hsv = c.to_hsv();
@@ -174,7 +178,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             let mut mode = state.settings.ui.color_sliders;
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("Sliders").weak());
-                egui::ComboBox::from_id_salt("color_slider_mode").selected_text(mode.label()).show_ui(ui, |ui| {
+                crate::ui::fields::combo_default(ui, "color_slider_mode", mode.label(), |ui| {
                     for m in ColorSliders::ALL {
                         ui.selectable_value(&mut mode, m, m.label());
                     }
@@ -286,7 +290,10 @@ fn grad_bar(ui: &mut Ui, width: f32, value: &mut f32, max: f32, suffix: &str, co
             }
         }
         let mut num = value.round();
-        if ui.add(egui::DragValue::new(&mut num).range(0.0..=max).suffix(suffix).speed(1.0)).changed() {
+        let w = crate::ui::fields::range_width(ui, 0.0, f64::from(max), 0, "", suffix);
+        if crate::ui::fields::number(ui, w, egui::DragValue::new(&mut num).range(0.0..=max).suffix(suffix).speed(1.0))
+            .changed()
+        {
             *value = num;
             changed = true;
         }

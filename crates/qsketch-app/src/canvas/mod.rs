@@ -758,7 +758,10 @@ fn brush_popup(ui: &mut Ui, state: &mut AppState) {
                 let Some(b) = state.brush_for_tool_mut(tool) else { return };
                 egui::Grid::new("quick_brush_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                     ui.label("Size");
-                    ui.add(
+                    crate::ui::fields::slider_as(
+                        ui,
+                        "888 px",
+                        "",
                         egui::Slider::new(&mut b.size, 1.0..=500.0)
                             .logarithmic(true)
                             .suffix(" px")
@@ -808,11 +811,13 @@ fn brush_popup(ui: &mut Ui, state: &mut AppState) {
 
 fn pct(ui: &mut Ui, value: &mut f32) {
     let mut p = (*value * 100.0).round();
-    if ui
-        .add(
-            egui::Slider::new(&mut p, 0.0..=100.0).suffix("%").fixed_decimals(0).clamping(egui::SliderClamping::Always),
-        )
-        .changed()
+    if crate::ui::fields::slider_as(
+        ui,
+        "888%",
+        "",
+        egui::Slider::new(&mut p, 0.0..=100.0).suffix("%").fixed_decimals(0).clamping(egui::SliderClamping::Always),
+    )
+    .changed()
     {
         *value = (p / 100.0).clamp(0.0, 1.0);
     }

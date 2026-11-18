@@ -204,8 +204,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     // Name + count line.
     ui.horizontal(|ui| {
         let mut name = pal.name.clone();
-        let te = egui::TextEdit::singleline(&mut name).hint_text("Palette name").desired_width(120.0);
-        if ui.add(te).changed() {
+        let te = egui::TextEdit::singleline(&mut name).hint_text("Palette name");
+        if crate::ui::fields::text_edit(ui, 120.0, te).changed() {
             pal.name = name;
             commit = Some("");
         }

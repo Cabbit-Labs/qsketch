@@ -48,6 +48,14 @@ pub fn show(ctx: &Context, state: &mut AppState) {
     let mut close_clicked = false;
     let palette = state.settings.ui.palette();
     let mut dlg = state.dialogs.settings.take().unwrap();
+    // Escape closes it, as it does every other dialog, unless it is taken: a key or mouse chord being captured, or a field being
+    // typed in (which Escape leaves). Read before the window, so a capture that Escape cancels this frame does not also close it.
+    let chord_armed =
+        ctx.data(|d| d.get_temp::<Option<String>>(egui::Id::new("chord_armed_binder"))).flatten().is_some();
+    let escape_closes = dlg.capturing.is_none()
+        && !chord_armed
+        && !ctx.egui_wants_keyboard_input()
+        && ctx.input(|i| i.key_pressed(egui::Key::Escape));
     egui::Window::new("Preferences")
         .id(egui::Id::new("preferences_window"))
         .open(&mut open)
@@ -104,7 +112,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                 });
             });
         });
-    if open && !close_clicked {
+    if open && !close_clicked && !escape_closes {
         state.dialogs.settings = Some(dlg);
     } else {
         state.settings.sanitize();
@@ -117,7 +125,7 @@ fn general(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(6.0);
     egui::Grid::new("gen_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
         ui.label("Undo history limit");
-        if ui.add(egui::Slider::new(&mut g.undo_limit, 5..=2000).logarithmic(true)).changed() {
+        if crate::ui::fields::slider_as(ui, "8888", "", egui::Slider::new(&mut g.undo_limit, 5..=2000).logarithmic(true)).changed() {
             for d in &mut state.docs {
                 d.doc.history.set_limit(g.undo_limit);
             }
@@ -127,13 +135,13 @@ fn general(ui: &mut Ui, state: &mut AppState) {
         ui.checkbox(&mut g.confirm_close, "");
         ui.end_row();
         ui.label("Recent files to remember");
-        ui.add(egui::Slider::new(&mut g.max_recent, 1..=30));
+        crate::ui::fields::slider_as(ui, "88", "", egui::Slider::new(&mut g.max_recent, 1..=30));
         ui.end_row();
         ui.label("Default new document");
         ui.horizontal(|ui| {
-            ui.add(egui::DragValue::new(&mut g.new_doc_width).range(1..=16384).suffix(" px"));
+            crate::ui::fields::number_as(ui, "88888 px", egui::DragValue::new(&mut g.new_doc_width).range(1..=16384).suffix(" px"));
             ui.label("×");
-            ui.add(egui::DragValue::new(&mut g.new_doc_height).range(1..=16384).suffix(" px"));
+            crate::ui::fields::number_as(ui, "88888 px", egui::DragValue::new(&mut g.new_doc_height).range(1..=16384).suffix(" px"));
         });
         ui.end_row();
         ui.label("Default background");
@@ -164,7 +172,7 @@ fn general(ui: &mut Ui, state: &mut AppState) {
             ui.add_enabled_ui(g.autosave, |ui| {
                 ui.label("every");
                 let mut secs = g.autosave_interval_secs;
-                if ui.add(egui::DragValue::new(&mut secs).range(15..=3600).suffix(" s").speed(5)).changed() {
+                if crate::ui::fields::number_as(ui, "8888 s", egui::DragValue::new(&mut secs).range(15..=3600).suffix(" s").speed(5)).changed() {
                     g.autosave_interval_secs = secs;
                 }
             });
@@ -179,7 +187,7 @@ fn general(ui: &mut Ui, state: &mut AppState) {
             ui.checkbox(&mut g.backups, "");
             ui.add_enabled_ui(g.backups, |ui| {
                 ui.label("keep");
-                ui.add(egui::DragValue::new(&mut g.backup_versions).range(1..=20));
+                crate::ui::fields::number_as(ui, "88", egui::DragValue::new(&mut g.backup_versions).range(1..=20));
                 ui.label("versions");
             });
         })
@@ -195,9 +203,9 @@ fn general(ui: &mut Ui, state: &mut AppState) {
         ui.end_row();
         ui.label("Timelapse frames");
         ui.horizontal(|ui| {
-            ui.add(egui::DragValue::new(&mut g.timelapse_size).range(128..=2048).suffix(" px"));
+            crate::ui::fields::number_as(ui, "8888 px", egui::DragValue::new(&mut g.timelapse_size).range(128..=2048).suffix(" px"));
             ui.label("longest side, played at");
-            ui.add(egui::DragValue::new(&mut g.timelapse_fps).range(1..=60).suffix(" fps"));
+            crate::ui::fields::number_as(ui, "88 fps", egui::DragValue::new(&mut g.timelapse_fps).range(1..=60).suffix(" fps"));
         });
         ui.end_row();
     });
@@ -210,15 +218,13 @@ fn general(ui: &mut Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.checkbox(&mut u.check_on_start, "");
             ui.label("every");
-            ui.add(egui::DragValue::new(&mut u.check_interval_hours).range(1..=720).suffix(" h"));
+            crate::ui::fields::number_as(ui, "888 h", egui::DragValue::new(&mut u.check_interval_hours).range(1..=720).suffix(" h"));
         });
         ui.end_row();
         ui.label("Update manifest URL");
-        ui.add(
-            egui::TextEdit::singleline(&mut u.manifest_url)
+        crate::ui::fields::text_edit(ui, 320.0, egui::TextEdit::singleline(&mut u.manifest_url)
                 .desired_width(320.0)
-                .hint_text(crate::update::EXAMPLE_MANIFEST_URL),
-        )
+                .hint_text(crate::update::EXAMPLE_MANIFEST_URL),)
         .on_hover_text(
             "Where qsketch looks for new releases. Leave empty to disable update checks; ask whoever distributes your build for their URL.",
         );
@@ -353,13 +359,23 @@ fn interface(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(8.0);
     egui::Grid::new("ui_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
         ui.label("UI scale");
-        ui.add(egui::Slider::new(&mut u.scale, 0.75..=2.0).step_by(0.05).fixed_decimals(2));
+        crate::ui::fields::slider_as(
+            ui,
+            "8.88",
+            "",
+            egui::Slider::new(&mut u.scale, 0.75..=2.0).step_by(0.05).fixed_decimals(2),
+        );
         ui.end_row();
         ui.label("Snap floating panels to window edges");
         ui.checkbox(&mut u.snap_windows, "");
         ui.end_row();
         ui.label("Snap distance");
-        ui.add(egui::Slider::new(&mut u.snap_distance, 2.0..=40.0).suffix(" px"));
+        crate::ui::fields::slider_as(
+            ui,
+            "88.8 px",
+            "",
+            egui::Slider::new(&mut u.snap_distance, 2.0..=40.0).suffix(" px"),
+        );
         ui.end_row();
         ui.label("Show tooltips");
         ui.checkbox(&mut u.show_tooltips, "");
@@ -494,11 +510,21 @@ fn texture_editor(ui: &mut Ui, t: &mut crate::settings::TextureSettings) {
     ui.add_enabled_ui(t.kind != ChromeTexture::None, |ui| {
         egui::Grid::new("texture_grid").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
             ui.label("Strength");
-            ui.add(egui::Slider::new(&mut t.strength, 0.0..=0.5).step_by(0.01).fixed_decimals(2));
+            crate::ui::fields::slider_as(
+                ui,
+                "8.88",
+                "",
+                egui::Slider::new(&mut t.strength, 0.0..=0.5).step_by(0.01).fixed_decimals(2),
+            );
             ui.end_row();
             ui.label("Scale");
-            ui.add(egui::Slider::new(&mut t.scale, 0.25..=4.0).logarithmic(true).fixed_decimals(2).suffix("×"))
-                .on_hover_text("Size multiplier for the tile");
+            crate::ui::fields::slider_as(
+                ui,
+                "8.88×",
+                "",
+                egui::Slider::new(&mut t.scale, 0.25..=4.0).logarithmic(true).fixed_decimals(2).suffix("×"),
+            )
+            .on_hover_text("Size multiplier for the tile");
             ui.end_row();
             ui.label("Smooth filtering");
             ui.checkbox(&mut t.smooth, "")
@@ -510,7 +536,9 @@ fn texture_editor(ui: &mut Ui, t: &mut crate::settings::TextureSettings) {
             if t.kind == ChromeTexture::Custom {
                 ui.label("Image");
                 ui.horizontal(|ui| {
-                    ui.add(
+                    crate::ui::fields::text_edit(
+                        ui,
+                        260.0,
                         egui::TextEdit::singleline(&mut t.custom_path)
                             .desired_width(260.0)
                             .hint_text("Path to a seamless tile (PNG/JPG)"),
@@ -632,7 +660,11 @@ fn glyph_picker_popup(ui: &mut Ui, id: egui::Id, anchor: &egui::Response, filter
     egui::Popup::from_response(anchor).id(id).open_memory(None).show(|ui| {
         ui.set_min_width(340.0);
         let mut filter: String = ui.data_mut(|d| d.get_temp(filter_id).unwrap_or_default());
-        let r = ui.add(egui::TextEdit::singleline(&mut filter).hint_text("Search glyphs…").desired_width(320.0));
+        let r = crate::ui::fields::text_edit(
+            ui,
+            320.0,
+            egui::TextEdit::singleline(&mut filter).hint_text("Search glyphs…").desired_width(320.0),
+        );
         if r.changed() {
             ui.data_mut(|d| d.insert_temp(filter_id, filter.clone()));
         }
@@ -709,7 +741,7 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             let row = |ui: &mut Ui, name: &str, v: &mut WheelAction| {
                 ui.horizontal(|ui| {
                     ui.add_sized([86.0, 18.0], egui::Label::new(name));
-                    egui::ComboBox::from_id_salt(name).selected_text(v.label()).width(150.0).show_ui(ui, |ui| {
+                    crate::ui::fields::combo(ui, name, 150.0, v.label(), |ui| {
                         for a in WheelAction::ALL {
                             ui.selectable_value(v, a, a.label());
                         }
@@ -774,7 +806,7 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
                 if egui::color_picker::color_edit_button_srgba(ui, &mut col, egui::color_picker::Alpha::Opaque).changed() {
                     c.selection_tint_color = [col.r(), col.g(), col.b()];
                 }
-                ui.add(egui::Slider::new(&mut c.selection_tint_opacity, 0.05..=0.9).show_value(false))
+                crate::ui::fields::slider_as(ui, "", "", egui::Slider::new(&mut c.selection_tint_opacity, 0.05..=0.9).show_value(false))
                     .on_hover_text("Tint strength");
                 ui.selectable_value(&mut c.selection_tint_mode, SelectionTintMode::SelectionTools, "Selection tools only");
                 ui.selectable_value(&mut c.selection_tint_mode, SelectionTintMode::Always, "Always");
@@ -782,10 +814,15 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
         });
         ui.end_row();
         ui.label("Auto-scroll speed");
-        ui.add_enabled(
-            c.edge_autoscroll,
-            egui::Slider::new(&mut c.edge_autoscroll_speed, 60.0..=800.0).suffix(" pt/s").fixed_decimals(0),
-        )
+        ui.add_enabled_ui(c.edge_autoscroll, |ui| {
+            crate::ui::fields::slider_as(
+                ui,
+                "888 pt/s",
+                "",
+                egui::Slider::new(&mut c.edge_autoscroll_speed, 60.0..=800.0).suffix(" pt/s").fixed_decimals(0),
+            )
+        })
+        .inner
         .on_hover_text("Top speed once the pointer has been held at the edge for a moment; it starts slow and builds up.");
         ui.end_row();
         ui.label("Brush cursor");
@@ -801,7 +838,7 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             .on_hover_text("Every tool outlines the canvas pixel it would act on, so a click lands where you aim.");
         ui.end_row();
         ui.label("Fine angle snap");
-        ui.add(egui::DragValue::new(&mut c.fine_angle_step).range(1.0..=90.0).speed(0.5).suffix("°"))
+        crate::ui::fields::number_as(ui, "88.8°", egui::DragValue::new(&mut c.fine_angle_step).range(1.0..=90.0).speed(0.5).suffix("°"))
             .on_hover_text("Shift snaps lines to 45°; Shift+Ctrl snaps to this step (line, gradient, Shift+click brush lines).");
         ui.end_row();
         ui.label("Lossless transform");
@@ -812,9 +849,9 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.checkbox(&mut c.pick_loupe, "Show");
             ui.add_enabled_ui(c.pick_loupe, |ui| {
-                ui.add(egui::DragValue::new(&mut c.pick_loupe_size).range(40.0..=260.0).speed(1.0).suffix(" pt"))
+                crate::ui::fields::number_as(ui, "888 pt", egui::DragValue::new(&mut c.pick_loupe_size).range(40.0..=260.0).speed(1.0).suffix(" pt"))
                     .on_hover_text("Diameter of the magnifier");
-                ui.add(egui::DragValue::new(&mut c.pick_loupe_pixels).range(3..=41).speed(0.2).suffix(" px"))
+                crate::ui::fields::number_as(ui, "88 px", egui::DragValue::new(&mut c.pick_loupe_pixels).range(3..=41).speed(0.2).suffix(" px"))
                     .on_hover_text("How many canvas pixels it spans");
             });
         })
@@ -825,14 +862,14 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.checkbox(&mut c.show_pixel_grid, "Show");
             ui.label("from zoom");
-            ui.add(egui::DragValue::new(&mut c.pixel_grid_min_zoom).range(2.0..=64.0).suffix("×"));
+            crate::ui::fields::number_as(ui, "88×", egui::DragValue::new(&mut c.pixel_grid_min_zoom).range(2.0..=64.0).suffix("×"));
         });
         ui.end_row();
         ui.label("Grid");
         ui.horizontal(|ui| {
             ui.checkbox(&mut c.show_grid, "Show");
             ui.label("every");
-            ui.add(egui::DragValue::new(&mut c.grid_size).range(1..=4096).suffix(" px"));
+            crate::ui::fields::number_as(ui, "8888 px", egui::DragValue::new(&mut c.grid_size).range(1..=4096).suffix(" px"));
         })
         .response
         .on_hover_text("A tile grid over the canvas (View › Grid, Ctrl+Shift+G).");
@@ -847,7 +884,7 @@ fn canvas(ui: &mut Ui, state: &mut AppState) {
             if egui::color_picker::color_edit_button_srgba(ui, &mut b, egui::color_picker::Alpha::Opaque).changed() {
                 c.checker_b = [b.r(), b.g(), b.b()];
             }
-            ui.add(egui::Slider::new(&mut c.checker_size, 2.0..=64.0).suffix(" px").text("size"));
+            crate::ui::fields::slider_as(ui, "88.8 px", "size", egui::Slider::new(&mut c.checker_size, 2.0..=64.0).suffix(" px").text("size"));
         });
         ui.end_row();
         ui.label("Area outside the canvas");
@@ -1017,7 +1054,7 @@ fn tablet(ui: &mut Ui, state: &mut AppState) {
     egui::Grid::new("tablet_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
         ui.label("Pressure curve");
         ui.horizontal(|ui| {
-            ui.add(egui::Slider::new(&mut t.pressure_gamma, 0.25..=4.0).logarithmic(true).fixed_decimals(2));
+            crate::ui::fields::slider_as(ui, "8.88", "", egui::Slider::new(&mut t.pressure_gamma, 0.25..=4.0).logarithmic(true).fixed_decimals(2));
             ui.label(RichText::new(if t.pressure_gamma < 1.0 { "softer touch" } else if t.pressure_gamma > 1.0 { "firmer touch" } else { "linear" }).weak());
         });
         ui.end_row();
@@ -1025,10 +1062,10 @@ fn tablet(ui: &mut Ui, state: &mut AppState) {
         pressure_curve_preview(ui, t.pressure_gamma, t.min_pressure);
         ui.end_row();
         ui.label("Minimum pressure (dead zone)");
-        ui.add(egui::Slider::new(&mut t.min_pressure, 0.0..=0.5).fixed_decimals(2));
+        crate::ui::fields::slider_as(ui, "8.88", "", egui::Slider::new(&mut t.min_pressure, 0.0..=0.5).fixed_decimals(2));
         ui.end_row();
         ui.label("Mouse pressure");
-        ui.add(egui::Slider::new(&mut t.mouse_pressure, 0.1..=1.0).fixed_decimals(2));
+        crate::ui::fields::slider_as(ui, "8.88", "", egui::Slider::new(&mut t.mouse_pressure, 0.1..=1.0).fixed_decimals(2));
         ui.end_row();
         ui.label("Tablet backend");
         ui.vertical(|ui| {
@@ -1104,7 +1141,11 @@ fn shortcuts(ui: &mut Ui, ctx: &Context, state: &mut AppState, dlg: &mut Setting
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.label("Search");
-        ui.add(egui::TextEdit::singleline(&mut dlg.filter).desired_width(200.0).hint_text("action or key…"));
+        crate::ui::fields::text_edit(
+            ui,
+            200.0,
+            egui::TextEdit::singleline(&mut dlg.filter).desired_width(200.0).hint_text("action or key…"),
+        );
         if ui.button("Reset all").clicked() {
             state.keymap.reset_all();
             dlg.capturing = None;

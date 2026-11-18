@@ -252,7 +252,7 @@ pub fn ui(ui: &mut Ui, anim: &mut RigAnim, subject: &Subject, time_ms: u32, gutt
                     for (i, name) in ["x1 ", "y1 ", "x2 ", "y2 "].into_iter().enumerate() {
                         let range = if i % 2 == 0 { 0.0..=1.0 } else { -2.0..=3.0 };
                         let w = egui::DragValue::new(&mut c[i]).speed(0.01).range(range).prefix(name).max_decimals(2);
-                        changed |= ui.add_sized([62.0, 20.0], w).changed();
+                        changed |= crate::ui::fields::number(ui, 62.0, w).changed();
                     }
                     if changed {
                         new_curve = Some(Curve::Bezier(c));

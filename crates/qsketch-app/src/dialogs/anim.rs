@@ -141,7 +141,11 @@ fn show_frame_props(ctx: &Context, state: &mut AppState) {
         egui::Grid::new("frame_props_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label("Duration");
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut d.duration_ms).range(MIN_DURATION_MS..=MAX_DURATION_MS).suffix(" ms"));
+                crate::ui::fields::number_as(
+                    ui,
+                    "-88888 ms",
+                    egui::DragValue::new(&mut d.duration_ms).range(MIN_DURATION_MS..=MAX_DURATION_MS).suffix(" ms"),
+                );
                 ui.label(egui::RichText::new(fps_text(d.duration_ms)).weak());
             });
             ui.end_row();
@@ -177,7 +181,7 @@ fn show_tag_props(ctx: &Context, state: &mut AppState) {
             let t = &mut d.tag;
             egui::Grid::new("tag_props_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                 ui.label("Name");
-                let r = ui.text_edit_singleline(&mut t.name);
+                let r = crate::ui::fields::text_default(ui, &mut t.name);
                 if is_new {
                     r.request_focus();
                 }
@@ -185,8 +189,16 @@ fn show_tag_props(ctx: &Context, state: &mut AppState) {
                 ui.label("Frames");
                 ui.horizontal(|ui| {
                     let (mut from, mut to) = (t.from + 1, t.to + 1);
-                    ui.add(egui::DragValue::new(&mut from).range(1..=nframes).prefix("from "));
-                    ui.add(egui::DragValue::new(&mut to).range(1..=nframes).prefix("to "));
+                    crate::ui::fields::number_as(
+                        ui,
+                        "from 88888",
+                        egui::DragValue::new(&mut from).range(1..=nframes).prefix("from "),
+                    );
+                    crate::ui::fields::number_as(
+                        ui,
+                        "to 88888",
+                        egui::DragValue::new(&mut to).range(1..=nframes).prefix("to "),
+                    );
                     t.from = from - 1;
                     t.to = to - 1;
                     if t.from > t.to {
@@ -195,7 +207,7 @@ fn show_tag_props(ctx: &Context, state: &mut AppState) {
                 });
                 ui.end_row();
                 ui.label("Direction");
-                egui::ComboBox::from_id_salt("tag_dir").selected_text(t.direction.label()).show_ui(ui, |ui| {
+                crate::ui::fields::combo_default(ui, "tag_dir", t.direction.label(), |ui| {
                     for dir in TagDirection::ALL {
                         ui.selectable_value(&mut t.direction, dir, dir.label());
                     }
@@ -203,7 +215,7 @@ fn show_tag_props(ctx: &Context, state: &mut AppState) {
                 ui.end_row();
                 ui.label("Repeat");
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut t.repeat).range(0..=u16::MAX));
+                    crate::ui::fields::number_as(ui, "88888", egui::DragValue::new(&mut t.repeat).range(0..=u16::MAX));
                     ui.label(egui::RichText::new(if t.repeat == 0 { "times (0 = forever)" } else { "times" }).weak());
                 });
                 ui.end_row();
@@ -293,12 +305,14 @@ fn show_cel_props(ctx: &Context, state: &mut AppState) {
         egui::Grid::new("cel_props_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label("Opacity");
             let mut pct = d.opacity * 100.0;
-            if ui.add(egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%")).changed() {
+            if crate::ui::fields::slider_as(ui, "888.8%", "", egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%"))
+                .changed()
+            {
                 d.opacity = pct / 100.0;
             }
             ui.end_row();
             ui.label("Z-index");
-            ui.add(egui::DragValue::new(&mut d.z_index))
+            crate::ui::fields::number_as(ui, "-88888.88", egui::DragValue::new(&mut d.z_index))
                 .on_hover_text("Aseprite's per-cel draw order nudge; kept for Aseprite, not drawn here");
             ui.end_row();
         });
@@ -339,8 +353,16 @@ fn show_import_sheet(ctx: &Context, state: &mut AppState) {
         egui::Grid::new("import_sheet_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label("Frame size");
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut d.cell_w).range(1..=sw).prefix("w "));
-                ui.add(egui::DragValue::new(&mut d.cell_h).range(1..=sh).prefix("h "));
+                crate::ui::fields::number_as(
+                    ui,
+                    "w 88888",
+                    egui::DragValue::new(&mut d.cell_w).range(1..=sw).prefix("w "),
+                );
+                crate::ui::fields::number_as(
+                    ui,
+                    "h 88888",
+                    egui::DragValue::new(&mut d.cell_h).range(1..=sh).prefix("h "),
+                );
                 for (label, w, h) in [("8", 8, 8), ("16", 16, 16), ("32", 32, 32), ("64", 64, 64)] {
                     if w <= sw && h <= sh && ui.small_button(label).clicked() {
                         d.cell_w = w;
@@ -352,7 +374,11 @@ fn show_import_sheet(ctx: &Context, state: &mut AppState) {
             ui.label("Frames");
             let (cols, rows) = (sw / d.cell_w.max(1), sh / d.cell_h.max(1));
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut d.count).range(0..=(cols * rows) as usize));
+                crate::ui::fields::number_as(
+                    ui,
+                    "88888",
+                    egui::DragValue::new(&mut d.count).range(0..=(cols * rows) as usize),
+                );
                 ui.label(
                     egui::RichText::new(format!("(0 = all; {cols} × {rows} = {} cells, left to right)", cols * rows))
                         .weak(),
@@ -361,7 +387,11 @@ fn show_import_sheet(ctx: &Context, state: &mut AppState) {
             ui.end_row();
             ui.label("Duration");
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut d.duration_ms).range(MIN_DURATION_MS..=MAX_DURATION_MS).suffix(" ms"));
+                crate::ui::fields::number_as(
+                    ui,
+                    "-88888 ms",
+                    egui::DragValue::new(&mut d.duration_ms).range(MIN_DURATION_MS..=MAX_DURATION_MS).suffix(" ms"),
+                );
                 ui.label(egui::RichText::new(fps_text(d.duration_ms)).weak());
             });
             ui.end_row();
@@ -438,7 +468,7 @@ fn show_export(ctx: &Context, state: &mut AppState) {
     let ((ok, cancel), closed) = modal(ctx, "export_anim", "Export Animation", 400.0, |ui| {
         egui::Grid::new("export_anim_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label("Format");
-            egui::ComboBox::from_id_salt("export_fmt").selected_text(d.format.label()).width(240.0).show_ui(ui, |ui| {
+            crate::ui::fields::combo(ui, "export_fmt", 240.0, d.format.label(), |ui| {
                 for f in ExportFormat::ALL {
                     ui.selectable_value(&mut d.format, f, f.label());
                 }
@@ -446,7 +476,7 @@ fn show_export(ctx: &Context, state: &mut AppState) {
             ui.end_row();
             ui.label("Scale");
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut d.scale).range(1..=16).suffix("×"));
+                crate::ui::fields::number_as(ui, "88×", egui::DragValue::new(&mut d.scale).range(1..=16).suffix("×"));
                 let (ow, oh) = (w * d.scale * ax as u32, h * d.scale * ay as u32);
                 ui.label(egui::RichText::new(format!("{ow}×{oh} px per frame, nearest neighbor")).weak());
             });
@@ -455,7 +485,7 @@ fn show_export(ctx: &Context, state: &mut AppState) {
                 ui.label("Rig");
                 ui.vertical(|ui| {
                     let text = d.rig_anim.map_or("None (the frames as drawn)".to_string(), |i| rig_names[i].clone());
-                    egui::ComboBox::from_id_salt("export_rig").selected_text(text).width(240.0).show_ui(ui, |ui| {
+                    crate::ui::fields::combo(ui, "export_rig", 240.0, text, |ui| {
                         ui.selectable_value(&mut d.rig_anim, None, "None (the frames as drawn)");
                         for (i, name) in rig_names.iter().enumerate() {
                             ui.selectable_value(&mut d.rig_anim, Some(i), name);
@@ -466,7 +496,11 @@ fn show_export(ctx: &Context, state: &mut AppState) {
                             let frames =
                                 qsketch_core::rig::bake_frame_count(&s.rig.animations[i], d.rig_fps.clamp(1, 240));
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut d.rig_fps).range(1..=120).suffix(" fps"));
+                                crate::ui::fields::number_as(
+                                    ui,
+                                    "888 fps",
+                                    egui::DragValue::new(&mut d.rig_fps).range(1..=120).suffix(" fps"),
+                                );
                                 ui.label(egui::RichText::new(format!("baked to {frames} frames")).weak());
                             });
                         }
@@ -500,7 +534,7 @@ fn show_export(ctx: &Context, state: &mut AppState) {
                         }
                         let current = tag_i.and_then(|i| tags.get(i)).map(|t| t.1.clone()).unwrap_or_default();
                         ui.add_enabled_ui(is_tag, |ui| {
-                            egui::ComboBox::from_id_salt("export_tag").selected_text(current).show_ui(ui, |ui| {
+                            crate::ui::fields::combo_default(ui, "export_tag", current, |ui| {
                                 for (i, name, len) in &tags {
                                     if ui.selectable_label(tag_i == Some(*i), format!("{name} ({len})")).clicked() {
                                         d.range = ExportRange::Tag(*i);
@@ -520,27 +554,36 @@ fn show_export(ctx: &Context, state: &mut AppState) {
                 }
                 ExportFormat::Sheet => {
                     ui.label("Layout");
-                    egui::ComboBox::from_id_salt("sheet_layout").selected_text(d.sheet.layout.label()).show_ui(
-                        ui,
-                        |ui| {
-                            for l in SheetLayout::ALL {
-                                ui.selectable_value(&mut d.sheet.layout, l, l.label());
-                            }
-                        },
-                    );
+                    crate::ui::fields::combo_default(ui, "sheet_layout", d.sheet.layout.label(), |ui| {
+                        for l in SheetLayout::ALL {
+                            ui.selectable_value(&mut d.sheet.layout, l, l.label());
+                        }
+                    });
                     ui.end_row();
                     if d.sheet.layout == SheetLayout::Grid {
                         ui.label("Columns");
                         ui.horizontal(|ui| {
-                            ui.add(egui::DragValue::new(&mut d.sheet.columns).range(0..=4096));
+                            crate::ui::fields::number_as(
+                                ui,
+                                "8888",
+                                egui::DragValue::new(&mut d.sheet.columns).range(0..=4096),
+                            );
                             ui.label(egui::RichText::new("(0 = as square as possible)").weak());
                         });
                         ui.end_row();
                     }
                     ui.label("Spacing");
                     ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut d.sheet.padding).range(0..=256).prefix("gap "));
-                        ui.add(egui::DragValue::new(&mut d.sheet.border).range(0..=256).prefix("border "));
+                        crate::ui::fields::number_as(
+                            ui,
+                            "gap 888",
+                            egui::DragValue::new(&mut d.sheet.padding).range(0..=256).prefix("gap "),
+                        );
+                        crate::ui::fields::number_as(
+                            ui,
+                            "border 888",
+                            egui::DragValue::new(&mut d.sheet.border).range(0..=256).prefix("border "),
+                        );
                     });
                     ui.end_row();
                     ui.label("Data");

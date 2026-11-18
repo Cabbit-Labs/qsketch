@@ -76,16 +76,28 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             entry.view.zoom_out(None);
         }
         let mut z = entry.view.zoom;
-        if ui.add(egui::Slider::new(&mut z, MIN_ZOOM..=MAX_ZOOM).logarithmic(true).show_value(false)).changed() {
+        if crate::ui::fields::slider_as(
+            ui,
+            "",
+            "",
+            egui::Slider::new(&mut z, MIN_ZOOM..=MAX_ZOOM).logarithmic(true).show_value(false),
+        )
+        .changed()
+        {
             entry.view.set_zoom(z, None);
         }
         if icon_button(ui, icons::MAGNIFYING_GLASS_PLUS, "Zoom in", 22.0, false).clicked() {
             entry.view.zoom_in(None);
         }
         let mut pct = entry.view.zoom * 100.0;
-        if ui
-            .add(egui::DragValue::new(&mut pct).suffix("%").speed(1.0).range(MIN_ZOOM * 100.0..=MAX_ZOOM * 100.0))
-            .changed()
+        let w =
+            crate::ui::fields::range_width(ui, f64::from(MIN_ZOOM * 100.0), f64::from(MAX_ZOOM * 100.0), 0, "", "%");
+        if crate::ui::fields::number(
+            ui,
+            w,
+            egui::DragValue::new(&mut pct).suffix("%").speed(1.0).range(MIN_ZOOM * 100.0..=MAX_ZOOM * 100.0),
+        )
+        .changed()
         {
             entry.view.set_zoom(pct / 100.0, None);
         }

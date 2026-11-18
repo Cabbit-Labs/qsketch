@@ -101,18 +101,26 @@ fn show_slice_props(ctx: &Context, state: &mut AppState) {
         let s = &mut d.slice;
         egui::Grid::new("slice_props_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label("Name");
-            ui.text_edit_singleline(&mut s.name);
+            crate::ui::fields::text_default(ui, &mut s.name);
             ui.end_row();
             ui.label("Position");
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut s.rect.x).prefix("x "));
-                ui.add(egui::DragValue::new(&mut s.rect.y).prefix("y "));
+                crate::ui::fields::number_as(ui, "x -88888.88", egui::DragValue::new(&mut s.rect.x).prefix("x "));
+                crate::ui::fields::number_as(ui, "y -88888.88", egui::DragValue::new(&mut s.rect.y).prefix("y "));
             });
             ui.end_row();
             ui.label("Size");
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut s.rect.w).range(1..=65_535).prefix("w "));
-                ui.add(egui::DragValue::new(&mut s.rect.h).range(1..=65_535).prefix("h "));
+                crate::ui::fields::number_as(
+                    ui,
+                    "w 88888",
+                    egui::DragValue::new(&mut s.rect.w).range(1..=65_535).prefix("w "),
+                );
+                crate::ui::fields::number_as(
+                    ui,
+                    "h 88888",
+                    egui::DragValue::new(&mut s.rect.h).range(1..=65_535).prefix("h "),
+                );
             });
             ui.end_row();
             ui.label("9-slice");
@@ -126,10 +134,26 @@ fn show_slice_props(ctx: &Context, state: &mut AppState) {
                 }
                 if let Some(c) = &mut s.center {
                     ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut c.x).range(0..=s.rect.w).prefix("x "));
-                        ui.add(egui::DragValue::new(&mut c.y).range(0..=s.rect.h).prefix("y "));
-                        ui.add(egui::DragValue::new(&mut c.w).range(1..=s.rect.w).prefix("w "));
-                        ui.add(egui::DragValue::new(&mut c.h).range(1..=s.rect.h).prefix("h "));
+                        crate::ui::fields::number_as(
+                            ui,
+                            "x 88888",
+                            egui::DragValue::new(&mut c.x).range(0..=s.rect.w).prefix("x "),
+                        );
+                        crate::ui::fields::number_as(
+                            ui,
+                            "y 88888",
+                            egui::DragValue::new(&mut c.y).range(0..=s.rect.h).prefix("y "),
+                        );
+                        crate::ui::fields::number_as(
+                            ui,
+                            "w 88888",
+                            egui::DragValue::new(&mut c.w).range(1..=s.rect.w).prefix("w "),
+                        );
+                        crate::ui::fields::number_as(
+                            ui,
+                            "h 88888",
+                            egui::DragValue::new(&mut c.h).range(1..=s.rect.h).prefix("h "),
+                        );
                     });
                 }
             });
@@ -141,8 +165,16 @@ fn show_slice_props(ctx: &Context, state: &mut AppState) {
                     s.pivot = piv.then_some((s.rect.w / 2, s.rect.h / 2));
                 }
                 if let Some((px, py)) = &mut s.pivot {
-                    ui.add(egui::DragValue::new(px).range(0..=s.rect.w).prefix("x "));
-                    ui.add(egui::DragValue::new(py).range(0..=s.rect.h).prefix("y "));
+                    crate::ui::fields::number_as(
+                        ui,
+                        "x 88888",
+                        egui::DragValue::new(px).range(0..=s.rect.w).prefix("x "),
+                    );
+                    crate::ui::fields::number_as(
+                        ui,
+                        "y 88888",
+                        egui::DragValue::new(py).range(0..=s.rect.h).prefix("y "),
+                    );
                 }
             });
             ui.end_row();
@@ -359,9 +391,23 @@ fn show_recover(ctx: &Context, state: &mut AppState) {
                     } else {
                         String::new()
                     };
-                    ui.label(RichText::new(&r.meta.title).strong());
+                    // the name and path in what the buttons leave, cut with an ellipsis (the whole path on hover): laid out in
+                    // full, a long path ran under Recover and Discard
+                    let f = crate::ui::fields::width_for;
+                    let gap = ui.spacing().item_spacing.x;
+                    let buttons = f(ui, &["Discard".into()])
+                        + f(ui, &["Recover".into()])
+                        + f(ui, std::slice::from_ref(&when))
+                        + gap * 4.0;
+                    let room = (ui.available_width() - buttons).max(40.0);
+                    let title_w = crate::ui::fields::text_width(ui, &r.meta.title, egui::TextStyle::Body).ceil() + 4.0;
+                    let title_w = title_w.min(room * 0.45);
+                    crate::ui::fields::label(ui, title_w, RichText::new(&r.meta.title).strong())
+                        .on_hover_text(&r.meta.title);
                     if let Some(p) = &r.meta.path {
-                        ui.label(RichText::new(p.display().to_string()).weak());
+                        let path = p.display().to_string();
+                        crate::ui::fields::label(ui, room - title_w - gap, RichText::new(&path).weak())
+                            .on_hover_text(&path);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if crate::ui::widgets::small_button(ui, "Discard").clicked() {
@@ -646,13 +692,21 @@ fn show_new_doc(ctx: &Context, state: &mut AppState) {
     let (_, closed) = modal(ctx, "new_doc", "New Document", 340.0, |ui| {
         egui::Grid::new("new_doc_grid").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
             ui.label("Name");
-            ui.text_edit_singleline(&mut d.name);
+            crate::ui::fields::text_default(ui, &mut d.name);
             ui.end_row();
             ui.label("Width");
-            ui.add(egui::DragValue::new(&mut d.width).range(1..=16384).suffix(" px"));
+            crate::ui::fields::number_as(
+                ui,
+                "88888 px",
+                egui::DragValue::new(&mut d.width).range(1..=16384).suffix(" px"),
+            );
             ui.end_row();
             ui.label("Height");
-            ui.add(egui::DragValue::new(&mut d.height).range(1..=16384).suffix(" px"));
+            crate::ui::fields::number_as(
+                ui,
+                "88888 px",
+                egui::DragValue::new(&mut d.height).range(1..=16384).suffix(" px"),
+            );
             ui.end_row();
             if d.from_clipboard {
                 ui.label("");
@@ -730,10 +784,18 @@ fn show_canvas_size(ctx: &Context, state: &mut AppState) {
     let (_, closed) = modal(ctx, "canvas_size", "Canvas Size", 320.0, |ui| {
         egui::Grid::new("cs_grid").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
             ui.label("Width");
-            ui.add(egui::DragValue::new(&mut d.width).range(1..=16384).suffix(" px"));
+            crate::ui::fields::number_as(
+                ui,
+                "88888 px",
+                egui::DragValue::new(&mut d.width).range(1..=16384).suffix(" px"),
+            );
             ui.end_row();
             ui.label("Height");
-            ui.add(egui::DragValue::new(&mut d.height).range(1..=16384).suffix(" px"));
+            crate::ui::fields::number_as(
+                ui,
+                "88888 px",
+                egui::DragValue::new(&mut d.height).range(1..=16384).suffix(" px"),
+            );
             ui.end_row();
             ui.label("Anchor");
             ui.vertical(|ui| {
@@ -869,7 +931,7 @@ fn show_modify(ctx: &Context, state: &mut AppState) {
                     .speed(0.2)
                     .suffix(" px")
                     .fixed_decimals(if whole { 0 } else { 1 });
-                let mut r = ui.add(drag);
+                let mut r = crate::ui::fields::number_as(ui, "888.8 px", drag);
                 crate::ui::widgets::wheel_adjust(ui, &mut r, &mut d.amount, 1.0, lo..=hi);
             });
             ui.add_space(4.0);
@@ -928,12 +990,26 @@ fn show_image_size(ctx: &Context, state: &mut AppState) {
         let aspect = d.orig_w as f32 / d.orig_h.max(1) as f32;
         egui::Grid::new("is_grid").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
             ui.label("Width");
-            if ui.add(egui::DragValue::new(&mut d.width).range(1..=16384).suffix(" px")).changed() && d.keep_aspect {
+            if crate::ui::fields::number_as(
+                ui,
+                "88888 px",
+                egui::DragValue::new(&mut d.width).range(1..=16384).suffix(" px"),
+            )
+            .changed()
+                && d.keep_aspect
+            {
                 d.height = ((d.width as f32 / aspect).round() as u32).max(1);
             }
             ui.end_row();
             ui.label("Height");
-            if ui.add(egui::DragValue::new(&mut d.height).range(1..=16384).suffix(" px")).changed() && d.keep_aspect {
+            if crate::ui::fields::number_as(
+                ui,
+                "88888 px",
+                egui::DragValue::new(&mut d.height).range(1..=16384).suffix(" px"),
+            )
+            .changed()
+                && d.keep_aspect
+            {
                 d.width = ((d.height as f32 * aspect).round() as u32).max(1);
             }
             ui.end_row();
@@ -1004,7 +1080,7 @@ fn show_layer_props(ctx: &Context, state: &mut AppState) {
     let (_, closed) = modal(ctx, "layer_props", "Layer Properties", 340.0, |ui| {
         egui::Grid::new("layer_props_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label("Name");
-            let r = ui.text_edit_singleline(&mut d.name);
+            let r = crate::ui::fields::text_default(ui, &mut d.name);
             if !r.has_focus() && ui.data(|m| m.get_temp::<bool>(ui.id().with("focused"))).is_none() {
                 r.request_focus();
                 ui.data_mut(|m| m.insert_temp(ui.id().with("focused"), true));

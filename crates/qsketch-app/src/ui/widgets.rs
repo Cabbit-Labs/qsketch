@@ -138,12 +138,15 @@ pub fn labeled_slider(
 ) -> Response {
     ui.horizontal(|ui| {
         ui.label(label);
+        let (lo, hi) = (f64::from(*range.start()), f64::from(*range.end()));
+        let decimals = if suffix == "%" { 0 } else { 2 };
+        let w = crate::ui::fields::range_width(ui, lo, hi, decimals, "", suffix);
         let mut s =
             egui::Slider::new(value, range).suffix(suffix).logarithmic(log).clamping(egui::SliderClamping::Always);
         if suffix == "%" {
             s = s.fixed_decimals(0);
         }
-        ui.add(s)
+        crate::ui::fields::slider(ui, w, s)
     })
     .inner
 }
@@ -193,7 +196,11 @@ pub fn percent_slider_tip(ui: &mut Ui, label: &str, value: &mut f32, tip: &str) 
     let mut pct = (*value * 100.0).round();
     let r = ui.horizontal(|ui| {
         let l = ui.label(label);
-        let s = ui.add(
+        // the value box as wide as "100%" whatever it shows, so the row does not move as it changes
+        let w = crate::ui::fields::range_width(ui, 0.0, 100.0, 0, "", "%");
+        let s = crate::ui::fields::slider(
+            ui,
+            w,
             egui::Slider::new(&mut pct, 0.0..=100.0)
                 .suffix("%")
                 .fixed_decimals(0)
@@ -325,7 +332,11 @@ pub fn param(
 ) -> Response {
     let (lo, hi) = (*range.start(), *range.end());
     let speed = if log { (*value * 0.02).max(0.05) } else { (hi - lo) / 200.0 };
-    let mut r = ui.add(
+    // as wide as its widest value prints: sized to its text, "Size 8 px" grew to "Size 120 px" and moved the toolbar after it
+    let w = crate::ui::fields::range_width(ui, f64::from(lo), f64::from(hi), decimals, &format!("{label} "), suffix);
+    let mut r = crate::ui::fields::number(
+        ui,
+        w,
         egui::DragValue::new(value)
             .range(range.clone())
             .speed(speed as f64)

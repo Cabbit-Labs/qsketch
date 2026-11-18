@@ -254,16 +254,16 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                 ui.end_row();
                 if s.colors == TraceColors::Color {
                     ui.label("Color detail").on_hover_text("Bits per channel kept: lower merges similar shades.");
-                    ui.add(egui::Slider::new(&mut s.color_precision, 1..=8));
+                    crate::ui::fields::slider_as(ui, "8", "", egui::Slider::new(&mut s.color_precision, 1..=8));
                     ui.end_row();
                     ui.label("Merge layers").on_hover_text(
                         "How different stacked color regions must be to stay apart: higher gives fewer, bigger shapes.",
                     );
-                    ui.add(egui::Slider::new(&mut s.gradient_step, 0..=128));
+                    crate::ui::fields::slider_as(ui, "888", "", egui::Slider::new(&mut s.gradient_step, 0..=128));
                     ui.end_row();
                 } else {
                     ui.label("Threshold").on_hover_text("Pixels darker than this become ink.");
-                    ui.add(egui::Slider::new(&mut s.threshold, 1..=254));
+                    crate::ui::fields::slider_as(ui, "888", "", egui::Slider::new(&mut s.threshold, 1..=254));
                     ui.end_row();
                 }
                 ui.label("Curves");
@@ -279,16 +279,26 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                 if s.curves == TraceCurves::Smooth {
                     ui.label("Corners")
                         .on_hover_text("Turns sharper than this angle stay corners; higher rounds more.");
-                    ui.add(egui::Slider::new(&mut s.corner_threshold, 0..=180).suffix("°"));
+                    crate::ui::fields::slider_as(
+                        ui,
+                        "888°",
+                        "",
+                        egui::Slider::new(&mut s.corner_threshold, 0..=180).suffix("°"),
+                    );
                     ui.end_row();
                 }
                 if s.curves != TraceCurves::Pixel {
                     ui.label("Smoothness").on_hover_text("Longer segments: smoother outlines with fewer points.");
-                    ui.add(egui::Slider::new(&mut s.segment_length, 3.5..=10.0).fixed_decimals(1));
+                    crate::ui::fields::slider_as(
+                        ui,
+                        "88.8",
+                        "",
+                        egui::Slider::new(&mut s.segment_length, 3.5..=10.0).fixed_decimals(1),
+                    );
                     ui.end_row();
                 }
                 ui.label("Ignore specks").on_hover_text("Regions smaller than this across are dropped.");
-                ui.add(egui::Slider::new(&mut s.speckle, 0..=32).suffix(" px"));
+                crate::ui::fields::slider_as(ui, "88 px", "", egui::Slider::new(&mut s.speckle, 0..=32).suffix(" px"));
                 ui.end_row();
                 ui.label("Result");
                 ui.horizontal(|ui| {

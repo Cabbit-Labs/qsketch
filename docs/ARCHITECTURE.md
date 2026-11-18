@@ -314,6 +314,27 @@ scroll) and resolves pointer positions to frames, tags, layers and cels
 itself; the work a click asks for is queued as closures and run after the
 painter is released.
 
+## Inputs keep their size
+
+A rule of thumb for every panel, toolbar and dialog (2026-11-17): a field, a dropdown, a slider's value, a list row or a label is
+as wide as the layout gives it, never as wide as its text, and changes size only when the user resizes what holds it. Text that does
+not fit scrolls while it is typed and ends in an ellipsis when shown, with its whole text on hover; a long list scrolls.
+
+egui does the opposite by default: a dropdown grows to its chosen text, a number to its digits (the toolbar's "Size 8 px" became
+"Size 275 px" and pushed everything after it along), and painted names run on under whatever is beside them. So inputs go through
+[`qsketch_ui::fields`](../crates/qsketch-ui/src/fields.rs) (re-exported as `crate::ui::fields`), which reserves each input's
+rectangle before drawing it and clips to it:
+
+- `number` / `number_as` / `range_width`: a number field as wide as its widest value prints (both ends of its range with its prefix
+  and suffix, or a sample such as `"x -88888.8"` when it has no range), so it never needs cutting.
+- `slider` / `slider_as`: the look's track plus a value box of that kind, and room for a `.text()` label.
+- `text` / `text_edit`: a one-line field of a set width; longer text scrolls inside it.
+- `combo`: a dropdown of a set width, its chosen text and its list's rows cut with an ellipsis.
+- `pick` / `label`: a list row or label of a set width, cut with an ellipsis; `elide` lays out text a painter draws (layer names,
+  the timeline's names and tags) cut to a width.
+
+The shared widgets (`ui::widgets::param`, `percent_slider`, `labeled_slider`) already follow it, so a new control built on them does.
+
 ## The dock workspace
 
 [`Workspace`](../crates/qsketch-app/src/workspace.rs) wraps `egui_dock`'s

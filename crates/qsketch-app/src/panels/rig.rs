@@ -403,7 +403,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
         ui.horizontal_wrapped(|ui| {
             row_label(ui, "Animation");
             let text = cur.and_then(|a| names.get(a).cloned()).unwrap_or_else(|| "Setup pose".into());
-            egui::ComboBox::from_id_salt("rig_panel_anim").selected_text(text).width(130.0).show_ui(ui, |ui| {
+            crate::ui::fields::combo(ui, "rig_panel_anim", 130.0, text, |ui| {
                 if ui.selectable_label(cur.is_none(), "Setup pose").clicked() {
                     rui.anim = None;
                     rui.playing = false;
@@ -417,8 +417,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             });
             new_anim = ui.button("New").on_hover_text("New animation").clicked();
             if let Some(a) = anim_edit.as_mut() {
-                ui.add(egui::TextEdit::singleline(&mut a.name).desired_width(110.0));
-                ui.add(egui::DragValue::new(&mut a.duration_ms).range(1..=600_000).suffix(" ms"))
+                crate::ui::fields::text_edit(ui, 110.0, egui::TextEdit::singleline(&mut a.name).desired_width(110.0));
+                crate::ui::fields::number_as(ui, "888888 ms", egui::DragValue::new(&mut a.duration_ms).range(1..=600_000).suffix(" ms"))
                     .on_hover_text("Length of the animation");
                 ui.checkbox(&mut a.looped, "Loop");
                 if a.looped
@@ -431,7 +431,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 }
                 ui.checkbox(&mut rui.nearest, "Pixel art").on_hover_text("Preview without smoothing");
                 if names.len() > 1 {
-                    ui.add(egui::DragValue::new(&mut mix_edit).range(0..=5000).speed(5).prefix("mix ").suffix(" ms"))
+                    crate::ui::fields::number_as(ui, "mix 8888 ms", egui::DragValue::new(&mut mix_edit).range(0..=5000).speed(5).prefix("mix ").suffix(" ms"))
                         .on_hover_text(
                             "Crossfade: pick another animation while this one plays and the pose blends into it over this long, the way a game switches animations (0 switches at once). Exported as the default mix.",
                         );
@@ -469,8 +469,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     ui.separator();
                 }
                 ui.label("Easing for new keys");
-                egui::ComboBox::from_id_salt("rig_panel_easing").selected_text(rui.easing.label()).width(100.0).show_ui(
-                    ui,
+                crate::ui::fields::combo(ui, "rig_panel_easing", 100.0, rui.easing.label(),
                     |ui| {
                         for e in Easing::ALL {
                             ui.selectable_value(&mut rui.easing, e, e.label());
@@ -539,6 +538,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             // way to a bone that lies under another one on the canvas.
             ui.menu_button(egui::RichText::new("Bone ⏷").strong(), |ui| {
                 egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                    // a set width, long names cut short: the menu grew with its longest bone name
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                    ui.set_max_width(240.0);
                     if rig.bones.is_empty() {
                         ui.label(egui::RichText::new("No bones yet: drag on the canvas to draw one.").weak());
                     }
@@ -562,12 +564,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 ui.label(egui::RichText::new("click a bone on the canvas, or pick one here").weak());
                 return;
             };
-            ui.add(egui::TextEdit::singleline(&mut b.name).desired_width(150.0)).on_hover_text("The bone's name");
+            crate::ui::fields::text_edit(ui, 150.0, egui::TextEdit::singleline(&mut b.name).desired_width(150.0)).on_hover_text("The bone's name");
             let parent_text = b.parent.map_or_else(|| "no parent".to_string(), |p| format!("in {}", target_name(rig, p)));
-            egui::ComboBox::from_id_salt("rig_panel_parent")
-                .selected_text(parent_text)
-                .width(110.0)
-                .show_ui(ui, |ui| {
+            crate::ui::fields::combo(ui, "rig_panel_parent", 110.0, parent_text, |ui| {
                     if ui.selectable_label(b.parent.is_none(), "no parent").clicked() && b.parent.is_some() {
                         new_parent = Some(None);
                     }
@@ -581,17 +580,15 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 .on_hover_text("The bone this one hangs from and moves with. Changing it keeps the bone where it is.");
             match offs_edit.as_mut() {
                 None => {
-                    ui.add(egui::DragValue::new(&mut b.x).speed(0.5).max_decimals(1).prefix("x "));
-                    ui.add(egui::DragValue::new(&mut b.y).speed(0.5).max_decimals(1).prefix("y "));
-                    ui.add(egui::DragValue::new(&mut b.rotation).speed(0.5).max_decimals(1).prefix("angle ").suffix("°"));
-                    ui.add(
-                        egui::DragValue::new(&mut b.length).speed(0.5).range(1.0..=10_000.0).max_decimals(1).prefix("length "),
-                    );
+                    crate::ui::fields::number_as(ui, "x -88888.8", egui::DragValue::new(&mut b.x).speed(0.5).max_decimals(1).prefix("x "));
+                    crate::ui::fields::number_as(ui, "y -88888.8", egui::DragValue::new(&mut b.y).speed(0.5).max_decimals(1).prefix("y "));
+                    crate::ui::fields::number_as(ui, "angle -88888.8°", egui::DragValue::new(&mut b.rotation).speed(0.5).max_decimals(1).prefix("angle ").suffix("°"));
+                    crate::ui::fields::number_as(ui, "length 88888.8", egui::DragValue::new(&mut b.length).speed(0.5).range(1.0..=10_000.0).max_decimals(1).prefix("length "),);
                 }
                 Some((tr, rot, sc)) => {
                     // Fixed widths, so the buttons after a number don't move
                     // when it gains a digit.
-                    let num = |ui: &mut Ui, w: f32, d: egui::DragValue| ui.add_sized([w, ui.spacing().interact_size.y], d);
+                    let num = |ui: &mut Ui, w: f32, d: egui::DragValue| crate::ui::fields::number(ui, w, d);
                     if ui
                         .button("Key")
                         .on_hover_text("Key this bone where it is now at the playhead, so it holds this pose until here")
@@ -623,10 +620,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             ui.separator();
             ui.label("Turned by");
             let text = drive_edit.map_or_else(|| "nothing".to_string(), |d| target_name(rig, d.source));
-            egui::ComboBox::from_id_salt("rig_panel_drive")
-                .selected_text(text)
-                .width(110.0)
-                .show_ui(ui, |ui| {
+            crate::ui::fields::combo(ui, "rig_panel_drive", 110.0, text, |ui| {
                     if ui.selectable_label(drive_edit.is_none(), "nothing").clicked() {
                         drive_edit = None;
                     }
@@ -653,7 +647,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                     "Gears: this bone turns whenever the chosen bone does in an animation, by the ratio next to it. Key the one bone and everything meshed with it follows.",
                 );
             if let Some(d) = drive_edit.as_mut() {
-                ui.add(egui::DragValue::new(&mut d.ratio).speed(0.01).max_decimals(3).prefix("× ")).on_hover_text(
+                crate::ui::fields::number_as(ui, "× -88888.888", egui::DragValue::new(&mut d.ratio).speed(0.01).max_decimals(3).prefix("× ")).on_hover_text(
                     "Turns per turn of the driving bone. Negative turns the other way (meshed gears); -2 is a gear half the size. It starts as the ratio of the two bones' lengths.",
                 );
             }
@@ -708,7 +702,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 {
                     alpha_switch = Some(0.0);
                 }
-                ui.add(egui::DragValue::new(&mut rui.alpha_key).speed(0.01).range(0.0..=1.0).prefix("opacity "))
+                crate::ui::fields::number_as(ui, "opacity 8.88", egui::DragValue::new(&mut rui.alpha_key).speed(0.01).range(0.0..=1.0).prefix("opacity "))
                     .on_hover_text("Opacity of the active layer at the playhead right now");
                 if ui.button("Key").on_hover_text("Key this opacity at the playhead").clicked() {
                     alpha_key = Some(rui.alpha_key);
@@ -735,8 +729,8 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                         ui.toggle_value(&mut rui.weights, "Paint weights")
                             .on_hover_text("Drag on the art to add the selected bone's weight; hold Ctrl to remove it");
                         if rui.weights {
-                            ui.add(egui::DragValue::new(&mut rui.brush).range(2.0..=200.0).prefix("size ").suffix(" px"));
-                            ui.add(egui::DragValue::new(&mut rui.strength).speed(0.01).range(0.01..=1.0).prefix("strength "));
+                            crate::ui::fields::number_as(ui, "size 888 px", egui::DragValue::new(&mut rui.brush).range(2.0..=200.0).prefix("size ").suffix(" px"));
+                            crate::ui::fields::number_as(ui, "strength 8.88", egui::DragValue::new(&mut rui.strength).speed(0.01).range(0.01..=1.0).prefix("strength "));
                         }
                         auto_near = ui
                             .button("Auto weights")
@@ -748,7 +742,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                         }
                     }
                     None => {
-                        ui.add(egui::DragValue::new(&mut rui.cell).range(4..=64).suffix(" px")).on_hover_text("Mesh cell size");
+                        crate::ui::fields::number_as(ui, "88 px", egui::DragValue::new(&mut rui.cell).range(4..=64).suffix(" px")).on_hover_text("Mesh cell size");
                         make_mesh = ui
                             .add_enabled(layer_bounds.is_some(), egui::Button::new("Make mesh"))
                             .on_hover_text("Lay a grid over the active layer so it can bend; it starts rigid")
@@ -761,7 +755,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             match ik_edit.as_mut() {
                 Some(c) => {
                     ui.label(format!("{} → {}", c.name, target_name(rig, c.target)));
-                    ui.add(egui::DragValue::new(&mut c.mix).speed(0.01).range(0.0..=1.0).prefix("mix "))
+                    crate::ui::fields::number_as(ui, "mix 8.88", egui::DragValue::new(&mut c.mix).speed(0.01).range(0.0..=1.0).prefix("mix "))
                         .on_hover_text("How much IK replaces the keyed rotations");
                     if ui.button("Flip bend").on_hover_text("Fold the joint the other way").clicked() {
                         c.bend = if c.bend < 0 { 1 } else { -1 };
@@ -791,7 +785,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 "Skins swap outfits or whole characters on one skeleton. A layer you put in a skin shows only while that skin is worn; layers in no skin always show.",
             );
             let text = skin_cur.map_or_else(|| "All layers".to_string(), |i| skin_names[i].clone());
-            egui::ComboBox::from_id_salt("rig_panel_skin").selected_text(text).width(130.0).show_ui(ui, |ui| {
+            crate::ui::fields::combo(ui, "rig_panel_skin", 130.0, text, |ui| {
                 if ui
                     .selectable_label(skin_cur.is_none(), "All layers")
                     .on_hover_text("Wear no skin: every layer shows, to work on the art")
@@ -807,7 +801,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             });
             new_skin = ui.button("New").on_hover_text("New skin").clicked();
             if let Some(name) = skin_name.as_mut() {
-                ui.add(egui::TextEdit::singleline(name).desired_width(110.0));
+                crate::ui::fields::text_edit(ui, 110.0, egui::TextEdit::singleline(name).desired_width(110.0));
                 let mut member = in_skin;
                 if ui
                     .checkbox(&mut member, "Active layer in this skin")

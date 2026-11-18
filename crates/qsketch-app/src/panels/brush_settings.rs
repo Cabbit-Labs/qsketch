@@ -114,7 +114,9 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
             // loses focus so a half-typed name never collides with a preset.
             let name_id = ui.id().with(("brush_name", tool));
             let mut draft: String = ui.data(|d| d.get_temp(name_id)).unwrap_or_else(|| b.name.clone());
-            let te = ui.add(
+            let te = crate::ui::fields::text_edit(
+                ui,
+                150.0,
                 egui::TextEdit::singleline(&mut draft)
                     .desired_width(150.0)
                     .font(egui::TextStyle::Body)
@@ -185,14 +187,11 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 ui.new_child(egui::UiBuilder::new().max_rect(body).layout(egui::Layout::top_down(egui::Align::Min)));
             let ui = &mut cui;
             ui.horizontal(|ui| {
-                egui::ComboBox::from_id_salt("brush_settings_section")
-                    .selected_text(brush_page.label())
-                    .width(150.0)
-                    .show_ui(ui, |ui| {
-                        for p in Page::ALL {
-                            ui.selectable_value(brush_page, p, p.label());
-                        }
-                    });
+                crate::ui::fields::combo(ui, "brush_settings_section", 150.0, brush_page.label(), |ui| {
+                    for p in Page::ALL {
+                        ui.selectable_value(brush_page, p, p.label());
+                    }
+                });
                 if let Some(flag) = brush_page.flag(b) {
                     ui.checkbox(flag, "On");
                 }
@@ -206,7 +205,14 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 ui.label("Smoothing");
                 ui.spacing_mut().slider_width = 50.0;
                 let mut pct = (b.smoothing * 100.0).round();
-                if ui.add(egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%").fixed_decimals(0)).changed() {
+                if crate::ui::fields::slider_as(
+                    ui,
+                    "888%",
+                    "",
+                    egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%").fixed_decimals(0),
+                )
+                .changed()
+                {
                     b.smoothing = pct / 100.0;
                 }
             });
@@ -353,7 +359,14 @@ fn section_list(ui: &mut Ui, b: &mut BrushSettings, page: &mut Page) {
         ui.label("Smoothing");
         let mut pct = (b.smoothing * 100.0).round();
         ui.spacing_mut().slider_width = 60.0;
-        if ui.add(egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%").fixed_decimals(0).show_value(false)).changed() {
+        if crate::ui::fields::slider_as(
+            ui,
+            "",
+            "",
+            egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%").fixed_decimals(0).show_value(false),
+        )
+        .changed()
+        {
             b.smoothing = pct / 100.0;
         }
         ui.label(egui::RichText::new(format!("{pct:.0}%")).weak().small());
@@ -365,7 +378,7 @@ fn control_combo(ui: &mut Ui, id: &str, on: &mut bool) -> bool {
     ui.horizontal(|ui| {
         ui.add_space(24.0);
         ui.label("Control:");
-        egui::ComboBox::from_id_salt(id).selected_text(if *on { "Pen Pressure" } else { "Off" }).show_ui(ui, |ui| {
+        crate::ui::fields::combo_default(ui, id, if *on { "Pen Pressure" } else { "Off" }, |ui| {
             changed |= ui.selectable_value(on, false, "Off").changed();
             changed |= ui.selectable_value(on, true, "Pen Pressure").changed();
         });
@@ -380,14 +393,21 @@ const EDGE_SOFTNESS_TIP: &str = "Width of the feathered rim around the dab, in p
 /// Slider for a round dab's edge feather (rim width in px). Greyed out for
 /// aliased brushes, which have no rim. Returns true while it is being changed.
 pub fn edge_softness_slider(ui: &mut Ui, b: &mut BrushSettings) -> bool {
-    let r = ui.add_enabled(
-        b.antialias,
-        egui::Slider::new(&mut b.edge_feather, LEGACY_EDGE_FEATHER..=MAX_EDGE_FEATHER)
-            .logarithmic(true)
-            .suffix(" px")
-            .fixed_decimals(1)
-            .clamping(egui::SliderClamping::Always),
-    );
+    let w =
+        crate::ui::fields::range_width(ui, f64::from(LEGACY_EDGE_FEATHER), f64::from(MAX_EDGE_FEATHER), 1, "", " px");
+    let r = ui
+        .add_enabled_ui(b.antialias, |ui| {
+            crate::ui::fields::slider(
+                ui,
+                w,
+                egui::Slider::new(&mut b.edge_feather, LEGACY_EDGE_FEATHER..=MAX_EDGE_FEATHER)
+                    .logarithmic(true)
+                    .suffix(" px")
+                    .fixed_decimals(1)
+                    .clamping(egui::SliderClamping::Always),
+            )
+        })
+        .inner;
     let changed = r.changed();
     r.on_hover_text(EDGE_SOFTNESS_TIP).on_disabled_hover_text("Turn on Anti-aliasing to soften the edge");
     changed
@@ -560,7 +580,10 @@ fn tip_page(
     ui.separator();
 
     heading(ui, "Size");
-    ui.add(
+    crate::ui::fields::slider_as(
+        ui,
+        "8888 px",
+        "",
         egui::Slider::new(&mut b.size, 1.0..=2000.0)
             .logarithmic(true)
             .suffix(" px")
@@ -577,12 +600,22 @@ fn tip_page(
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.label("Angle:");
-                ui.add(egui::DragValue::new(&mut b.angle).suffix("°").speed(1.0).range(-360.0..=720.0));
+                crate::ui::fields::number_as(
+                    ui,
+                    "-888°",
+                    egui::DragValue::new(&mut b.angle).suffix("°").speed(1.0).range(-360.0..=720.0),
+                );
             });
             ui.horizontal(|ui| {
                 ui.label("Roundness:");
                 let mut pct = (b.roundness * 100.0).round();
-                if ui.add(egui::DragValue::new(&mut pct).suffix("%").speed(1.0).range(1.0..=100.0)).changed() {
+                if crate::ui::fields::number_as(
+                    ui,
+                    "888%",
+                    egui::DragValue::new(&mut pct).suffix("%").speed(1.0).range(1.0..=100.0),
+                )
+                .changed()
+                {
                     b.roundness = pct / 100.0;
                 }
             });
@@ -602,7 +635,10 @@ fn tip_page(
     }
     heading(ui, "Spacing");
     let mut sp = b.spacing * 100.0;
-    let qr = ui.add(
+    let qr = crate::ui::fields::slider_as(
+        ui,
+        "888%",
+        "",
         egui::Slider::new(&mut sp, 1.0..=500.0)
             .logarithmic(true)
             .suffix("%")
@@ -770,18 +806,21 @@ fn shape_dynamics_page(ui: &mut Ui, b: &mut BrushSettings) {
     ui.horizontal(|ui| {
         ui.add_space(24.0);
         ui.label("Control:");
-        egui::ComboBox::from_id_salt("angle_ctrl")
-            .selected_text(match b.angle_control {
+        crate::ui::fields::combo_default(
+            ui,
+            "angle_ctrl",
+            match b.angle_control {
                 AngleControl::Off => "Off",
                 AngleControl::Direction => "Direction",
                 AngleControl::Pressure => "Pen Pressure",
-            })
-            .show_ui(ui, |ui| {
+            },
+            |ui| {
                 ui.selectable_value(&mut b.angle_control, AngleControl::Off, "Off");
                 ui.selectable_value(&mut b.angle_control, AngleControl::Direction, "Direction")
                     .on_hover_text("Rotate the tip to follow the stroke");
                 ui.selectable_value(&mut b.angle_control, AngleControl::Pressure, "Pen Pressure");
-            });
+            },
+        );
     });
     ui.add_space(6.0);
     ui.separator();
@@ -800,7 +839,10 @@ fn scattering_page(ui: &mut Ui, b: &mut BrushSettings) {
     }
     heading(ui, "Scatter");
     let mut pct = b.scatter * 100.0;
-    let qr = ui.add(
+    let qr = crate::ui::fields::slider_as(
+        ui,
+        "888%",
+        "",
         egui::Slider::new(&mut pct, 0.0..=500.0).suffix("%").fixed_decimals(0).clamping(egui::SliderClamping::Always),
     );
     if qr.changed()
@@ -817,7 +859,12 @@ fn scattering_page(ui: &mut Ui, b: &mut BrushSettings) {
     ui.add_space(6.0);
     ui.separator();
     heading(ui, "Count");
-    ui.add(egui::Slider::new(&mut b.scatter_count, 1..=16).clamping(egui::SliderClamping::Always));
+    crate::ui::fields::slider_as(
+        ui,
+        "88",
+        "",
+        egui::Slider::new(&mut b.scatter_count, 1..=16).clamping(egui::SliderClamping::Always),
+    );
     ui.label(egui::RichText::new("Dabs placed at every spacing step.").weak().small());
 }
 
@@ -844,7 +891,10 @@ fn texture_page(ui: &mut Ui, b: &mut BrushSettings, library: &mut BrushLibrary, 
     });
     heading(ui, "Scale");
     let mut pct = b.texture_scale * 100.0;
-    let sr = ui.add(
+    let sr = crate::ui::fields::slider_as(
+        ui,
+        "888%",
+        "",
         egui::Slider::new(&mut pct, 10.0..=800.0)
             .logarithmic(true)
             .suffix("%")
@@ -858,20 +908,23 @@ fn texture_page(ui: &mut Ui, b: &mut BrushSettings, library: &mut BrushLibrary, 
     }
     heading(ui, "Mode");
     ui.horizontal(|ui| {
-        egui::ComboBox::from_id_salt("tex_mode")
-            .selected_text(match b.texture_mode {
+        crate::ui::fields::combo_default(
+            ui,
+            "tex_mode",
+            match b.texture_mode {
                 TextureMode::Multiply => "Multiply",
                 TextureMode::Subtract => "Subtract",
                 TextureMode::Height => "Height",
-            })
-            .show_ui(ui, |ui| {
+            },
+            |ui| {
                 ui.selectable_value(&mut b.texture_mode, TextureMode::Multiply, "Multiply")
                     .on_hover_text("Grain lightens the dab smoothly");
                 ui.selectable_value(&mut b.texture_mode, TextureMode::Subtract, "Subtract")
                     .on_hover_text("Grain carves hard holes");
                 ui.selectable_value(&mut b.texture_mode, TextureMode::Height, "Height")
                     .on_hover_text("Only the raised paper catches paint; depth sets how much of the paper is raised");
-            });
+            },
+        );
     });
     heading(ui, "Depth");
     percent_slider(ui, "", &mut b.texture_depth);

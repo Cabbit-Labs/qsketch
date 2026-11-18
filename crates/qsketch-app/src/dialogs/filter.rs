@@ -490,16 +490,28 @@ fn slider<T: egui::emath::Numeric>(
     text: &str,
     suffix: &str,
 ) {
-    ui.add(egui::Slider::new(v, range).text(text).suffix(suffix));
+    // the value box as wide as the range's widest end, and room for the label after it, so the dialog does not move as it changes
+    let d = if T::INTEGRAL { 0 } else { 2 };
+    let sample = crate::ui::fields::range_width(ui, range.start().to_f64(), range.end().to_f64(), d, "", suffix);
+    let label =
+        crate::ui::fields::text_width(ui, text, egui::TextStyle::Body).ceil() + ui.spacing().item_spacing.x + 1.0;
+    crate::ui::fields::slider(ui, sample + label, egui::Slider::new(v, range).text(text).suffix(suffix));
 }
 
 fn log_slider(ui: &mut Ui, v: &mut f32, range: std::ops::RangeInclusive<f32>, text: &str, suffix: &str) {
-    ui.add(egui::Slider::new(v, range).text(text).suffix(suffix).logarithmic(true));
+    let sample = crate::ui::fields::range_width(ui, f64::from(*range.start()), f64::from(*range.end()), 2, "", suffix);
+    let label =
+        crate::ui::fields::text_width(ui, text, egui::TextStyle::Body).ceil() + ui.spacing().item_spacing.x + 1.0;
+    crate::ui::fields::slider(
+        ui,
+        sample + label,
+        egui::Slider::new(v, range).text(text).suffix(suffix).logarithmic(true),
+    );
 }
 
 fn seed_ui(ui: &mut Ui, seed: &mut u32) {
     ui.horizontal(|ui| {
-        ui.add(egui::DragValue::new(seed).speed(1));
+        crate::ui::fields::number_as(ui, "-88888.88", egui::DragValue::new(seed).speed(1));
         ui.label("Seed");
         if crate::ui::widgets::small_button(ui, "Randomize").clicked() {
             let nanos = std::time::SystemTime::now()
@@ -691,7 +703,12 @@ fn color_balance_ui(ui: &mut Ui, b: &mut ColorBalance) {
     for (i, (lo, hi)) in [("Cyan", "Red"), ("Magenta", "Green"), ("Yellow", "Blue")].iter().enumerate() {
         ui.horizontal(|ui| {
             ui.label(RichText::new(*lo).weak().small());
-            ui.add(egui::Slider::new(&mut v[i], -100.0..=100.0).show_value(true).fixed_decimals(0));
+            crate::ui::fields::slider_as(
+                ui,
+                "-888",
+                "",
+                egui::Slider::new(&mut v[i], -100.0..=100.0).show_value(true).fixed_decimals(0),
+            );
             ui.label(RichText::new(*hi).weak().small());
         });
     }
@@ -777,7 +794,12 @@ fn levels_ui(ui: &mut Ui, l: &mut Levels, hist: Option<&[[u32; 256]; 4]>) {
     ui.label(RichText::new("Input levels").weak().small());
     slider(ui, &mut cur.in_black, 0.0..=253.0, "Black", "");
     cur.in_black = cur.in_black.min(cur.in_white - 2.0).max(0.0);
-    ui.add(egui::Slider::new(&mut cur.in_gamma, 0.1..=9.99).text("Gamma").logarithmic(true).fixed_decimals(2));
+    crate::ui::fields::slider_as(
+        ui,
+        "8.88",
+        "Gamma",
+        egui::Slider::new(&mut cur.in_gamma, 0.1..=9.99).text("Gamma").logarithmic(true).fixed_decimals(2),
+    );
     slider(ui, &mut cur.in_white, 2.0..=255.0, "White", "");
     cur.in_white = cur.in_white.max(cur.in_black + 2.0).min(255.0);
     ui.label(RichText::new("Output levels").weak().small());
@@ -860,7 +882,7 @@ fn palettize_ui(
         let id = ui.id().with("gen_count");
         let mut count: usize = ui.data(|d| d.get_temp(id)).unwrap_or(colors.len().clamp(2, 256));
         ui.label("Generate");
-        if ui.add(egui::DragValue::new(&mut count).range(2..=256)).changed() {
+        if crate::ui::fields::number_as(ui, "888", egui::DragValue::new(&mut count).range(2..=256)).changed() {
             ui.data_mut(|d| d.insert_temp(id, count));
         }
         if ui.button("from image").on_hover_text("Median-cut the image's colors down to this many").clicked() {

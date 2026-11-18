@@ -197,7 +197,14 @@ fn color_row(ui: &mut Ui, label: &str, c: &mut Rgba8) {
 fn pct_row(ui: &mut Ui, label: &str, v: &mut f32) {
     ui.label(label);
     let mut p = (*v * 100.0).round();
-    if ui.add(egui::Slider::new(&mut p, 0.0..=100.0).suffix("%").fixed_decimals(0)).changed() {
+    if crate::ui::fields::slider_as(
+        ui,
+        "888%",
+        "",
+        egui::Slider::new(&mut p, 0.0..=100.0).suffix("%").fixed_decimals(0),
+    )
+    .changed()
+    {
         *v = p / 100.0;
     }
     ui.end_row();
@@ -205,7 +212,7 @@ fn pct_row(ui: &mut Ui, label: &str, v: &mut f32) {
 
 fn px_row(ui: &mut Ui, label: &str, v: &mut f32, max: f32) {
     ui.label(label);
-    ui.add(egui::Slider::new(v, 0.0..=max).suffix(" px").fixed_decimals(0));
+    crate::ui::fields::slider_as(ui, "88888 px", "", egui::Slider::new(v, 0.0..=max).suffix(" px").fixed_decimals(0));
     ui.end_row();
 }
 
@@ -219,7 +226,11 @@ fn page_ui(ui: &mut Ui, d: &mut LayerStyleDialog) {
             color_row(ui, "Color", &mut e.color);
             pct_row(ui, "Opacity", &mut e.opacity);
             ui.label("Angle");
-            ui.add(egui::DragValue::new(&mut e.angle).suffix("°").speed(1.0).range(-180.0..=360.0));
+            crate::ui::fields::number_as(
+                ui,
+                "-888°",
+                egui::DragValue::new(&mut e.angle).suffix("°").speed(1.0).range(-180.0..=360.0),
+            );
             ui.end_row();
             px_row(ui, "Distance", &mut e.distance, 100.0);
             pct_row(ui, "Spread", &mut e.spread);
@@ -238,17 +249,20 @@ fn page_ui(ui: &mut Ui, d: &mut LayerStyleDialog) {
             pct_row(ui, "Opacity", &mut e.opacity);
             px_row(ui, "Size", &mut e.size, 50.0);
             ui.label("Position");
-            egui::ComboBox::from_id_salt("stroke_pos")
-                .selected_text(match e.position {
+            crate::ui::fields::combo_default(
+                ui,
+                "stroke_pos",
+                match e.position {
                     StrokePosition::Outside => "Outside",
                     StrokePosition::Inside => "Inside",
                     StrokePosition::Center => "Center",
-                })
-                .show_ui(ui, |ui| {
+                },
+                |ui| {
                     ui.selectable_value(&mut e.position, StrokePosition::Outside, "Outside");
                     ui.selectable_value(&mut e.position, StrokePosition::Inside, "Inside");
                     ui.selectable_value(&mut e.position, StrokePosition::Center, "Center");
-                });
+                },
+            );
             ui.end_row();
         }
         Page::ColorOverlay => {

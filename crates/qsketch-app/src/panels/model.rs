@@ -884,17 +884,13 @@ fn parts_row(ui: &mut Ui, state: &mut AppState) {
                 let text = current.map_or_else(|| "None".to_string(), label);
                 let mut choice = current;
                 ui.label(*slot);
-                egui::ComboBox::from_id_salt(("model_slot", *slot))
-                    .selected_text(text)
-                    .width(combo_width)
-                    .truncate()
-                    .show_ui(ui, |ui| {
-                        for &i in &members {
-                            ui.selectable_value(&mut choice, Some(i), label(i))
-                                .on_hover_text(format!("{} triangles", parts[i].triangles.len()));
-                        }
-                        ui.selectable_value(&mut choice, None, "None");
-                    });
+                crate::ui::fields::combo(ui, ("model_slot", *slot), combo_width, text, |ui| {
+                    for &i in &members {
+                        ui.selectable_value(&mut choice, Some(i), label(i))
+                            .on_hover_text(format!("{} triangles", parts[i].triangles.len()));
+                    }
+                    ui.selectable_value(&mut choice, None, "None");
+                });
                 if choice != current {
                     for &i in &members {
                         model.shown[i] = Some(i) == choice;
@@ -1026,7 +1022,9 @@ fn section_menu(ui: &mut Ui, model: &mut Model, sections: &Sections, index: u32,
     if let Some((_, text, last)) = &mut model.renaming {
         *last = frame;
         ui.label("Name");
-        let field = egui::TextEdit::singleline(text).desired_width(180.0).show(ui);
+        let field = crate::ui::fields::fixed(ui, 180.0, |ui| {
+            egui::TextEdit::singleline(text).desired_width(172.0).clip_text(true).show(ui)
+        });
         if opened {
             field.response.request_focus();
             let all = egui::text::CCursorRange::two(
@@ -1122,7 +1120,7 @@ fn toolbar(ui: &mut Ui, state: &mut AppState) {
         let name =
             chosen.and_then(|id| state.doc(id)).map_or_else(|| "Active document".to_string(), |d| d.doc.title.clone());
         let docs: Vec<(DocId, String)> = state.docs.iter().map(|d| (d.id, d.doc.title.clone())).collect();
-        egui::ComboBox::from_id_salt("model_texture").selected_text(name).show_ui(ui, |ui| {
+        crate::ui::fields::combo_default(ui, "model_texture", name, |ui| {
             ui.selectable_value(&mut state.model.texture, None, "Active document");
             for (id, title) in docs {
                 ui.selectable_value(&mut state.model.texture, Some(id), title);

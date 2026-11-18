@@ -288,8 +288,18 @@ pub fn show(ctx: &Context, state: &mut AppState) {
                 }
             });
             ui.add_space(4.0);
-            ui.add(egui::Slider::new(&mut d.size, 5.0..=600.0).text("Brush size").suffix(" px").logarithmic(true));
-            ui.add(egui::Slider::new(&mut d.strength, 0.05..=1.0).text("Strength").fixed_decimals(2));
+            crate::ui::fields::slider_as(
+                ui,
+                "888.8 px",
+                "Brush size",
+                egui::Slider::new(&mut d.size, 5.0..=600.0).text("Brush size").suffix(" px").logarithmic(true),
+            );
+            crate::ui::fields::slider_as(
+                ui,
+                "8.88",
+                "Strength",
+                egui::Slider::new(&mut d.strength, 0.05..=1.0).text("Strength").fixed_decimals(2),
+            );
             ui.label(RichText::new(d.tool.describe()).weak().small());
             ui.add_space(8.0);
             let scope = match d.bases.len() {
