@@ -54,6 +54,11 @@ obvious room to help. Nothing here is a promise of a delivery date.
   undo limit combined with edits that touch most of a large canvas each step
   (e.g. big gradient fills, whole-canvas adjustments) can still add up —
   worth profiling before raising the default.
+- **Fixed-size inputs, the dialogs not yet looked at.** The "Inputs keep their size" change (ARCHITECTURE.md, d106562) moved
+  every field, dropdown and slider onto `ui::fields`; the toolbar, Layers, Timeline, Recover Unsaved Work and Preferences
+  (General, Interface, Tablet) were checked on screen. Still to look at, for widths too narrow or text cut where it should not be:
+  the animation dialogs (export, tags, sprite sheet import), the rig dialog, Trace, the filters, Layer Style, Liquify, New / Canvas
+  / Image Size, slice properties, and the Model, Rig, Brush Settings and Color panels.
 - **macOS/Linux tablet coverage.** The dedicated `octotablet` backend targets
   Windows Ink and Wayland tablet-v2; X11 and macOS tablet users are currently
   limited to whatever pressure winit's own touch-force events expose.

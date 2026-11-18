@@ -2,6 +2,27 @@
 
 All notable changes to qSketch are documented in this file.
 
+## Unreleased
+
+- Inputs keep their size. A number, a dropdown, a slider's value or a text
+  field is as wide as its place in the layout, not as wide as what it shows,
+  so nothing beside it moves as it changes: the tool options bar no longer
+  shifts when the brush goes from "Size 8 px" to "Size 275 px", and a long
+  name no longer widens a dropdown or a panel. Text that does not fit scrolls
+  while you type it and ends in "…" when shown, the whole text on hover.
+- Long layer names stop with "…" before the lock, ½ and fx toggles at the
+  right of the row, instead of running under them; the Timeline cuts layer
+  and tag names the same way instead of mid-letter.
+- Recover Unsaved Work: a long file path no longer runs under the Recover and
+  Discard buttons and hides how old the snapshot is.
+- Renaming a layer ends again with Enter or a click elsewhere; the name field
+  used to keep the keyboard, so the rename never finished.
+- Escape closes Preferences, as it does the other dialogs (not while a
+  shortcut or mouse chord is being recorded, or while typing in a field).
+- Internals: the theme, icons and the Model panel's 3D view moved into shared
+  crates so Resin, qSketch's 3D sibling, uses the same code; nothing changes
+  in use.
+
 ## 0.73.0 — 2026-11-17
 
 - Closing a picture that had been changed and then undone back to its saved
