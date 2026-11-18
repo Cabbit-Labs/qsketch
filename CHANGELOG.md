@@ -2,7 +2,7 @@
 
 All notable changes to qSketch are documented in this file.
 
-## Unreleased
+## 0.74.0 — 2026-11-18
 
 - Inputs keep their size. A number, a dropdown, a slider's value or a text
   field is as wide as its place in the layout, not as wide as what it shows,
